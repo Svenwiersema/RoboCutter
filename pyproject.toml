@@ -1,0 +1,23 @@
+[project]
+
+name = "robocutter"
+
+version = "1.1.0"
+
+description = "ERP MES CNC CAD CAM Platform"
+
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "psycopg2-binary",
+    "python-jose",
+    "passlib[bcrypt]",
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    "PyQt6"
+]
