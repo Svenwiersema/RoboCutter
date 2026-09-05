@@ -145,6 +145,7 @@ def build_stylesheet(t: Theme) -> str:
     }}
     QPushButton[role="nav"]:hover {{ background: rgba(255, 255, 255, 18); color: {t.chrome_text}; }}
     QPushButton[role="nav"]:checked {{ background: {t.chrome_active_bg}; color: #C7D3FF; }}
+    QPushButton[role="nav"]:disabled {{ color: {t.chrome_border}; }}
     QLabel#EditionBadge {{
         color: {t.chrome_text_muted};
         background: rgba(255, 255, 255, 13);
@@ -178,8 +179,17 @@ def build_stylesheet(t: Theme) -> str:
         background: {t.bg};
         border-right: 1px solid {t.border};
     }}
-    QLabel[role="tabLabel"] {{ color: {t.text}; font-weight: 600; font-size: 13px; }}
+    QWidget#TabItem[active="false"]:hover {{ background: rgba(255, 255, 255, 8); }}
+    QLabel[role="tabLabel"][active="true"] {{ color: {t.text}; font-weight: 600; font-size: 13px; }}
+    QLabel[role="tabLabel"][active="false"] {{ color: {t.chrome_text_muted}; font-weight: 500; font-size: 13px; }}
     QLabel#TabDot {{ background: {t.accent}; border-radius: 3px; }}
+    QToolButton[role="tabClose"] {{
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        padding: 2px;
+    }}
+    QToolButton[role="tabClose"]:hover {{ background: rgba(255, 255, 255, 18); }}
 
     /* ---------- Sidebar ---------- */
     QWidget#Sidebar {{
@@ -264,8 +274,8 @@ def build_stylesheet(t: Theme) -> str:
         background: transparent;
         border: none;
         border-radius: 6px;
-        padding: 6px 12px;
-        font-size: 12.5px;
+        padding: 6px 7px;
+        font-size: 12px;
         font-weight: 600;
         color: {t.text_muted};
     }}
@@ -337,4 +347,132 @@ def build_stylesheet(t: Theme) -> str:
     QLabel#LiveDot {{ background: {t.success}; border-radius: 3px; }}
 
     QScrollArea {{ border: none; }}
+
+    /* ---------- Materialen-/reststukkenbibliotheek (gedeelde stijl) ---------- */
+    QFrame#TableCard {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: 12px; }}
+    QTableWidget#LibraryTable {{
+        background: {t.surface};
+        border: none;
+        gridline-color: transparent;
+        font-size: 13px;
+        selection-background-color: {t.surface_2};
+        selection-color: {t.text};
+    }}
+    QTableWidget#LibraryTable::item {{ padding: 4px; border-bottom: 1px solid {t.border}; }}
+    QTableWidget#LibraryTable QHeaderView::section {{
+        background: {t.surface_2};
+        color: {t.text_faint};
+        font-size: 11px;
+        font-weight: 700;
+        border: none;
+        border-bottom: 1px solid {t.border};
+        padding: 8px 10px;
+        text-transform: uppercase;
+    }}
+    QLabel[role="matName"] {{ font-size: 13.5px; font-weight: 700; }}
+    QLabel[role="matMeta"] {{ color: {t.text_muted}; font-size: 12px; }}
+    QLabel[role="typePill"] {{ color: {t.text_muted}; font-size: 12px; font-weight: 600; }}
+    QLabel[role="dims"] {{ font-size: 13px; }}
+    QLabel[role="nerf"] {{ color: {t.text_muted}; font-size: 12.5px; }}
+    QLabel[role="nerfNone"] {{ color: {t.text_faint}; font-size: 12.5px; }}
+    QLabel[role="tagChip"] {{
+        background: {t.surface_2}; color: {t.text_muted};
+        border-radius: 9px; padding: 2px 8px; font-size: 11px; font-weight: 600;
+    }}
+    QLabel[role="tagEmpty"] {{ color: {t.text_faint}; font-size: 12px; }}
+
+    QFrame[chip="archived"] {{ background: {t.surface_2}; border-radius: 10px; }}
+    QFrame[chip="archived"] QLabel {{ color: {t.text_faint}; font-size: 11px; font-weight: 700; }}
+
+    QToolButton[role="rowAction"] {{
+        background: transparent; border: none; border-radius: 6px; color: {t.text_faint};
+    }}
+    QToolButton[role="rowAction"]:hover {{ background: {t.surface_hover}; color: {t.text}; }}
+    QToolButton[role="rowActionDanger"] {{
+        background: transparent; border: none; border-radius: 6px; color: {t.text_faint};
+    }}
+    QToolButton[role="rowActionDanger"]:hover {{ background: {t.critical_soft}; color: {t.critical}; }}
+    QLabel[role="confirmDeleteLabel"] {{ color: {t.critical}; font-size: 11.5px; font-weight: 600; }}
+    QToolButton[role="confirmYes"] {{
+        background: {t.critical}; border: 1px solid {t.critical}; border-radius: 5px; color: white;
+    }}
+    QToolButton[role="confirmNo"] {{
+        background: {t.surface}; border: 1px solid {t.border}; border-radius: 5px; color: {t.text_muted};
+    }}
+
+    QLabel[role="sortLabel"] {{ color: {t.text_muted}; font-size: 12.5px; font-weight: 500; }}
+    QPushButton[role="sortControl"] {{
+        background: transparent; border: none; padding: 4px 6px; border-radius: 6px;
+        color: {t.text_muted}; font-size: 12.5px; font-weight: 500; text-align: left;
+    }}
+    QPushButton[role="sortControl"]:hover {{ background: {t.surface_hover}; color: {t.text}; }}
+
+    /* ---------- Materiaal-drawer (toevoegen/bewerken) ---------- */
+    QFrame#Drawer {{
+        background: {t.surface};
+        border-left: 1px solid {t.border};
+    }}
+    /* Zonder dit laat de scrollviewport (een ongenoemde QWidget die Qt zelf
+       aanmaakt) op Windows het OS-brede donker/licht-thema van de viewport
+       zien i.p.v. de eigen kleur van de drawer erboven — leek dan of het
+       paneel in het lichte thema toch donker was. */
+    QScrollArea#DrawerScroll, QScrollArea#DrawerScroll > QWidget, QWidget#DrawerBody {{
+        background: transparent;
+        border: none;
+    }}
+    QLabel#DrawerTitle {{ font-size: 15.5px; font-weight: 800; }}
+    QFrame#DrawerStatusRow {{ background: {t.surface_2}; border-bottom: 1px solid {t.border}; }}
+    QLabel[role="fieldSectionLabel"] {{
+        color: {t.text_faint}; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px;
+    }}
+    QLabel[role="fieldLabel"] {{ color: {t.text_muted}; font-size: 12px; font-weight: 600; }}
+    QLabel[role="fieldHint"] {{ color: {t.text_faint}; font-size: 11px; }}
+    QLineEdit[role="field"], QComboBox[role="field"] {{
+        background: {t.surface}; border: 1px solid {t.border}; border-radius: 7px;
+        padding: 6px 9px; font-size: 13px; color: {t.text};
+    }}
+    QLineEdit[role="field"]:focus, QComboBox[role="field"]:focus {{ border-color: {t.accent}; }}
+    /* Zonder expliciete stijl hier leunt QComboBox op de (in dit paneel
+       bewust transparant gemaakte, zie hierboven) achtergrond van zijn
+       voorouders voor zijn eigen "niet expliciet gestileerde" uiterlijk —
+       resultaat: een combobox die niets tekent (letterlijk onzichtbaar)
+       zodra hij ergens binnen een transparante DrawerScroll/DrawerBody
+       staat. Vandaar hier, net als bij de andere velden, een eigen
+       ondubbelzinnige achtergrond/rand. */
+    QComboBox[role="field"]::drop-down {{ border: none; width: 22px; }}
+    QComboBox[role="field"] QAbstractItemView {{
+        background: {t.surface}; color: {t.text}; border: 1px solid {t.border};
+        selection-background-color: {t.accent_soft}; selection-color: {t.accent_text};
+    }}
+    /* Getalvelden: Qt's eigen omhoog/omlaag-pijltjes voor QDoubleSpinBox
+       tekenen niet betrouwbaar zodra het veld een eigen stylesheet krijgt
+       (de "driehoek via transparante randen"-truc voor ::up-arrow/
+       ::down-arrow rendert hier als een dichtgekleurd blokje i.p.v. een
+       pijl) — vandaar een eigen stap-knoppenkolom met hetzelfde
+       chevron-icoon als de rest van de UI (zie materialen_page.py
+       ``_field_spin``); de rand/achtergrond zit op de omringende wrapper,
+       het spinveld zelf is daarbinnen kaderloos. */
+    QFrame[role="fieldSpinWrap"] {{
+        background: {t.surface}; border: 1px solid {t.border}; border-radius: 7px;
+    }}
+    QDoubleSpinBox[role="fieldSpin"] {{
+        background: transparent; border: none;
+        padding: 6px 0 6px 9px; font-size: 13px; color: {t.text};
+    }}
+    QToolButton[role="spinStep"] {{
+        background: transparent; border: none; border-left: 1px solid {t.border};
+        padding: 0 4px;
+    }}
+    QToolButton[role="spinStep"]:hover {{ background: {t.surface_hover}; }}
+    QPushButton[role="chipToggle"] {{
+        background: {t.surface}; border: 1px solid {t.border}; border-radius: 12px;
+        padding: 4px 12px; font-size: 12px; font-weight: 600; color: {t.text_muted};
+    }}
+    QPushButton[role="chipToggle"]:checked {{
+        background: {t.accent_soft}; border-color: {t.accent_soft_border}; color: {t.accent_text};
+    }}
+    QFrame#ValidationBanner {{
+        background: {t.critical_soft}; border: 1px solid {t.critical}; border-radius: 9px;
+    }}
+    QLabel[role="validationText"] {{ color: {t.critical}; font-size: 12.5px; }}
     """

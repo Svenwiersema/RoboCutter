@@ -1,19 +1,33 @@
-"""Hoofdvenster: de RoboCutter home pagina (projectenoverzicht).
+"""Hoofdvenster: de RoboCutter home pagina (projectenoverzicht), de
+materialenbibliotheek en de reststukkenbibliotheek, met een echte
+VS Code-stijl tabbalk.
 
 Implementeert de architectuur uit ``design/chapters/11-ux-ui.md``: een
 donkere "chrome"-header met de hoofdonderdelen (Projecten/
-Materialenbibliotheek/Reststukkenbibliotheek/Modellen), een VS Code-stijl
-tabbalk, en een contextuele zijbalk per tabblad. De overige hoofdonderdelen
-(Materialenbibliotheek, Reststukkenbibliotheek, Modellen) en het openen van
-een los projecttabblad zijn nog niet gebouwd — dit is v1: alleen de
-Projecten-hometab, met vaste voorbeelddata (zie ``sample_data.py``).
+Materialenbibliotheek/Reststukkenbibliotheek/Modellen) en een tabbalk
+waarin meerdere tabbladen tegelijk open kunnen staan (``self._open_tabs``,
+in volgorde van openen) — klikken op een hoofdonderdeel opent het als tab
+(of activeert 'm als al open), en elk tabblad is te sluiten met een
+kruisje behalve het vaste "Projecten"-tabblad. Modellen en losse project-/
+modeltabbladen bestaan nog niet als scherm (geen ontwerp/mockup voor) en
+zijn dus nog niet op te nemen in de tabbalk. De Projecten-pagina gebruikt
+nog vaste voorbeelddata (zie ``sample_data.py``); Materialenbibliotheek en
+Reststukkenbibliotheek hebben echte, SQLite-opgeslagen data en kunnen (net
+als in VS Code) maar in één instantie tegelijk open staan.
+Reststukkenbibliotheek (``reststukken_page.py``) is op Svens verzoek
+rechtstreeks gebouwd zonder eigen HTML-mockup, als variant van
+``materialen_page.py`` ("praktisch hetzelfde als de materialenbibliotheek").
+
+De ``MaterialenPage``-/``ReststukkenPage``-instanties blijven bij een
+thema-wissel of tabwissel in leven (herbouw kost anders zoektekst/
+filters/open paneel) — zie ``_rebuild_content`` en ``_toggle_theme``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -32,6 +46,8 @@ from PySide6.QtWidgets import (
 )
 
 from robocutter.ui.icons import icon, icon_pixmap
+from robocutter.ui.materialen_page import MaterialenPage
+from robocutter.ui.reststukken_page import ReststukkenPage
 from robocutter.ui.sample_data import VOORBEELD_PROJECTEN, ProjectStatus
 from robocutter.ui.theme import DONKER, LICHT, Theme, build_stylesheet
 from robocutter.ui.widgets.project_card import ProjectCard
@@ -52,6 +68,39 @@ _NAV_ITEMS = [
     ("Reststukkenbibliotheek", "recycle"),
     ("Modellen", "cube"),
 ]
+# None = hoofdonderdeel nog niet gebouwd (Modellen); de bijbehorende
+# navigatieknop is dan uitgeschakeld, zie ``_build_header``.
+_NAV_PAGE_KEYS = ["projecten", "materialen", "reststukken", None]
+_PAGE_TAB = {
+    "projecten": ("Projecten", "folder"),
+    "materialen": ("Materialenbibliotheek", "layers"),
+    "reststukken": ("Reststukkenbibliotheek", "recycle"),
+}
+
+
+class _KlikbareTab(QWidget):
+    """Een QWidget i.p.v. QPushButton als klikbare tab-container: een
+    QPushButton berekent zijn sizeHint zelf op basis van tekst/icoon en
+    negeert daarbij een eigen child-layout (bleek in de praktijk: een lege
+    QPushButton met alleen kind-widgets in een layout kromp naar een paar
+    pixels). QWidget geeft die berekening gewoon door aan zijn layout.
+
+    Een eigen QWidget-subklasse schildert zijn ``background:``-regel uit de
+    stylesheet niet vanzelf (dat doen alleen QFrame/QPushButton/QLabel e.d.
+    standaard) — vandaar hier expliciet ``WA_StyledBackground`` aanzetten,
+    anders blijft het actieve tabblad de donkere chrome-achtergrond tonen
+    i.p.v. het lichte/donkere themakleur die hoort bij het actieve tabblad."""
+
+    clicked = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -62,6 +111,10 @@ class MainWindow(QMainWindow):
 
         self._theme: Theme = LICHT
         self._nav_buttons: list[QPushButton] = []
+        self._open_tabs: list[str] = ["projecten"]
+        self._active_tab: str = "projecten"
+        self._materialen_page = MaterialenPage(self._theme)
+        self._reststukken_page = ReststukkenPage(self._materialen_page.bibliotheek, self._theme)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -71,16 +124,23 @@ class MainWindow(QMainWindow):
 
         root.addWidget(self._build_header())
         root.addWidget(self._build_tab_strip())
-
-        workspace = QHBoxLayout()
-        workspace.setContentsMargins(0, 0, 0, 0)
-        workspace.setSpacing(0)
-        workspace.addWidget(self._build_sidebar())
-        workspace.addWidget(self._build_main(), 1)
-        root.addLayout(workspace, 1)
+        root.addLayout(self._build_workspace(), 1)
 
         self._build_status_bar()
         self._apply_theme()
+
+    def _build_workspace(self) -> QHBoxLayout:
+        workspace = QHBoxLayout()
+        workspace.setContentsMargins(0, 0, 0, 0)
+        workspace.setSpacing(0)
+        if self._active_tab == "materialen":
+            workspace.addWidget(self._materialen_page, 1)
+        elif self._active_tab == "reststukken":
+            workspace.addWidget(self._reststukken_page, 1)
+        else:
+            workspace.addWidget(self._build_sidebar())
+            workspace.addWidget(self._build_main(), 1)
+        return workspace
 
     # ------------------------------------------------------------------
     # Chrome: header
@@ -119,14 +179,20 @@ class MainWindow(QMainWindow):
         group = QButtonGroup(self)
         group.setExclusive(True)
         for index, (label, icon_name) in enumerate(_NAV_ITEMS):
+            page_key = _NAV_PAGE_KEYS[index]
             button = QPushButton(f"  {label}")
             button.setProperty("role", "nav")
             button.setCheckable(True)
             button.setIcon(icon(icon_name, "#8B8FA3", 15))
             button.setIconSize(QSize(15, 15))
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            if index == 0:
-                button.setChecked(True)
+            if page_key is not None:
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.setChecked(page_key == self._active_tab)
+                button.clicked.connect(lambda checked=False, key=page_key: self._open_tab(key))
+            else:
+                # Modellen: nog niet gebouwd.
+                button.setEnabled(False)
+                button.setToolTip("Nog niet gebouwd")
             group.addButton(button)
             nav.addWidget(button)
             self._nav_buttons.append(button)
@@ -169,26 +235,73 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(6, 0, 6, 0)
         layout.setSpacing(0)
 
-        tab = QWidget()
-        tab.setObjectName("TabItem")
-        tab.setProperty("active", "true")
-        tab_layout = QHBoxLayout(tab)
-        tab_layout.setContentsMargins(14, 0, 14, 0)
-        tab_layout.setSpacing(8)
-        tab_icon = QLabel()
-        tab_icon.setPixmap(icon_pixmap("house", self._theme.text, 14))
-        tab_layout.addWidget(tab_icon)
-        tab_label = QLabel("Projecten")
-        tab_label.setProperty("role", "tabLabel")
-        tab_layout.addWidget(tab_label)
-        tab_dot = QLabel()
-        tab_dot.setObjectName("TabDot")
-        tab_dot.setFixedSize(6, 6)
-        tab_layout.addWidget(tab_dot)
-        layout.addWidget(tab)
+        for key in self._open_tabs:
+            titel, icon_naam = _PAGE_TAB[key]
+            layout.addWidget(self._build_tab_item(key, titel, icon_naam))
         layout.addStretch(1)
 
         return strip
+
+    def _build_tab_item(self, key: str, titel: str, icon_naam: str) -> QWidget:
+        actief = key == self._active_tab
+        sluitbaar = key != "projecten"
+
+        tab = _KlikbareTab()
+        tab.setObjectName("TabItem")
+        tab.setProperty("active", "true" if actief else "false")
+        tab.setCursor(Qt.CursorShape.PointingHandCursor)
+        tab.clicked.connect(lambda: self._activate_tab(key))
+        tab_layout = QHBoxLayout(tab)
+        tab_layout.setContentsMargins(14, 0, 8 if sluitbaar else 14, 0)
+        tab_layout.setSpacing(8)
+
+        tab_icon = QLabel()
+        tab_icon.setPixmap(icon_pixmap(icon_naam, self._theme.text if actief else self._theme.chrome_text_muted, 14))
+        tab_icon.setStyleSheet("background: transparent;")
+        tab_layout.addWidget(tab_icon)
+
+        tab_label = QLabel(titel)
+        tab_label.setProperty("role", "tabLabel")
+        tab_label.setProperty("active", "true" if actief else "false")
+        tab_label.setStyleSheet("background: transparent;")
+        tab_layout.addWidget(tab_label)
+
+        if sluitbaar:
+            close_btn = QToolButton()
+            close_btn.setProperty("role", "tabClose")
+            close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            close_btn.setIcon(icon("close", self._theme.chrome_text_muted, 10))
+            close_btn.clicked.connect(lambda: self._close_tab(key))
+            tab_layout.addWidget(close_btn)
+        elif actief:
+            tab_dot = QLabel()
+            tab_dot.setObjectName("TabDot")
+            tab_dot.setFixedSize(6, 6)
+            tab_layout.addWidget(tab_dot)
+
+        return tab
+
+    def _activate_tab(self, key: str) -> None:
+        if key == self._active_tab:
+            return
+        self._active_tab = key
+        self._rebuild_content()
+
+    def _open_tab(self, key: str) -> None:
+        if key not in self._open_tabs:
+            self._open_tabs.append(key)
+        self._active_tab = key
+        self._rebuild_content()
+
+    def _close_tab(self, key: str) -> None:
+        if key == "projecten" or key not in self._open_tabs:
+            return
+        index = self._open_tabs.index(key)
+        was_active = key == self._active_tab
+        self._open_tabs.remove(key)
+        if was_active:
+            self._active_tab = self._open_tabs[max(0, index - 1)]
+        self._rebuild_content()
 
     # ------------------------------------------------------------------
     # Sidebar
@@ -457,17 +570,34 @@ class MainWindow(QMainWindow):
 
     def _toggle_theme(self) -> None:
         self._theme = DONKER if self._theme is LICHT else LICHT
+        # De materialen-/reststukkenpagina's beheren hun eigen (zoek/filter/
+        # paneel-)status en worden daarom niet zomaar meegesloopt met de rest
+        # van het venster; ze herbouwen hier bewust wél hun eigen iconen/
+        # kleuren voor het nieuwe thema (zien daarbij wél hun open paneel/
+        # zoektekst kwijtraken).
+        self._materialen_page.set_theme(self._theme)
+        self._reststukken_page.set_theme(self._theme)
         self._rebuild_content()
         self._apply_theme()
 
     def _apply_theme(self) -> None:
         self.setStyleSheet(build_stylesheet(self._theme))
 
+    def closeEvent(self, event) -> None:
+        self._reststukken_page.sluit_verbinding()
+        self._materialen_page.sluit_verbinding()
+        super().closeEvent(event)
+
     def _rebuild_content(self) -> None:
         # Sommige elementen (iconen, statuspuntjes) hebben expliciete kleuren
         # nodig die niet via de stylesheet lopen — eenvoudiger om het venster
-        # opnieuw op te bouwen dan elk element los bij te werken.
+        # opnieuw op te bouwen dan elk element los bij te werken. De
+        # materialen-/reststukkenpagina overleven dit door ze hier los te
+        # maken vóórdat de oude central widget (en daarmee al haar kinderen)
+        # verwijderd wordt.
         central = self.centralWidget()
+        self._materialen_page.setParent(None)
+        self._reststukken_page.setParent(None)
         central.deleteLater()
         self._nav_buttons = []
         new_central = QWidget()
@@ -477,9 +607,4 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
         root.addWidget(self._build_header())
         root.addWidget(self._build_tab_strip())
-        workspace = QHBoxLayout()
-        workspace.setContentsMargins(0, 0, 0, 0)
-        workspace.setSpacing(0)
-        workspace.addWidget(self._build_sidebar())
-        workspace.addWidget(self._build_main(), 1)
-        root.addLayout(workspace, 1)
+        root.addLayout(self._build_workspace(), 1)

@@ -21,10 +21,38 @@ scripts/
     demo_render.py — genereert PNG-voorbeelden ter visuele controle
 src/robocutter/ui/
     app.py, main_window.py, theme.py, icons.py, sample_data.py,
-    widgets/ — de eerste echte UI (PySide6): de home pagina
-    (Projecten-overzicht). Werkwijze: eerst een HTML-conceptmockup
-    laten goedkeuren, pas dan de PySide6-versie bouwen (zie
-    OVERDRACHT.md). Draait nu nog op voorbeelddata, geen database.
+    widgets/ — de echte UI (PySide6): de home pagina (Projecten-
+    overzicht, voorbeelddata, geen database) en de
+    Materialenbibliotheek (materialen_page.py, echte SQLite-data).
+    Werkwijze: eerst een HTML-conceptmockup laten goedkeuren, pas dan
+    de PySide6-versie bouwen (zie OVERDRACHT.md). Klikken op
+    "Projecten"/"Materialenbibliotheek" in de header wisselt van
+    pagina; Reststukkenbibliotheek/Modellen staan nog niet gebouwd
+    (navigatieknoppen uitgeschakeld).
+src/robocutter/materialen/
+    models.py, bibliotheek.py — de materialenbibliotheek-functie
+    (hoofdstuk 3): datamodel, live validatie (incl. zoeken op tekst
+    én afmetingen tegelijk) en de archiveer-/verwijderworkflow.
+    opslag.py — SQLite-opslag (hoofdstuk 8: Demo/Hobby = één lokaal
+    bestand). Nog geen multi-gebruiker-/netwerkopslag.
+src/robocutter/reststukken/
+    models.py, bibliotheek.py — de reststukkenbibliotheek-functie
+    (hoofdstuk 3): een reststuk verwijst naar zijn materiaal
+    (materiaal_id) i.p.v. kerf/nerfrichting/type/familie te
+    dupliceren, en heeft een beschikbaar/gebruikt-workflow (geen
+    archiveerstap, anders dan bij materialen).
+    opslag.py — SQLite-opslag, eigen tabel in hetzelfde
+    data/robocutter.db-bestand als de materialenbibliotheek.
+tests/
+    test_materialen.py, test_reststukken.py — pytest-tests voor beide
+    bibliotheken.
+scripts/
+    test_materialen_ui.py, test_reststukken_ui.py — ruwe, ongestylede
+    PySide6 test-ui's, apart van de echte schermen, om de
+    bibliotheek-functies te proberen tijdens het bouwen. Slaan op in
+    data/materialen_test.db resp. data/reststukken_test.db (lokaal,
+    .gitignore'd) — de echte Materialenbibliotheek-pagina gebruikt
+    data/robocutter.db.
 ```
 
 Belangrijke aannames die in de code staan (zie ook de docstring
@@ -59,12 +87,17 @@ python3 scripts/demo_render.py
 # UI starten (PySide6)
 pip install -e ".[ui]"
 python -m robocutter.ui.app
+
+# Materialenbibliotheek-/reststukkenbibliotheek-functie los testen (ruwe test-ui's)
+python scripts/test_materialen_ui.py
+python scripts/test_reststukken_ui.py
 ```
 
 Nog niet gedaan (bewust, dit is iteratie 1):
 - Mes/groef-plaatsingsregels (hoofdstuk 5 noemt dit zelf nog als
   "verder te detailleren").
 - Meerdere platen tegelijk optimaliseren (nu: één plaat per aanroep).
-- UI (PySide6): alleen de home pagina staat er, zie `OVERDRACHT.md`
-  voor wat daar nog aan ontbreekt (overige hoofdonderdelen, een
-  projecttabblad, echte data-koppeling).
+- UI (PySide6): de home pagina en de Materialenbibliotheek staan er,
+  zie `OVERDRACHT.md` voor wat daar nog aan ontbreekt (overige
+  hoofdonderdelen, een los projecttabblad, écht meerdere tabbladen
+  tegelijk open).

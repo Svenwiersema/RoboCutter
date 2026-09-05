@@ -51,6 +51,7 @@ _ICONS: dict[str, str] = {
     ''',
     "plus": '<path d="M12 4.5v15M4.5 12h15" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>',
     "chevron-down": '<path d="M5.5 8.5l6.5 6.5 6.5-6.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+    "chevron-up": '<path d="M5.5 15.5l6.5-6.5 6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
     "kebab": '''
         <circle cx="12" cy="5.5" r="1.5" fill="currentColor"/>
         <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
@@ -69,6 +70,18 @@ _ICONS: dict[str, str] = {
         <path d="M12 15.5V4.8M8 8.6l4-4 4 4" {stroke}/>
         <path d="M4.5 15v3.2a1.8 1.8 0 001.8 1.8h11.4a1.8 1.8 0 001.8-1.8V15" {stroke}/>
     '''.replace("{stroke}", _STROKE),
+    "bar": '<rect x="3" y="10" width="18" height="4.2" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.9"/>',
+    "grain": '''
+        <path d="M4 8.5c2-2 4-2 6 0s4 2 6 0 4-2 4 0M4 15.5c2-2 4-2 6 0s4 2 6 0 4-2 4 0"
+              fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    ''',
+    "pencil": '<path d="M14.3 4.8l4.9 4.9M4 20l1-4.6L16.6 3.8a1.7 1.7 0 012.4 0l1.2 1.2a1.7 1.7 0 010 2.4L8.6 19l-4.6 1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    "trash": '''
+        <path d="M4.5 7h15M9.5 7V5.2a1.4 1.4 0 011.4-1.4h2.2a1.4 1.4 0 011.4 1.4V7M6.8 7l.8 12a1.8 1.8 0 001.8 1.7h5.2a1.8 1.8 0 001.8-1.7l.8-12" {stroke}/>
+        <path d="M10.3 11v6M13.7 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    '''.replace("{stroke}", _STROKE.replace("1.9", "1.8")),
+    "check": '<path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+    "close": '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>',
 }
 
 
