@@ -3,7 +3,9 @@
 Bijgehouden overzicht van wat besproken/vastgesteld is en wat nog open staat.
 Wordt elke sessie bijgewerkt.
 
-_Laatst bijgewerkt: 2026-09-05_
+_Laatst bijgewerkt: 2026-09-05 — zie ook `OVERDRACHT.md` voor de
+actuele codestatus (dit bestand blijft de bronwaarheid voor
+ontwerpbeslissingen, `OVERDRACHT.md` voor bouwvoortgang)._
 
 ## Herkomst van eerder werk
 

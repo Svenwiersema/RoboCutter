@@ -23,6 +23,31 @@ bronwaarheid voor alle productbeslissingen.
   (`tests/test_engine.py`, 14 tests, allemaal groen) en
   visuele voorbeelden (`scripts/demo_render.py` → `output/*.png`).
   Zie `README.md` in de repo-root voor hoe je dit draait.
+- **Werkwijze UI (nieuw, vastgesteld):** voor élk UI-scherm eerst een
+  HTML-conceptmockup (Artifact) bouwen en laten goedkeuren door Sven,
+  pas daarna de echte PySide6-implementatie maken. Niet meer direct in
+  PySide6 beginnen.
+- **UI — eerste scherm gebouwd:** de home pagina (Projecten-overzicht,
+  de landingspagina van de hele app) is uitgewerkt volgens deze
+  werkwijze: eerst een goedgekeurde HTML-mockup, daarna
+  `src/robocutter/ui/` (PySide6) — header met de vier hoofdonderdelen,
+  VS Code-stijl tabbalk, contextuele zijbalk, KPI-tegels, project-
+  kaarten met statuschips/voortgangsbalk, inline waarschuwingspaneel
+  (geen pop-up), licht/donker thema-toggle. Draait via
+  `python -m robocutter.ui.app` (dependency: `pip install -e ".[ui]"`).
+  Gebruikt vaste voorbeeldprojecten uit `src/robocutter/ui/sample_data.py`
+  — nog geen echte database-koppeling (Module 1/4 backend bestaat nog
+  niet). Iconen zijn handgetekende SVG's in Phosphor Bold-stijl
+  (`src/robocutter/ui/icons.py`) — Phosphor's eigen bestand kon niet via
+  een toegestane bron ingeladen worden voor de HTML-mockup, dus is
+  dezelfde aanpak in PySide6 aangehouden voor visuele consistentie.
+  Inter (het vastgestelde lettertype) is nog niet als font-bestand
+  gebundeld; de UI valt voorlopig terug op Segoe UI.
+  Nog te doen voor de UI: de overige hoofdonderdelen
+  (Materialenbibliotheek, Reststukkenbibliotheek, Modellen), een los
+  projecttabblad (met de zijbalk uit `assets/mockups/projectoverzicht-
+  concept.png`), écht meerdere tabbladen tegelijk open, en het
+  bundelen van Inter.
 
 ## Aannames in de code die Sven nog moet bevestigen
 
@@ -53,10 +78,15 @@ in plaats van aan te nemen:
 - Meerdere platen tegelijk optimaliseren (nu: één plaat per aanroep;
   er is nog geen logica die onderdelen over meerdere platen van
   hetzelfde materiaal verdeelt).
-- Alles buiten de optimalisatie-motor: projecten/modellen/materialen-
-  beheer (Modules 1-4), labels (hoofdstuk 6), DXF/Vectorworks-import
-  (hoofdstuk 10), ERP-koppeling (hoofdstuk 9), licentie/commerciële
-  laag (hoofdstuk 7-8), en de hele UI (PySide6, hoofdstuk 11).
+- Projecten/modellen/materialen-beheer (Modules 1-4) als echte,
+  werkende functionaliteit — er is alleen een UI-schil met
+  voorbeelddata (zie hierboven), geen database/opslag.
+- Labels (hoofdstuk 6), DXF/Vectorworks-import (hoofdstuk 10),
+  ERP-koppeling (hoofdstuk 9), licentie/commerciële laag
+  (hoofdstuk 7-8).
+- De rest van de UI (PySide6, hoofdstuk 11): alleen de home pagina
+  (Projecten-overzicht) staat er, zie hierboven voor wat daar nog
+  ontbreekt.
 
 ## Technische kaders om aan te houden (hoofdstuk 8)
 
@@ -75,11 +105,14 @@ in plaats van aan te nemen:
 
 ## Suggestie voor een logische volgende stap
 
-Geen harde keuze gemaakt — bespreek dit met Sven zodra je begint:
-verder bouwen aan de optimalisatie-motor (mes/groef, meerdere
-platen), of beginnen aan de PySide6-UI-schil volgens de architectuur
-in hoofdstuk 11 (header + VS-Code-stijl tabbladen + contextuele
-zijbalk, zie ook `design/assets/mockups/projectoverzicht-concept.png`).
+Sven heeft gekozen om eerst met de UI door te gaan (zie de
+werkwijze hierboven). Logische vervolgstappen, in overleg met Sven te
+bepalen: het volgende hoofdonderdeel als HTML-mockup uitwerken
+(Materialenbibliotheek, Reststukkenbibliotheek, of Modellen), of het
+losse projecttabblad (zie `assets/mockups/projectoverzicht-
+concept.png`) — zelfde werkwijze: eerst mockup, dan pas PySide6.
+Los daarvan staat de optimalisatie-motor (mes/groef, meerdere platen)
+nog open, maar is niet gekozen als volgende stap.
 
 ## Werkwijze die Sven prettig vindt
 

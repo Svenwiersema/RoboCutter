@@ -1,0 +1,340 @@
+"""Kleuren en stylesheet (QSS) voor de RoboCutter-UI.
+
+Tokens zijn 1-op-1 overgenomen uit de goedgekeurde HTML-conceptmockup van de
+home pagina, die op zijn beurt is gebaseerd op de kleurafspraken uit
+``design/chapters/11-ux-ui.md`` (accent #5F7FFF, licht/donker thema,
+pastelachtige statuskleuren). De "chrome" (header, tabbalk, statusbalk)
+blijft bewust altijd donker, ook in het lichte thema — zoals in de
+conceptmockup uit hoofdstuk 11 (VS Code-stijl chrome versus een themebare
+werkruimte).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Theme:
+    naam: str
+
+    bg: str
+    surface: str
+    surface_2: str
+    surface_hover: str
+    border: str
+    text: str
+    text_muted: str
+    text_faint: str
+
+    accent: str
+    accent_text: str
+    accent_soft: str
+    accent_soft_border: str
+
+    success: str
+    success_ink: str
+    success_soft: str
+    warning: str
+    warning_ink: str
+    warning_soft: str
+    critical: str
+    critical_soft: str
+    neutral_dot: str
+    indigo: str
+    indigo_soft: str
+
+    # Chrome-kleuren zijn in beide thema's gelijk.
+    chrome_bg: str = "#16171D"
+    chrome_bg_raised: str = "#1D1F27"
+    chrome_text: str = "#E7E8EE"
+    chrome_text_muted: str = "#8B8FA3"
+    chrome_border: str = "#2B2D37"
+    chrome_active_bg: str = "rgba(95, 127, 255, 46)"
+
+
+LICHT = Theme(
+    naam="licht",
+    bg="#F2F3F4",
+    surface="#FFFFFF",
+    surface_2="#F7F8FB",
+    surface_hover="#ECEEF3",
+    border="#E1E3EA",
+    text="#1E2028",
+    text_muted="#676B7D",
+    text_faint="#9297A8",
+    accent="#5F7FFF",
+    accent_text="#4C63E0",
+    accent_soft="#EBEFFF",
+    accent_soft_border="#CDD6FF",
+    success="#4FA875",
+    success_ink="#1E5E3B",
+    success_soft="#E7F7EE",
+    warning="#B5872A",
+    warning_ink="#7A5A15",
+    warning_soft="#FBF1DC",
+    critical="#C74F4F",
+    critical_soft="#FBEAEA",
+    neutral_dot="#9297A8",
+    indigo="#7B6FE0",
+    indigo_soft="#EFEDFB",
+)
+
+DONKER = Theme(
+    naam="donker",
+    bg="#1B1D24",
+    surface="#23252F",
+    surface_2="#2A2C38",
+    surface_hover="#30323F",
+    border="#383A47",
+    text="#EDEEF3",
+    text_muted="#A7ABBE",
+    text_faint="#767B90",
+    accent="#6D8AFF",
+    accent_text="#9DB0FF",
+    accent_soft="#2A2F52",
+    accent_soft_border="#40447A",
+    success="#6FCF97",
+    success_ink="#BFF0D4",
+    success_soft="#1D3226",
+    warning="#E8B84B",
+    warning_ink="#F6DFA9",
+    warning_soft="#382C13",
+    critical="#E57373",
+    critical_soft="#3A2020",
+    neutral_dot="#767B90",
+    indigo="#A79CFF",
+    indigo_soft="#2C2A4D",
+)
+
+
+def build_stylesheet(t: Theme) -> str:
+    """Bouwt de volledige Qt-stylesheet voor het gegeven thema."""
+    return f"""
+    QMainWindow, QWidget#MainScrollContent, QScrollArea#MainScroll {{
+        background: {t.bg};
+    }}
+    QLabel, QCheckBox, QPushButton {{
+        font-family: "Inter", "Segoe UI", sans-serif;
+        color: {t.text};
+    }}
+
+    /* ---------- Chrome: header ---------- */
+    QWidget#Header {{
+        background: {t.chrome_bg};
+        border-bottom: 1px solid {t.chrome_border};
+    }}
+    QLabel#BrandLabel {{
+        color: {t.chrome_text};
+        font-size: 15px;
+        font-weight: 800;
+    }}
+    QLabel#BrandMark {{
+        background: #F4F5F7;
+        border-radius: 8px;
+    }}
+    QPushButton[role="nav"] {{
+        background: transparent;
+        color: {t.chrome_text_muted};
+        border: none;
+        border-radius: 7px;
+        padding: 7px 13px;
+        font-weight: 600;
+        font-size: 13px;
+        text-align: left;
+    }}
+    QPushButton[role="nav"]:hover {{ background: rgba(255, 255, 255, 18); color: {t.chrome_text}; }}
+    QPushButton[role="nav"]:checked {{ background: {t.chrome_active_bg}; color: #C7D3FF; }}
+    QLabel#EditionBadge {{
+        color: {t.chrome_text_muted};
+        background: rgba(255, 255, 255, 13);
+        border: 1px solid {t.chrome_border};
+        border-radius: 12px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QToolButton#ThemeToggle, QToolButton#IconBtn {{
+        background: transparent;
+        border: none;
+        border-radius: 7px;
+        color: {t.chrome_text_muted};
+    }}
+    QToolButton#ThemeToggle:hover {{ background: rgba(255, 255, 255, 18); color: {t.chrome_text}; }}
+    QLabel#Avatar {{
+        background: {t.accent};
+        color: #12141B;
+        border-radius: 15px;
+        font-weight: 700;
+        font-size: 12px;
+    }}
+
+    /* ---------- Chrome: tab strip ---------- */
+    QWidget#TabStrip {{
+        background: {t.chrome_bg_raised};
+        border-bottom: 1px solid {t.chrome_border};
+    }}
+    QWidget#TabItem[active="true"] {{
+        background: {t.bg};
+        border-right: 1px solid {t.border};
+    }}
+    QLabel[role="tabLabel"] {{ color: {t.text}; font-weight: 600; font-size: 13px; }}
+    QLabel#TabDot {{ background: {t.accent}; border-radius: 3px; }}
+
+    /* ---------- Sidebar ---------- */
+    QWidget#Sidebar {{
+        background: {t.surface};
+        border-right: 1px solid {t.border};
+    }}
+    QLabel[role="sidebarLabel"] {{
+        color: {t.text_faint};
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }}
+    QPushButton[role="sidebarItem"] {{
+        background: transparent;
+        border: none;
+        border-radius: 7px;
+        padding: 7px 8px;
+        text-align: left;
+        font-size: 13px;
+        font-weight: 500;
+        color: {t.text_muted};
+    }}
+    QPushButton[role="sidebarItem"]:hover {{ background: {t.surface_hover}; color: {t.text}; }}
+    QPushButton[role="sidebarItem"]:checked {{
+        background: {t.accent_soft};
+        color: {t.accent_text};
+        font-weight: 600;
+    }}
+    QFrame#SidebarDivider {{ background: {t.border}; max-height: 1px; min-height: 1px; }}
+    QCheckBox[role="filter"] {{ font-size: 13px; color: {t.text_muted}; spacing: 8px; }}
+    QLabel[role="filterCount"] {{ color: {t.text_faint}; font-size: 11px; }}
+
+    /* ---------- Page head ---------- */
+    QLabel#PageTitle {{ font-size: 20px; font-weight: 800; }}
+    QLabel#PageSub {{ color: {t.text_muted}; font-size: 13px; }}
+    QLineEdit#SearchInput {{
+        background: {t.surface};
+        border: 1px solid {t.border};
+        border-radius: 8px;
+        padding: 6px 10px;
+        color: {t.text};
+        font-size: 13px;
+    }}
+    QPushButton[role="primary"] {{
+        background: {t.accent};
+        color: #12141B;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 15px;
+        font-weight: 600;
+        font-size: 13px;
+    }}
+    QPushButton[role="primary"]:hover {{ background: {t.accent_text}; color: white; }}
+    QPushButton[role="ghost"] {{
+        background: {t.surface};
+        color: {t.text};
+        border: 1px solid {t.border};
+        border-radius: 8px;
+        padding: 8px 15px;
+        font-weight: 600;
+        font-size: 13px;
+    }}
+    QPushButton[role="ghost"]:hover {{ background: {t.surface_hover}; }}
+
+    /* ---------- Stat tiles ---------- */
+    QFrame#StatTile {{
+        background: {t.surface};
+        border: 1px solid {t.border};
+        border-radius: 12px;
+    }}
+    QLabel[role="statLabel"] {{ color: {t.text_muted}; font-size: 12px; font-weight: 600; }}
+    QLabel[role="statValue"] {{ font-size: 26px; font-weight: 800; }}
+    QLabel[role="statValue"][tone="warn"] {{ color: {t.warning_ink}; }}
+    QLabel[role="statFoot"] {{ color: {t.text_faint}; font-size: 11.5px; }}
+    QFrame[role="statIcon"][tone="neutral"] {{ background: {t.accent_soft}; color: {t.accent_text}; border-radius: 7px; }}
+    QFrame[role="statIcon"][tone="warn"] {{ background: {t.warning_soft}; color: {t.warning_ink}; border-radius: 7px; }}
+    QFrame[role="statIcon"][tone="good"] {{ background: {t.success_soft}; color: {t.success_ink}; border-radius: 7px; }}
+
+    /* ---------- Segmented control ---------- */
+    QWidget#Segmented {{ background: {t.surface_2}; border: 1px solid {t.border}; border-radius: 8px; }}
+    QPushButton[role="segment"] {{
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: {t.text_muted};
+    }}
+    QPushButton[role="segment"]:checked {{ background: {t.surface}; color: {t.text}; }}
+    QLabel#SortLabel {{ color: {t.text_muted}; font-size: 12.5px; font-weight: 500; }}
+
+    /* ---------- Project cards ---------- */
+    QFrame#ProjectCard {{
+        background: {t.surface};
+        border: 1px solid {t.border};
+        border-radius: 13px;
+    }}
+    QToolButton#AddProjectTile {{
+        background: transparent;
+        border: 2px dashed {t.border};
+        border-radius: 13px;
+        color: {t.text_faint};
+        font-size: 13px;
+        font-weight: 600;
+    }}
+    QToolButton#AddProjectTile:hover {{
+        border-color: {t.accent};
+        color: {t.accent_text};
+        background: {t.accent_soft};
+    }}
+    QLabel#CardTitle {{ font-size: 15px; font-weight: 700; }}
+    QLabel[role="cardMeta"] {{ color: {t.text_muted}; font-size: 12px; }}
+    QToolButton#KebabBtn {{ background: transparent; border: none; border-radius: 6px; color: {t.text_faint}; }}
+    QToolButton#KebabBtn:hover {{ background: {t.surface_hover}; color: {t.text}; }}
+
+    QFrame[chip="prep"] {{ background: {t.surface_2}; border-radius: 10px; }}
+    QFrame[chip="prep"] QLabel {{ color: {t.text_muted}; font-size: 11px; font-weight: 700; }}
+    QFrame[chip="production"] {{ background: {t.accent_soft}; border-radius: 10px; }}
+    QFrame[chip="production"] QLabel {{ color: {t.accent_text}; font-size: 11px; font-weight: 700; }}
+    QFrame[chip="install"] {{ background: {t.indigo_soft}; border-radius: 10px; }}
+    QFrame[chip="install"] QLabel {{ color: {t.indigo}; font-size: 11px; font-weight: 700; }}
+    QFrame[chip="done"] {{ background: {t.success_soft}; border-radius: 10px; }}
+    QFrame[chip="done"] QLabel {{ color: {t.success_ink}; font-size: 11px; font-weight: 700; }}
+
+    QLabel[role="progressLabel"] {{ color: {t.text_muted}; font-size: 11.5px; font-weight: 500; }}
+    QLabel[role="progressFrac"] {{ color: {t.text}; font-size: 11.5px; font-weight: 700; }}
+    QProgressBar#CardProgress {{
+        background: {t.surface_2};
+        border: none;
+        border-radius: 3px;
+        max-height: 6px;
+        min-height: 6px;
+    }}
+    QProgressBar#CardProgress::chunk {{ background: {t.accent}; border-radius: 3px; }}
+    QProgressBar#CardProgress[complete="true"]::chunk {{ background: {t.success}; }}
+
+    QFrame#CardWarning {{ background: {t.warning_soft}; border-radius: 8px; }}
+    QFrame#CardWarning QLabel {{ color: {t.warning_ink}; font-size: 11.5px; }}
+
+    /* ---------- Warning panel ---------- */
+    QFrame#WarningPanel {{ background: {t.warning_soft}; border: 1px solid {t.warning}; border-radius: 12px; }}
+    QFrame#WarningIconWrap {{ background: {t.warning}; border-radius: 8px; }}
+    QLabel#WarningTitle {{ color: {t.warning_ink}; font-size: 13px; font-weight: 700; }}
+    QLabel[role="warningBody"] {{ color: {t.text_muted}; font-size: 12px; }}
+
+    /* ---------- Status bar ---------- */
+    QStatusBar {{
+        background: {t.chrome_bg};
+        color: {t.chrome_text_muted};
+        border-top: 1px solid {t.chrome_border};
+        font-size: 11.5px;
+    }}
+    QStatusBar QLabel {{ color: {t.chrome_text_muted}; font-size: 11.5px; }}
+    QLabel#LiveDot {{ background: {t.success}; border-radius: 3px; }}
+
+    QScrollArea {{ border: none; }}
+    """
