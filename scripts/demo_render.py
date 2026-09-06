@@ -1,9 +1,16 @@
 """Visuele demo van de zaagplan-optimalisatie-motor.
 
-Genereert voor beide strategieën een PNG op basis van dezelfde
+Genereert voor alle vier strategieën een PNG op basis van dezelfde
 testcase als de eerdere handgemaakte voorbeelden
 (design/voorbeelden/zaagplan-voorbeeld-v1.pdf en -v2.pdf), zodat de
 algoritme-output visueel te vergelijken is met die eerdere concepten.
+
+Let op: "stroken" en "guillotine" zijn bewust minder efficiënt dan
+"efficient"/"rijen" (zie de module-docstring van
+``robocutter.optimalisatie.engine``) en laten voor deze specifieke,
+krap-passende testcase een deel van de onderdelen onplaatsbaar — dat is
+zichtbaar in de gegenereerde PNG's als de "Niet geplaatst"-regel
+onderaan, geen bug.
 
 Gebruik: python3 scripts/demo_render.py
 """
@@ -110,6 +117,12 @@ def main():
 
     r2 = genereer_zaagplan(mat, onderdelen, strategie="rijen")
     render(r2, str(out / "demo_rijen.png"), "Zaagplan — strategie: lange zijdes eerst")
+
+    r1b = genereer_zaagplan(mat, onderdelen, strategie="stroken")
+    render(r1b, str(out / "demo_stroken.png"), "Zaagplan — strategie: stroken (vaste strookhoogte)")
+
+    r1c = genereer_zaagplan(mat, onderdelen, strategie="guillotine")
+    render(r1c, str(out / "demo_guillotine.png"), "Zaagplan — strategie: guillotine (rand-tot-rand sneden)")
 
     # Derde demo: groepering voor doorlopende nerf (3 ladefronten).
     mat2 = Materiaal(naam="Eiken fineer 19mm", lengte=1600, breedte=1500, dikte=19, kerf=4, min_reststukgrootte=250)
