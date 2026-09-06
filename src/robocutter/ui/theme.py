@@ -384,6 +384,20 @@ def build_stylesheet(t: Theme) -> str:
     QFrame[chip="archived"] {{ background: {t.surface_2}; border-radius: 10px; }}
     QFrame[chip="archived"] QLabel {{ color: {t.text_faint}; font-size: 11px; font-weight: 700; }}
 
+    /* Modellenbibliotheek: aantal-onderdelen-badge en de nesting-badge
+       ("bevat N submodellen") in de tabel, en de rijachtergrond voor
+       onderdeel-/submodel-rijen in de drawer. */
+    QLabel[role="countPill"] {{
+        background: {t.surface_2}; color: {t.text_muted}; border: 1px solid {t.border};
+        border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600;
+    }}
+    QLabel[role="nestingPill"] {{
+        background: {t.indigo_soft}; color: {t.indigo}; border-radius: 10px;
+        padding: 2px 8px; font-size: 11px; font-weight: 600;
+    }}
+    QLabel[role="inUseWarning"] {{ color: {t.warning_ink}; font-size: 11px; font-weight: 600; }}
+    QFrame[role="subRow"] {{ background: {t.surface_2}; border-radius: 8px; }}
+
     QToolButton[role="rowAction"] {{
         background: transparent; border: none; border-radius: 6px; color: {t.text_faint};
     }}
@@ -455,7 +469,7 @@ def build_stylesheet(t: Theme) -> str:
     QFrame[role="fieldSpinWrap"] {{
         background: {t.surface}; border: 1px solid {t.border}; border-radius: 7px;
     }}
-    QDoubleSpinBox[role="fieldSpin"] {{
+    QDoubleSpinBox[role="fieldSpin"], QSpinBox[role="fieldSpin"] {{
         background: transparent; border: none;
         padding: 6px 0 6px 9px; font-size: 13px; color: {t.text};
     }}

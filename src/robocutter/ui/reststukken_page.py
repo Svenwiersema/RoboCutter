@@ -861,6 +861,7 @@ class ReststukkenPage(QWidget):
             self._status_row.hide()
 
         self._drawer.show()
+        self._in_materiaal.setFocus()
 
     def _sluit_drawer(self) -> None:
         self._drawer.hide()

@@ -1,26 +1,32 @@
 """Hoofdvenster: de RoboCutter home pagina (projectenoverzicht), de
-materialenbibliotheek en de reststukkenbibliotheek, met een echte
-VS Code-stijl tabbalk.
+materialenbibliotheek, de reststukkenbibliotheek en de
+modellenbibliotheek, met een echte VS Code-stijl tabbalk.
 
 Implementeert de architectuur uit ``design/chapters/11-ux-ui.md``: een
 donkere "chrome"-header met de hoofdonderdelen (Projecten/
-Materialenbibliotheek/Reststukkenbibliotheek/Modellen) en een tabbalk
-waarin meerdere tabbladen tegelijk open kunnen staan (``self._open_tabs``,
-in volgorde van openen) — klikken op een hoofdonderdeel opent het als tab
-(of activeert 'm als al open), en elk tabblad is te sluiten met een
-kruisje behalve het vaste "Projecten"-tabblad. Modellen en losse project-/
-modeltabbladen bestaan nog niet als scherm (geen ontwerp/mockup voor) en
-zijn dus nog niet op te nemen in de tabbalk. De Projecten-pagina gebruikt
-nog vaste voorbeelddata (zie ``sample_data.py``); Materialenbibliotheek en
-Reststukkenbibliotheek hebben echte, SQLite-opgeslagen data en kunnen (net
+Materialenbibliotheek/Reststukkenbibliotheek/Modellenbibliotheek) en
+een tabbalk waarin meerdere tabbladen tegelijk open kunnen staan
+(``self._open_tabs``, in volgorde van openen) — klikken op een
+hoofdonderdeel opent het als tab (of activeert 'm als al open), en elk
+tabblad is te sluiten met een kruisje behalve het vaste
+"Projecten"-tabblad. Losse project-/modeltabbladen bestaan nog niet als
+scherm en zijn dus nog niet op te nemen in de tabbalk. De
+Projecten-pagina gebruikt nog vaste voorbeelddata (zie
+``sample_data.py``); Materialenbibliotheek, Reststukkenbibliotheek en
+Modellenbibliotheek hebben echte, SQLite-opgeslagen data en kunnen (net
 als in VS Code) maar in één instantie tegelijk open staan.
 Reststukkenbibliotheek (``reststukken_page.py``) is op Svens verzoek
 rechtstreeks gebouwd zonder eigen HTML-mockup, als variant van
-``materialen_page.py`` ("praktisch hetzelfde als de materialenbibliotheek").
+``materialen_page.py``. Modellenbibliotheek (``modellen_page.py``) kreeg
+wél een eigen HTML-mockup (goedgekeurd, incl. twee correcties tijdens
+het uitwerken: eigen chevron-stapknoppen i.p.v. onbetrouwbare native
+pijltjes, en de headerlabel "Modellenbibliotheek" i.p.v. "Modellen"
+voor consistentie met de andere hoofdonderdelen).
 
-De ``MaterialenPage``-/``ReststukkenPage``-instanties blijven bij een
-thema-wissel of tabwissel in leven (herbouw kost anders zoektekst/
-filters/open paneel) — zie ``_rebuild_content`` en ``_toggle_theme``.
+De ``MaterialenPage``-/``ReststukkenPage``-/``ModellenPage``-instanties
+blijven bij een thema-wissel of tabwissel in leven (herbouw kost anders
+zoektekst/filters/open paneel) — zie ``_rebuild_content`` en
+``_toggle_theme``.
 """
 
 from __future__ import annotations
@@ -47,6 +53,7 @@ from PySide6.QtWidgets import (
 
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.materialen_page import MaterialenPage
+from robocutter.ui.modellen_page import ModellenPage
 from robocutter.ui.reststukken_page import ReststukkenPage
 from robocutter.ui.sample_data import VOORBEELD_PROJECTEN, ProjectStatus
 from robocutter.ui.theme import DONKER, LICHT, Theme, build_stylesheet
@@ -66,15 +73,17 @@ _NAV_ITEMS = [
     ("Projecten", "folder"),
     ("Materialenbibliotheek", "layers"),
     ("Reststukkenbibliotheek", "recycle"),
-    ("Modellen", "cube"),
+    ("Modellenbibliotheek", "cube"),
 ]
-# None = hoofdonderdeel nog niet gebouwd (Modellen); de bijbehorende
-# navigatieknop is dan uitgeschakeld, zie ``_build_header``.
-_NAV_PAGE_KEYS = ["projecten", "materialen", "reststukken", None]
+# Alle vier hoofdonderdelen hebben nu een echt scherm; geen None-plekken
+# meer nodig in _NAV_PAGE_KEYS (die markering was voor Modellen, dat nu
+# ook gebouwd is).
+_NAV_PAGE_KEYS = ["projecten", "materialen", "reststukken", "modellen"]
 _PAGE_TAB = {
     "projecten": ("Projecten", "folder"),
     "materialen": ("Materialenbibliotheek", "layers"),
     "reststukken": ("Reststukkenbibliotheek", "recycle"),
+    "modellen": ("Modellenbibliotheek", "cube"),
 }
 
 
@@ -115,6 +124,7 @@ class MainWindow(QMainWindow):
         self._active_tab: str = "projecten"
         self._materialen_page = MaterialenPage(self._theme)
         self._reststukken_page = ReststukkenPage(self._materialen_page.bibliotheek, self._theme)
+        self._modellen_page = ModellenPage(self._materialen_page.bibliotheek, self._theme)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -137,6 +147,8 @@ class MainWindow(QMainWindow):
             workspace.addWidget(self._materialen_page, 1)
         elif self._active_tab == "reststukken":
             workspace.addWidget(self._reststukken_page, 1)
+        elif self._active_tab == "modellen":
+            workspace.addWidget(self._modellen_page, 1)
         else:
             workspace.addWidget(self._build_sidebar())
             workspace.addWidget(self._build_main(), 1)
@@ -190,7 +202,8 @@ class MainWindow(QMainWindow):
                 button.setChecked(page_key == self._active_tab)
                 button.clicked.connect(lambda checked=False, key=page_key: self._open_tab(key))
             else:
-                # Modellen: nog niet gebouwd.
+                # Voor een toekomstig hoofdonderdeel zonder scherm: knop
+                # zichtbaar maar uitgeschakeld i.p.v. hem weg te laten.
                 button.setEnabled(False)
                 button.setToolTip("Nog niet gebouwd")
             group.addButton(button)
@@ -577,6 +590,7 @@ class MainWindow(QMainWindow):
         # zoektekst kwijtraken).
         self._materialen_page.set_theme(self._theme)
         self._reststukken_page.set_theme(self._theme)
+        self._modellen_page.set_theme(self._theme)
         self._rebuild_content()
         self._apply_theme()
 
@@ -584,6 +598,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(build_stylesheet(self._theme))
 
     def closeEvent(self, event) -> None:
+        self._modellen_page.sluit_verbinding()
         self._reststukken_page.sluit_verbinding()
         self._materialen_page.sluit_verbinding()
         super().closeEvent(event)
@@ -598,6 +613,7 @@ class MainWindow(QMainWindow):
         central = self.centralWidget()
         self._materialen_page.setParent(None)
         self._reststukken_page.setParent(None)
+        self._modellen_page.setParent(None)
         central.deleteLater()
         self._nav_buttons = []
         new_central = QWidget()

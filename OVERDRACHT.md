@@ -113,10 +113,10 @@ bronwaarheid voor alle productbeslissingen.
   praktijk naar een paar pixels. De tabs gebruiken daarom een gewone
   klikbare `QWidget`-subklasse (`_KlikbareTab`, met een eigen
   `mousePressEvent`) i.p.v. `QPushButton`.
-  Nog te doen voor de UI in het algemeen: de overige hoofdonderdelen
-  (Reststukkenbibliotheek, Modellen — hun navigatieknoppen staan er al,
-  bewust uitgeschakeld met tooltip "Nog niet gebouwd"), en het bundelen
-  van Inter.
+  Nog te doen voor de UI in het algemeen: Modellen (navigatieknop staat
+  er al, bewust uitgeschakeld met tooltip "Nog niet gebouwd" —
+  Reststukkenbibliotheek is inmiddels wél gebouwd, zie hieronder), en
+  het bundelen van Inter.
 - **Drie bugs gemeld en gefixt na de tabbalk (Sven testte de app zelf):**
   1. Het toevoegen/bewerken-paneel toonde in het lichte thema toch een
      donkere achtergrond. Oorzaak: de `QScrollArea`/viewport binnen de
@@ -142,29 +142,144 @@ bronwaarheid voor alle productbeslissingen.
   eerder deze sessie onbetrouwbaar door een schermafdruk-timingprobleem
   in het scriptmatig testen (zie git-geschiedenis), dus nu bewust
   geverifieerd via de widget-eigenschappen/pixels zelf.
-- **Reststukkenbibliotheek — functie gebouwd (nog geen mockup/echte
-  UI):** zelfde aanpak als de materialenbibliotheek: eerst de
-  functie/logica, met een ruwe test-ui om te proberen, pas later (op
-  Svens verzoek, net als bij Materialenbibliotheek) een HTML-mockup en
-  een echt PySide6-scherm. `src/robocutter/reststukken/` bevat het
-  datamodel (`models.py`: `Reststuk` met resterende lengte/breedte,
-  herkomst-project/-model, en status beschikbaar/gebruikt),
-  bibliotheeklogica (`bibliotheek.py`: live validatie en de
-  beschikbaar/gebruikt-workflow — hoofdstuk 3 noemt geen archiveerstap
-  voor reststukken, dus verwijderen kan direct, anders dan bij
-  materialen) en SQLite-opslag (`opslag.py`, eigen `reststukken`-tabel
-  in hetzelfde `data/robocutter.db`-bestand). Een `Reststuk` slaat
-  bewust *niet* zijn eigen kerf/nerfrichting/type/familie/kleur op —
-  die "neemt het over" van het gekoppelde materiaal (hoofdstuk 3) via
-  `materiaal_id`, opgezocht in de `MaterialenBibliotheek`
-  (`ReststukkenBibliotheek.materiaal_van`) — zo kan het nooit uit de
-  pas lopen als het materiaal zelf wijzigt. Zoeken/filteren op type
-  werkt daarom ook via die koppeling. Gedekt door
-  `tests/test_reststukken.py` (12 tests, allemaal groen).
-  Ruwe test-ui: `scripts/test_reststukken_ui.py`, deelt het
-  materialen-testbestand (`data/materialen_test.db`) met
+- **Reststukkenbibliotheek — derde scherm gebouwd, dit keer zonder
+  HTML-mockup:** eerst weer de functie/logica zelf (zelfde aanpak als
+  bij de materialenbibliotheek), en daarna, op Svens expliciete
+  verzoek, meteen het echte PySide6-scherm gebouwd — géén HTML-mockup
+  deze keer, omdat dit tabblad "praktisch hetzelfde is als de
+  materialen bibliotheek" (Svens woorden). `src/robocutter/reststukken/`
+  bevat het datamodel (`models.py`: `Reststuk` met resterende
+  lengte/breedte, herkomst-project/-model, en status
+  beschikbaar/gebruikt), bibliotheeklogica (`bibliotheek.py`: live
+  validatie en de beschikbaar/gebruikt-workflow — hoofdstuk 3 noemt
+  geen archiveerstap voor reststukken, dus verwijderen kan direct,
+  anders dan bij materialen) en SQLite-opslag (`opslag.py`, eigen
+  `reststukken`-tabel in hetzelfde `data/robocutter.db`-bestand). Een
+  `Reststuk` slaat bewust *niet* zijn eigen kerf/nerfrichting/type/
+  familie/kleur op — die "neemt het over" van het gekoppelde materiaal
+  (hoofdstuk 3) via `materiaal_id`, opgezocht in de
+  `MaterialenBibliotheek` (`ReststukkenBibliotheek.materiaal_van`) — zo
+  kan het nooit uit de pas lopen als het materiaal zelf wijzigt.
+  Zoeken/filteren op type werkt daarom ook via die koppeling. Gedekt
+  door `tests/test_reststukken.py` (12 tests, allemaal groen).
+  Het echte scherm, `src/robocutter/ui/reststukken_page.py`, is qua
+  opzet een zusje van `materialen_page.py`: contextuele zijbalk
+  (Beschikbaar/Gebruikt i.p.v. Overzicht/Archief, type- en
+  familiefilters), dezelfde doorzoekbare/sorteerbare tabel-look, en een
+  uitklapbaar zijpaneel (geen pop-up) met live validatie. Het scherm
+  hergebruikt bewust de bestaande `MaterialenBibliotheek`-instantie van
+  `MaterialenPage` (`self._reststukken_page = ReststukkenPage(self._materialen_page.bibliotheek, ...)`
+  in `main_window.py`) i.p.v. een eigen tweede verbinding te openen —
+  zo blijft materiaaldata (incl. archiefstatus) in beide schermen
+  altijd consistent. Tijdens het bouwen bleek een `QComboBox` in de
+  drawer (materiaalkeuze) volledig onzichtbaar te worden: zonder eigen
+  `role="field"`-stylesheet leunde hij op de achtergrond van een
+  voorouder-widget die elders bewust `transparent` was gemaakt (zie de
+  drawer-scroll-fix hierboven) — fix: `QComboBox[role="field"]` kreeg in
+  `theme.py` dezelfde expliciete achtergrond/rand/dropdown-styling als
+  de tekstvelden. Ruwe test-ui: `scripts/test_reststukken_ui.py`, deelt
+  het materialen-testbestand (`data/materialen_test.db`) met
   `test_materialen_ui.py` en heeft een eigen
-  `data/reststukken_test.db` (beide lokaal, `.gitignore`d).
+  `data/reststukken_test.db` (beide lokaal, `.gitignore`d) — apart van
+  het echte scherm, dat net als Materialenbibliotheek naar
+  `data/robocutter.db` schrijft.
+- **Modellenbibliotheek — functie én scherm gebouwd (module 2):** zelfde
+  aanpak als eerder bij Materialen/Reststukken: eerst de functie/logica,
+  daarna een goedgekeurde HTML-conceptmockup, en tot slot het echte
+  PySide6-scherm (`src/robocutter/ui/modellen_page.py`). Bij het
+  goedkeuren van de mockup liet Sven twee dingen rechtzetten tijdens het
+  uitwerken naar PySide6:
+  1. De pijltjes van getalvelden (aantal, groepsvolgorde) gebruiken de
+     eigen chevron-stapknoppen uit `materialen_page.py`/
+     `reststukken_page.py` i.p.v. onbetrouwbare native pijltjes ("de
+     pijlen hebben weer geen style" — zelfde Qt-eigenaardigheid als
+     eerder bij `QDoubleSpinBox`, nu ook opgelost voor het nieuwe
+     `QSpinBox`-gebruik via `QSpinBox[role="fieldSpin"]` in `theme.py`).
+  2. De headernavigatie in `main_window.py` noemde dit onderdeel
+     "Modellen" i.p.v. "Modellenbibliotheek", een inconsistentie met
+     Materialenbibliotheek/Reststukkenbibliotheek — rechtgezet in
+     `_NAV_ITEMS`/`_PAGE_TAB`.
+  Het scherm is qua opzet een zusje van `materialen_page.py`: een
+  zijbalk met Mappen- en Tags-filters (geen Overzicht/Archief — module 2
+  kent geen archiveerstap voor modellen), een doorzoekbare/sorteerbare
+  tabel (kolommen Model/Map/Onderdelen/Submodellen/Tags), en een
+  uitklapbaar paneel om een model toe te voegen of te bewerken. Dat
+  paneel is breder dan bij Materialen/Reststukken (480px i.p.v. 420px)
+  omdat het, naast de basisgegevens, ook de onderdelen- en
+  submodellen-lijst van het model beheert: onderdelen krijgen een eigen
+  rij (materiaal, afmetingen, nerf, kantenband, groep-badge) met een
+  inline toevoeg-/bewerkformulier eronder (hergebruikt bewust
+  `_segmented`/`_rand_chip_rij` uit `materialen_page.py` voor
+  nerfrichting/kantenband i.p.v. een nieuw widget te bouwen), en
+  submodellen krijgen een eigen rijenlijst met een keuzelijst waarin
+  modellen die een cirkelverwijzing zouden veroorzaken uitgeschakeld
+  staan (`ModellenPage._zou_cirkel_veroorzaken`, dezelfde graafdoorloop
+  als de backend). Verwijderen van een model dat nog als submodel in
+  gebruik is, toont — i.p.v. de gebruikelijke "Verwijderen?"-bevestiging
+  — een inline melding welk ander model het nog gebruikt.
+  `src/robocutter/modellen/`
+  bevat het datamodel (`models.py`: `Model` met naam/omschrijving, een
+  vrije map-string ("Map" = een vrije, zelfgekozen mapnaam/pad om
+  modellen in te organiseren en op te filteren in de bibliotheek, bv.
+  "Keukens/Onderkasten" — puur voor overzicht, geen invloed op het
+  zagen zelf) en tags voor zoeken/filteren, een lijst `ModelOnderdeel`
+  en een lijst `SubModelVerwijzing`), bibliotheeklogica
+  (`bibliotheek.py`) en SQLite-opslag (`opslag.py`, eigen
+  `modellen`-tabel in hetzelfde `data/robocutter.db`-bestand,
+  onderdelen/submodellen als JSON in de rij, zelfde aanpak als `tags`
+  bij Materialen). Elk `ModelOnderdeel` heeft, net als de
+  optimalisatie-motor (hoofdstuk 5), een `nerfrichting_vereist`
+  (lange_zijde/korte_zijde/geen — hoe dat ene onderdeel zelf t.o.v. de
+  nerf van de plaat georiënteerd moet staan, geen uitspraak over de
+  positie t.o.v. ándere onderdelen) en `kantenband_randen`
+  (boven/onder/links/rechts). Vier ontwerpvragen die open stonden na
+  hoofdstuk 2 zijn met Sven kortgesloten vóór/tijdens het bouwen:
+  1. **Scope**: alleen de Modellenbibliotheek zelf nu; Projecten
+     (module 1/4, met het snapshot-mechanisme project↔model) is een
+     aparte, latere stap.
+  2. **Materiaal per onderdeel, niet per model**: elk `ModelOnderdeel`
+     kiest zijn eigen `materiaal_id` (zelfde referentiepatroon als
+     `Reststuk` → `Materiaal`), zodat een model gemengde materialen mag
+     bevatten (bv. kastromp in spaanplaat, deurtjes in mdf).
+  3. **Nesting meteen meegenomen**: een model mag andere modellen
+     bevatten via `submodellen` (`SubModelVerwijzing`, met een aantal)
+     — dit is in hoofdstuk 2 wezenlijk voor het begrip ("dit is ook
+     waar een kast onder valt"). `ModellenBibliotheek.valideer()`
+     controleert daarom, naast de gebruikelijke veld- en
+     materiaal-checks, ook op **cirkelverwijzingen**: een model mag
+     zichzelf niet direct of via een keten van submodellen bevatten
+     (`_bevat_cirkelverwijzing`, een graafdoorloop over de al
+     opgeslagen submodel-ketens). `verwijderen()` blokkeert bovendien
+     (met `ModelInGebruikError`) zolang een ander model dit model nog
+     als submodel bevat.
+  4. **Groep-koppeling nu al op het model** (n.a.v. Svens vraag of
+     onderdelen "perse in de nerfrichting onder elkaar of naast elkaar
+     moeten"): hoofdstuk 5 kent het concept "groep" — een vaste set
+     onderdelen (zelfde `groep_id`) die niet los van elkaar roteren en
+     als één blok verticaal gestapeld blijven, in de volgorde van
+     `groep_volgorde`. Dat zat al in de optimalisatie-motor zelf
+     (`optimalisatie.models.Onderdeel.groep_id`/`groep_volgorde`), en
+     zit nu ook op `ModelOnderdeel` (zelfde velden/semantiek) — de
+     modellenbibliotheek wordt net als Materialen/Reststukken gewoon in
+     zijn geheel opgeslagen, dus dit hoeft niet apart op projectniveau
+     geregeld te worden.
+  Bewust uitgesteld (net als eerder de CSV-import bij Materialen): een
+  archiveer-/verwijderworkflow zoals bij Materialen (hoofdstuk 2 noemt
+  dit niet expliciet voor modellen, v1 verwijdert direct met alleen de
+  in-gebruik-check hierboven), en de revisiegeschiedenis (Rev A, Rev
+  B, ...) die hoofdstuk 2 wel noemt maar die een eigen substantieel
+  stuk werk is. Gedekt door `tests/test_modellen.py` (16 tests,
+  allemaal groen: validatie, directe én indirecte
+  cirkelverwijzing-detectie, het verwijder-blokkade-gedrag, zoeken,
+  groep-velden, en een SQLite-persistentie-roundtrip). Ruwe test-ui
+  (`scripts/test_modellen_ui.py`, deelt het materialen-testbestand
+  `data/materialen_test.db` met de andere test-ui's en heeft een eigen
+  `data/modellen_test.db`) bestaat nog als losse testtool, maar het
+  echte scherm (`modellen_page.py`) is nu de manier waarop Modellen in
+  de app zelf gebruikt wordt — geverifieerd met een los smoke-testscript
+  dat het paneel end-to-end aanstuurt (model + onderdeel + submodel
+  aanmaken/opslaan/teruglezen, cirkelverwijzing- en
+  in-gebruik-detectie, thema-wissel), naast de bestaande pytest-suite.
 
 ## Aannames in de code die Sven nog moet bevestigen
 
@@ -195,19 +310,18 @@ in plaats van aan te nemen:
 - Meerdere platen tegelijk optimaliseren (nu: één plaat per aanroep;
   er is nog geen logica die onderdelen over meerdere platen van
   hetzelfde materiaal verdeelt).
-- Projecten/modellen-beheer (Modules 1, 2, 4) als echte, werkende
-  functionaliteit — er is alleen een UI-schil met voorbeelddata (zie
-  hierboven), geen database/opslag. Materialenbibliotheek en
-  Reststukkenbibliotheek (beide Module 3) hebben inmiddels wél echte
-  functie-logica mét SQLite-opslag; Materialenbibliotheek heeft ook al
-  een echt PySide6-scherm (zie hierboven), Reststukkenbibliotheek nog
-  niet (alleen de ruwe test-ui).
+- Projectenbeheer (Modules 1 en 4) als echte, werkende functionaliteit
+  — er is alleen een UI-schil met voorbeelddata (zie hierboven), geen
+  database/opslag. Materialenbibliotheek, Reststukkenbibliotheek (Module
+  3) en Modellenbibliotheek (Module 2) hebben inmiddels alle drie wél
+  echte functie-logica mét SQLite-opslag én een echt PySide6-scherm.
 - Labels (hoofdstuk 6), DXF/Vectorworks-import (hoofdstuk 10),
   ERP-koppeling (hoofdstuk 9), licentie/commerciële laag
   (hoofdstuk 7-8).
 - De rest van de UI (PySide6, hoofdstuk 11): de home pagina
-  (Projecten-overzicht) en de Materialenbibliotheek staan er, zie
-  hierboven voor wat daar nog ontbreekt.
+  (Projecten-overzicht), de Materialenbibliotheek, de
+  Reststukkenbibliotheek en de Modellenbibliotheek staan er; het losse
+  projecttabblad en een echt Projecten/Modellen-beheer nog niet.
 
 ## Technische kaders om aan te houden (hoofdstuk 8)
 
@@ -227,15 +341,14 @@ in plaats van aan te nemen:
 ## Suggestie voor een logische volgende stap
 
 Sven heeft gekozen om eerst met de UI door te gaan (zie de
-werkwijze hierboven). Logische vervolgstappen, in overleg met Sven te
-bepalen: de Reststukkenbibliotheek als HTML-mockup uitwerken (de
-functie/logica staat er al, zie hierboven — zelfde volgorde als bij
-Materialenbibliotheek), Modellen als HTML-mockup uitwerken, of het
-losse projecttabblad (zie `assets/mockups/projectoverzicht-
-concept.png`) — steeds zelfde werkwijze: eerst mockup, dan pas
-PySide6. Los daarvan staat de optimalisatie-motor (mes/groef, meerdere
-platen) nog open, maar is niet gekozen als
-volgende stap.
+werkwijze hierboven). Alle vier hoofdonderdelen (Projecten, Materialen-,
+Reststukken- en Modellenbibliotheek) hebben nu een scherm. Logische
+vervolgstappen, in overleg met Sven te bepalen: Projecten/modellen-
+beheer als echte functionaliteit (Modules 1/4 — inclusief het
+snapshot-mechanisme project↔model en het losse projecttabblad, zie
+`assets/mockups/projectoverzicht-concept.png`), of de
+optimalisatie-motor verder afmaken (mes/groef, meerdere platen). Beide
+nog niet gekozen als volgende stap.
 
 ## Werkwijze die Sven prettig vindt
 
