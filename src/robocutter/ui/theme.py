@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import Qt
+
 
 @dataclass(frozen=True)
 class Theme:
@@ -108,6 +111,23 @@ DONKER = Theme(
 )
 
 
+def systeem_is_donker() -> bool:
+    """Vraagt Windows' systeembrede licht/donker-voorkeur op via Qt's
+    ``styleHints`` (Qt 6.5+). Onbekend/geen voorkeur telt als licht."""
+    return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+
+
+def resolve_thema(waarde: str) -> Theme:
+    """Zet een opgeslagen ``Instellingen.thema``-waarde ("licht"/"donker"/
+    "systeem") om in het daadwerkelijk te gebruiken ``Theme``-object. Bij
+    "systeem" wordt de OS-voorkeur op het moment van aanroepen gebruikt —
+    er is geen live-volgen van een OS-thema-wissel terwijl de app open
+    staat, dat is voor een latere iteratie."""
+    if waarde == "systeem":
+        return DONKER if systeem_is_donker() else LICHT
+    return DONKER if waarde == "donker" else LICHT
+
+
 def build_stylesheet(t: Theme) -> str:
     """Bouwt de volledige Qt-stylesheet voor het gegeven thema."""
     return f"""
@@ -183,6 +203,10 @@ def build_stylesheet(t: Theme) -> str:
     QLabel[role="tabLabel"][active="true"] {{ color: {t.text}; font-weight: 600; font-size: 13px; }}
     QLabel[role="tabLabel"][active="false"] {{ color: {t.chrome_text_muted}; font-weight: 500; font-size: 13px; }}
     QLabel#TabDot {{ background: {t.accent}; border-radius: 3px; }}
+    /* Sleep-invoegindicator: gekleurde rand aan de kant van een tabblad
+       waar de gesleepte tab zou landen (zie MainWindow._herschik_tab). */
+    QWidget#TabItem[dropZijde="links"] {{ border-left: 2px solid {t.accent}; }}
+    QWidget#TabItem[dropZijde="rechts"] {{ border-right: 2px solid {t.accent}; }}
     QToolButton[role="tabClose"] {{
         background: transparent;
         border: none;
@@ -303,8 +327,6 @@ def build_stylesheet(t: Theme) -> str:
     }}
     QLabel#CardTitle {{ font-size: 15px; font-weight: 700; }}
     QLabel[role="cardMeta"] {{ color: {t.text_muted}; font-size: 12px; }}
-    QToolButton#KebabBtn {{ background: transparent; border: none; border-radius: 6px; color: {t.text_faint}; }}
-    QToolButton#KebabBtn:hover {{ background: {t.surface_hover}; color: {t.text}; }}
 
     QFrame[chip="prep"] {{ background: {t.surface_2}; border-radius: 10px; }}
     QFrame[chip="prep"] QLabel {{ color: {t.text_muted}; font-size: 11px; font-weight: 700; }}
@@ -314,27 +336,6 @@ def build_stylesheet(t: Theme) -> str:
     QFrame[chip="install"] QLabel {{ color: {t.indigo}; font-size: 11px; font-weight: 700; }}
     QFrame[chip="done"] {{ background: {t.success_soft}; border-radius: 10px; }}
     QFrame[chip="done"] QLabel {{ color: {t.success_ink}; font-size: 11px; font-weight: 700; }}
-
-    QLabel[role="progressLabel"] {{ color: {t.text_muted}; font-size: 11.5px; font-weight: 500; }}
-    QLabel[role="progressFrac"] {{ color: {t.text}; font-size: 11.5px; font-weight: 700; }}
-    QProgressBar#CardProgress {{
-        background: {t.surface_2};
-        border: none;
-        border-radius: 3px;
-        max-height: 6px;
-        min-height: 6px;
-    }}
-    QProgressBar#CardProgress::chunk {{ background: {t.accent}; border-radius: 3px; }}
-    QProgressBar#CardProgress[complete="true"]::chunk {{ background: {t.success}; }}
-
-    QFrame#CardWarning {{ background: {t.warning_soft}; border-radius: 8px; }}
-    QFrame#CardWarning QLabel {{ color: {t.warning_ink}; font-size: 11.5px; }}
-
-    /* ---------- Warning panel ---------- */
-    QFrame#WarningPanel {{ background: {t.warning_soft}; border: 1px solid {t.warning}; border-radius: 12px; }}
-    QFrame#WarningIconWrap {{ background: {t.warning}; border-radius: 8px; }}
-    QLabel#WarningTitle {{ color: {t.warning_ink}; font-size: 13px; font-weight: 700; }}
-    QLabel[role="warningBody"] {{ color: {t.text_muted}; font-size: 12px; }}
 
     /* ---------- Status bar ---------- */
     QStatusBar {{
@@ -489,4 +490,40 @@ def build_stylesheet(t: Theme) -> str:
         background: {t.critical_soft}; border: 1px solid {t.critical}; border-radius: 9px;
     }}
     QLabel[role="validationText"] {{ color: {t.critical}; font-size: 12.5px; }}
+
+    /* ---------- Projectdetail-tabblad ---------- */
+    QPushButton[role="breadcrumbLink"] {{
+        background: transparent; border: none; color: {t.text_faint};
+        font-size: 12px; font-weight: 700; text-align: left; padding: 0;
+    }}
+    QPushButton[role="breadcrumbLink"]:hover {{ color: {t.accent_text}; }}
+    QLabel[role="metaText"] {{ color: {t.text_muted}; font-size: 13px; }}
+    QLabel[role="sidebarSoon"] {{
+        background: {t.surface_2}; color: {t.text_faint}; border-radius: 8px;
+        padding: 1px 5px; font-size: 9px; font-weight: 700;
+    }}
+    QFrame[role="rowIconBox"] {{ background: {t.surface_2}; border-radius: 8px; color: {t.text_muted}; }}
+    QFrame[role="rowItem"] {{ background: transparent; border-bottom: 1px solid {t.border}; }}
+    QFrame[role="splitAdd"] {{
+        background: {t.surface_2}; border-left: 1px solid {t.border};
+        border-top-right-radius: 12px; border-bottom-right-radius: 12px;
+    }}
+    QLabel[role="cardCount"] {{ color: {t.text_faint}; font-size: 12px; font-weight: 600; }}
+    QListView#ModelPickerPopup {{
+        background: {t.surface}; border: 1px solid {t.border}; border-radius: 8px;
+        color: {t.text}; font-size: 13px; padding: 4px;
+        selection-background-color: {t.accent_soft}; selection-color: {t.accent_text};
+    }}
+    QFrame[role="sortLevel"] {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: 8px; }}
+    QLabel[role="sortLevelNum"] {{
+        background: {t.accent_soft}; color: {t.accent_text}; border-radius: 8px;
+        font-size: 9.5px; font-weight: 800;
+    }}
+    QPushButton[role="addSortLevel"] {{
+        background: transparent; border: 1px dashed {t.border}; border-radius: 8px;
+        padding: 6px 10px; font-size: 12px; font-weight: 600; color: {t.text_faint};
+    }}
+    QPushButton[role="addSortLevel"]:hover {{ color: {t.accent_text}; border-color: {t.accent_soft_border}; }}
+    QLabel[role="placeholderTitle"] {{ font-size: 16px; font-weight: 800; }}
+    QLabel[role="placeholderText"] {{ color: {t.text_muted}; font-size: 13px; }}
     """

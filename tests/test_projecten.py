@@ -165,6 +165,67 @@ def test_model_bijwerken_naar_laatste_versie():
     assert len(project.modelinstanties[0].onderdelen) == 2
 
 
+def test_los_onderdeel_toevoegen_wijst_id_toe():
+    materialen, _, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(_project())
+
+    project = projecten.los_onderdeel_toevoegen(project.id, _onderdeel(materiaal.id))
+    assert len(project.losse_onderdelen) == 1
+    assert project.losse_onderdelen[0].id
+    assert projecten.ophalen(project.id).losse_onderdelen[0].naam == "Zijkant"
+
+
+def test_los_onderdeel_toevoegen_met_ongeldig_onderdeel_faalt_zonder_te_muteren():
+    materialen, _, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(_project())
+
+    with pytest.raises(ValueError):
+        projecten.los_onderdeel_toevoegen(project.id, _onderdeel(materiaal.id, breedte=0))
+    assert projecten.ophalen(project.id).losse_onderdelen == []
+
+
+def test_los_onderdeel_bijwerken():
+    materialen, _, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(_project())
+    project = projecten.los_onderdeel_toevoegen(project.id, _onderdeel(materiaal.id))
+    onderdeel_id = project.losse_onderdelen[0].id
+
+    bijgewerkt = _onderdeel(materiaal.id, id=onderdeel_id, naam="Deur", breedte=400)
+    project = projecten.los_onderdeel_bijwerken(project.id, bijgewerkt)
+    assert project.losse_onderdelen[0].naam == "Deur"
+    assert project.losse_onderdelen[0].breedte == 400
+
+
+def test_los_onderdeel_bijwerken_met_onbekend_id_faalt():
+    materialen, _, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(_project())
+
+    with pytest.raises(KeyError):
+        projecten.los_onderdeel_bijwerken(project.id, _onderdeel(materiaal.id, id="onbekend"))
+
+
+def test_los_onderdeel_verwijderen():
+    materialen, _, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(_project())
+    project = projecten.los_onderdeel_toevoegen(project.id, _onderdeel(materiaal.id))
+    onderdeel_id = project.losse_onderdelen[0].id
+
+    project = projecten.los_onderdeel_verwijderen(project.id, onderdeel_id)
+    assert project.losse_onderdelen == []
+
+
+def test_los_onderdeel_verwijderen_onbekend_id_is_no_op():
+    materialen, _, projecten = _bibliotheken()
+    project = projecten.toevoegen(_project())
+    project = projecten.los_onderdeel_verwijderen(project.id, "onbekend")
+    assert project.losse_onderdelen == []
+
+
 def test_archiveren_alleen_vanuit_afgerond():
     materialen, _, projecten = _bibliotheken()
     project = projecten.toevoegen(_project())

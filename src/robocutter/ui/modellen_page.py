@@ -32,6 +32,7 @@ import uuid
 from dataclasses import replace
 
 from PySide6.QtCore import QEvent, QSize, Qt, QStringListModel, QTimer
+from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
@@ -82,6 +83,19 @@ def _clear_layout(layout) -> None:
             widget.deleteLater()
         elif item.layout() is not None:
             _clear_layout(item.layout())
+
+
+class _ZoekVeld(QLineEdit):
+    """Een QLineEdit die zijn QCompleter-popup ook al bij focus toont (niet
+    pas na de eerste toetsaanslag) — zodat de volledige modellenlijst
+    meteen zichtbaar is. Zelfde patroon als in project_detail_page.py's
+    model-picker."""
+
+    def focusInEvent(self, event) -> None:
+        super().focusInEvent(event)
+        if self.completer() is not None:
+            self.completer().setCompletionPrefix(self.text())
+            self.completer().complete()
 
 
 class ModellenPage(QWidget):
@@ -903,9 +917,21 @@ class ModellenPage(QWidget):
 
         add_rij = QHBoxLayout()
         add_rij.setSpacing(8)
-        self._sm_select = QComboBox()
-        self._sm_select.setProperty("role", "field")
-        add_rij.addWidget(self._sm_select, 1)
+        # Doorzoekbare zoekpopup i.p.v. een kale dropdown (op Svens verzoek,
+        # zelfde patroon als de model-picker in project_detail_page.py) —
+        # bij veel modellen in de bibliotheek is scrollen door een lange
+        # QComboBox onbruikbaar. Modellen die een cirkelverwijzing zouden
+        # veroorzaken blijven zichtbaar (met suffix) maar uitgeschakeld,
+        # zelfde als voorheen bij de QComboBox-items.
+        self._sm_search = _ZoekVeld()
+        self._sm_search.setProperty("role", "field")
+        self._sm_search.setPlaceholderText("Zoek een model…")
+        self._sm_completer = QCompleter([])
+        self._sm_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._sm_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._sm_completer.popup().setObjectName("ModelPickerPopup")
+        self._sm_search.setCompleter(self._sm_completer)
+        add_rij.addWidget(self._sm_search, 1)
         sm_aantal_wrap, self._sm_aantal = self._field_spin_int(minimum=1, maximum=1000)
         sm_aantal_wrap.setMaximumWidth(90)
         add_rij.addWidget(sm_aantal_wrap)
@@ -915,6 +941,12 @@ class ModellenPage(QWidget):
         btn_sm_add.clicked.connect(self._submodel_toevoegen)
         add_rij.addWidget(btn_sm_add)
         section.addLayout(add_rij)
+
+        self._sm_fout_label = QLabel("")
+        self._sm_fout_label.setProperty("role", "validationText")
+        self._sm_fout_label.setWordWrap(True)
+        self._sm_fout_label.hide()
+        section.addWidget(self._sm_fout_label)
 
         hint = QLabel(
             "Modellen die dit model al (indirect) bevatten staan uitgeschakeld in de lijst — "
@@ -1105,18 +1137,26 @@ class ModellenPage(QWidget):
             stack.extend(s.model_id for s in model.submodellen)
         return False
 
-    def _ververs_submodel_combo(self) -> None:
-        self._sm_select.clear()
-        for model in self.bibliotheek.lijst():
+    def _ververs_submodel_picker(self) -> None:
+        # QStandardItemModel i.p.v. QStringListModel: alleen dat model-type
+        # ondersteunt losse item-flags, nodig om modellen die een
+        # cirkelverwijzing zouden veroorzaken zichtbaar maar uitgeschakeld te
+        # tonen in de QCompleter-popup (zelfde regel als voorheen bij de
+        # QComboBox-items).
+        self._sm_naam_naar_id = {}
+        item_model = QStandardItemModel(self._sm_completer)
+        for model in sorted(self.bibliotheek.lijst(), key=lambda m: m.naam.lower()):
             if model.id == self._bewerk_id:
                 continue
             cirkel = self._zou_cirkel_veroorzaken(model.id)
             label = model.naam + (" (cirkelverwijzing)" if cirkel else "")
-            self._sm_select.addItem(label, model.id)
+            item = QStandardItem(label)
             if cirkel:
-                item = self._sm_select.model().item(self._sm_select.count() - 1)
-                if item is not None:
-                    item.setEnabled(False)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            else:
+                self._sm_naam_naar_id[label] = model.id
+            item_model.appendRow(item)
+        self._sm_completer.setModel(item_model)
 
     def _ververs_submodellen(self) -> None:
         self._submodellen_label.setText(f"SUBMODELLEN, NESTING ({len(self._werk_submodellen)})")
@@ -1165,10 +1205,15 @@ class ModellenPage(QWidget):
         return row
 
     def _submodel_toevoegen(self) -> None:
-        model_id = self._sm_select.currentData()
+        model_id = self._sm_naam_naar_id.get(self._sm_search.text().strip())
         if not model_id:
+            self._sm_fout_label.setText("Kies een model uit de lijst.")
+            self._sm_fout_label.show()
             return
+        self._sm_fout_label.hide()
         aantal = self._sm_aantal.value()
+        self._sm_search.clear()
+        self._sm_aantal.setValue(1)
         for s in self._werk_submodellen:
             if s.model_id == model_id:
                 s.aantal += aantal
@@ -1180,7 +1225,7 @@ class ModellenPage(QWidget):
     def _verwijder_submodel(self, index: int) -> None:
         del self._werk_submodellen[index]
         self._ververs_submodellen()
-        self._ververs_submodel_combo()
+        self._ververs_submodel_picker()
 
     # ------------------------------------------------------------------
     # Model toevoegen/bewerken/opslaan
@@ -1194,6 +1239,9 @@ class ModellenPage(QWidget):
         self._werk_submodellen = []
         mappen = sorted({m.map for m in self.bibliotheek.lijst() if m.map})
         self._map_completer.setModel(QStringListModel(mappen, self._map_completer))
+        self._sm_search.clear()
+        self._sm_aantal.setValue(1)
+        self._sm_fout_label.hide()
         self._validation_banner.hide()
 
     def _open_drawer(self, model_id: str | None = None) -> None:
@@ -1214,7 +1262,7 @@ class ModellenPage(QWidget):
 
         self._reset_onderdeel_form()
         self._ververs_onderdelen()
-        self._ververs_submodel_combo()
+        self._ververs_submodel_picker()
         self._ververs_submodellen()
 
         self._drawer.show()

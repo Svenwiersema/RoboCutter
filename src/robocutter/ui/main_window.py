@@ -1,6 +1,7 @@
-"""Hoofdvenster: de RoboCutter home pagina (projectenoverzicht), de
-materialenbibliotheek, de reststukkenbibliotheek en de
-modellenbibliotheek, met een echte VS Code-stijl tabbalk.
+"""Hoofdvenster: het RoboCutter Dashboard, de Projectenbibliotheek, de
+materialenbibliotheek, de reststukkenbibliotheek, de
+modellenbibliotheek en het Opties/instellingen-scherm, met een echte
+VS Code-stijl tabbalk.
 
 Implementeert de architectuur uit ``design/chapters/11-ux-ui.md``: een
 donkere "chrome"-header met de hoofdonderdelen (Projecten/
@@ -9,35 +10,71 @@ een tabbalk waarin meerdere tabbladen tegelijk open kunnen staan
 (``self._open_tabs``, in volgorde van openen) — klikken op een
 hoofdonderdeel opent het als tab (of activeert 'm als al open), en elk
 tabblad is te sluiten met een kruisje behalve het vaste
-"Projecten"-tabblad. Losse project-/modeltabbladen bestaan nog niet als
-scherm en zijn dus nog niet op te nemen in de tabbalk. De
-Projecten-pagina gebruikt nog vaste voorbeelddata (zie
-``sample_data.py``); Materialenbibliotheek, Reststukkenbibliotheek en
-Modellenbibliotheek hebben echte, SQLite-opgeslagen data en kunnen (net
-als in VS Code) maar in één instantie tegelijk open staan.
-Reststukkenbibliotheek (``reststukken_page.py``) is op Svens verzoek
-rechtstreeks gebouwd zonder eigen HTML-mockup, als variant van
-``materialen_page.py``. Modellenbibliotheek (``modellen_page.py``) kreeg
-wél een eigen HTML-mockup (goedgekeurd, incl. twee correcties tijdens
-het uitwerken: eigen chevron-stapknoppen i.p.v. onbetrouwbare native
-pijltjes, en de headerlabel "Modellenbibliotheek" i.p.v. "Modellen"
-voor consistentie met de andere hoofdonderdelen).
+"Dashboard"-tabblad (tabsleutel ``"dashboard"``, opent automatisch bij
+opstarten). Losse projecttabbladen (tabsleutel ``f"project:{project_id}"``,
+één per geopend project, dus meerdere tegelijk open) tonen
+``ProjectDetailPage`` (op basis van de goedgekeurde HTML-mockup
+``design/assets/mockups/project-detail-concept.html``) — bereikbaar via
+het potlood-icoon in ``projecten_page.py``'s rijen of het aanklikken van
+een Dashboard-kaart (``_open_tab_project``). Anders dan de
+bibliotheekschermen hieronder worden deze tabbladen bij sluiten ook
+echt vernietigd i.p.v. voor altijd in leven te blijven, en zitten ze
+niet in de vaste ``_PAGE_TAB``-tabel maar in ``self._project_pages``
+(zie ``_tab_titel_icoon`` voor hoe de tabbladtitel dan toch de actuele
+projectnaam volgt).
 
-De ``MaterialenPage``-/``ReststukkenPage``-/``ModellenPage``-instanties
-blijven bij een thema-wissel of tabwissel in leven (herbouw kost anders
-zoektekst/filters/open paneel) — zie ``_rebuild_content`` en
-``_toggle_theme``.
+Op Svens verzoek is het onderscheid tussen "Dashboard" (het KPI-/
+overzichtsscherm, tabsleutel ``"dashboard"``, inmiddels ook echt
+gekoppeld aan ``ProjectenBibliotheek``/``ReststukkenBibliotheek`` i.p.v.
+de voormalige ``sample_data.py``-voorbeelddata, geen eigen
+navigatieknop — alleen bereikbaar via het vaste tabblad) en "Projecten"
+(de échte,
+SQLite-opgeslagen projectenbibliotheek — een doorzoekbare/sorteerbare
+lijst, zusje van ``materialen_page.py``, tabsleutel ``"projecten"``,
+bereikbaar via de "Projecten"-navigatieknop) expliciet gemaakt: vóór
+deze wijziging was er maar één "Projecten"-tabblad dat beide rollen
+door elkaar vervulde. Materialenbibliotheek, Reststukkenbibliotheek,
+Modellenbibliotheek en nu ook Projecten hebben echte, SQLite-opgeslagen
+data en kunnen (net als in VS Code) maar in één instantie tegelijk open
+staan. Reststukkenbibliotheek (``reststukken_page.py``) is op Svens
+verzoek rechtstreeks gebouwd zonder eigen HTML-mockup, als variant van
+``materialen_page.py`` — Projecten (``projecten_page.py``) is om
+dezelfde reden ("net zoals de materialenbibliotheek", Svens eigen
+woorden) ook zonder mockup gebouwd. Modellenbibliotheek
+(``modellen_page.py``) kreeg wél een eigen HTML-mockup (goedgekeurd,
+incl. twee correcties tijdens het uitwerken: eigen chevron-stapknoppen
+i.p.v. onbetrouwbare native pijltjes, en de headerlabel
+"Modellenbibliotheek" i.p.v. "Modellen" voor consistentie met de andere
+hoofdonderdelen). Instellingen (``instellingen_page.py``) is, op Svens
+verzoek, ook zonder mockup gebouwd ("dit moet een simpel ui zijn") en
+is bewust geen vijfde hoofdonderdeel in de navigatierij — het is geen
+bibliotheekmodule, dus alleen bereikbaar via het schuifknoppen-icoon in
+de header, dat het scherm als gewoon (sluitbaar) tabblad opent. Er is
+geen aparte thema-toggle-knop meer in de header (op Svens verzoek
+verwijderd): thema kiezen ("Licht"/"Donker"/"Systeem", de laatste volgt
+Windows' eigen voorkeur via ``theme.resolve_thema``) gebeurt nu
+uitsluitend op het Opties-scherm zelf, en past meteen live toe.
+
+De ``MaterialenPage``-/``ReststukkenPage``-/``ModellenPage``-/
+``ProjectenPage``-/``InstellingenPage``-instanties blijven bij een
+thema-wissel of tabwissel in leven (herbouw kost anders zoektekst/
+filters/open paneel) — zie ``_rebuild_content``. Een thema-wijziging
+vanuit het Opties-scherm komt binnen via ``_on_instellingen_gewijzigd``:
+het scherm heeft de nieuwe waarde dan al zelf opgeslagen, dit hoeft
+alleen de rest van de chrome/tabbladen te laten meewisselen.
 """
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QMimeData, QSize, Qt, Signal
+from PySide6.QtGui import QDrag, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -45,19 +82,23 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from robocutter.instellingen.beheer import InstellingenBeheer
+from robocutter.projecten.models import Project, ProjectStatus
+from robocutter.projecten.zaaglijst import bouw_zaaglijst
+from robocutter.reststukken.models import ReststukStatus
 from robocutter.ui.icons import icon, icon_pixmap
+from robocutter.ui.instellingen_page import InstellingenPage
 from robocutter.ui.materialen_page import MaterialenPage
 from robocutter.ui.modellen_page import ModellenPage
+from robocutter.ui.project_detail_page import ProjectDetailPage
+from robocutter.ui.projecten_page import ProjectenPage
 from robocutter.ui.reststukken_page import ReststukkenPage
-from robocutter.ui.sample_data import VOORBEELD_PROJECTEN, ProjectStatus
-from robocutter.ui.theme import DONKER, LICHT, Theme, build_stylesheet
+from robocutter.ui.theme import Theme, build_stylesheet, resolve_thema
 from robocutter.ui.widgets.project_card import ProjectCard
 from robocutter.ui.widgets.stat_tile import StatTile
 
@@ -78,14 +119,22 @@ _NAV_ITEMS = [
 ]
 # Alle vier hoofdonderdelen hebben nu een echt scherm; geen None-plekken
 # meer nodig in _NAV_PAGE_KEYS (die markering was voor Modellen, dat nu
-# ook gebouwd is).
+# ook gebouwd is). "Projecten" opent hier de bibliotheek-lijst
+# (ProjectenPage) — niet de Dashboard-tab, die heeft geen eigen
+# navigatieknop nodig (zie module-docstring).
 _NAV_PAGE_KEYS = ["projecten", "materialen", "reststukken", "modellen"]
 _PAGE_TAB = {
+    "dashboard": ("Dashboard", "house"),
     "projecten": ("Projecten", "folder"),
     "materialen": ("Materialenbibliotheek", "layers"),
     "reststukken": ("Reststukkenbibliotheek", "recycle"),
     "modellen": ("Modellenbibliotheek", "cube"),
+    "instellingen": ("Instellingen", "sliders"),
 }
+
+
+_TAB_MIME_TYPE = "application/x-robocutter-tab"
+_SLEEP_DREMPEL = 8  # pixels muisbeweging voordat een klik een sleepactie wordt
 
 
 class _KlikbareTab(QWidget):
@@ -99,18 +148,122 @@ class _KlikbareTab(QWidget):
     stylesheet niet vanzelf (dat doen alleen QFrame/QPushButton/QLabel e.d.
     standaard) — vandaar hier expliciet ``WA_StyledBackground`` aanzetten,
     anders blijft het actieve tabblad de donkere chrome-achtergrond tonen
-    i.p.v. het lichte/donkere themakleur die hoort bij het actieve tabblad."""
+    i.p.v. het lichte/donkere themakleur die hoort bij het actieve tabblad.
+
+    Op Svens verzoek ook sleepbaar: een niet-vast tabblad kan met de muis
+    naar een andere positie in de tabbalk gesleept worden om de volgorde te
+    wijzigen (zelfde interactie als VS Code) — via een eigen Qt-drag met
+    ``QMimeData`` (i.p.v. Qt's ingebouwde ``QTabBar``-herschikking, die deze
+    op maat gebouwde tabbalk niet gebruikt). Het vaste "Dashboard"-tabblad
+    is bewust noch sleepbaar, noch een geldig sleepdoel — dat blijft altijd
+    vooraan staan (``versleepbaar=False`` voor die ene tab).
+
+    Twee stukjes visuele feedback maken het slepen duidelijker (op Svens
+    verzoek, de kale ``QDrag`` zonder aanpassingen liet nauwelijks zien dát
+    je aan het slepen was of waar de tab zou landen):
+    1. Het brontabblad krijgt tijdens het slepen zelf een halfdoorzichtige
+       ``QGraphicsOpacityEffect`` (i.p.v. een stylesheet-``opacity``, die
+       Qt's QSS niet ondersteunt) en de sleep-cursor toont een
+       halfdoorzichtige momentopname van de tab (``drag.setPixmap``) die met
+       de muis meebeweegt — ``drag.exec()`` blokkeert tot de sleep klaar is,
+       dus de effect-aan/-uit-volgorde hierboven/-onder die aanroep is veilig.
+    2. Het tabblad waar de muis overheen sleept krijgt een gekleurde rand
+       aan de kant waar de gesleepte tab zou worden ingevoegd (links/rechts
+       van het midden van die tab, zie ``_toon_drop_indicator``) via de
+       dynamische property ``dropZijde`` (``theme.py`` tekent daar een
+       rand voor) — dit is het "hier komt-ie terecht"-signaal."""
 
     clicked = Signal()
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, key: str, versleepbaar: bool, on_herschikken, parent=None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._key = key
+        self._versleepbaar = versleepbaar
+        self._on_herschikken = on_herschikken
+        self._sleep_start = None
+        if versleepbaar:
+            self.setAcceptDrops(True)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
+            self._sleep_start = event.position().toPoint()
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if (
+            self._versleepbaar
+            and self._sleep_start is not None
+            and bool(event.buttons() & Qt.MouseButton.LeftButton)
+            and (event.position().toPoint() - self._sleep_start).manhattanLength() >= _SLEEP_DREMPEL
+        ):
+            hotspot = self._sleep_start
+            self._sleep_start = None
+            self._start_sleep(hotspot)
+        super().mouseMoveEvent(event)
+
+    def _start_sleep(self, hotspot) -> None:
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(_TAB_MIME_TYPE, self._key.encode("utf-8"))
+        drag.setMimeData(mime)
+
+        # Halfdoorzichtige "spooktab" die met de cursor meebeweegt, zodat
+        # duidelijk is dát en wélke tab je sleept.
+        snapshot = self.grab()
+        spook = QPixmap(snapshot.size())
+        spook.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(spook)
+        painter.setOpacity(0.7)
+        painter.drawPixmap(0, 0, snapshot)
+        painter.end()
+        drag.setPixmap(spook)
+        drag.setHotSpot(hotspot)
+
+        effect = QGraphicsOpacityEffect(self)
+        effect.setOpacity(0.35)
+        self.setGraphicsEffect(effect)
+        drag.exec(Qt.DropAction.MoveAction)  # blokkeert tot drop/annuleren
+        self.setGraphicsEffect(None)
+
+    def dragEnterEvent(self, event) -> None:
+        if self._versleepbaar and event.mimeData().hasFormat(_TAB_MIME_TYPE):
+            event.acceptProposedAction()
+            self._toon_drop_indicator(event.position().toPoint().x())
+
+    def dragMoveEvent(self, event) -> None:
+        if self._versleepbaar and event.mimeData().hasFormat(_TAB_MIME_TYPE):
+            event.acceptProposedAction()
+            self._toon_drop_indicator(event.position().toPoint().x())
+
+    def dragLeaveEvent(self, event) -> None:
+        self._wis_drop_indicator()
+
+    def dropEvent(self, event) -> None:
+        zijde = "rechts" if event.position().toPoint().x() > self.width() / 2 else "links"
+        self._wis_drop_indicator()
+        bron_key = bytes(event.mimeData().data(_TAB_MIME_TYPE)).decode("utf-8")
+        self._on_herschikken(bron_key, self._key, zijde)
+        event.acceptProposedAction()
+
+    def _toon_drop_indicator(self, cursor_x: float) -> None:
+        zijde = "rechts" if cursor_x > self.width() / 2 else "links"
+        if self.property("dropZijde") != zijde:
+            self.setProperty("dropZijde", zijde)
+            self._herpolijst()
+
+    def _wis_drop_indicator(self) -> None:
+        if self.property("dropZijde"):
+            self.setProperty("dropZijde", "")
+            self._herpolijst()
+
+    def _herpolijst(self) -> None:
+        # Een dynamische property die in een QSS-attribuutselector wordt
+        # gebruikt (hier ``dropZijde``) wordt pas hertekend na een expliciete
+        # unpolish/polish — anders blijft de oude rand-status hangen.
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class MainWindow(QMainWindow):
@@ -120,13 +273,26 @@ class MainWindow(QMainWindow):
         self.resize(1360, 860)
 
         self._instellingen = InstellingenBeheer()
-        self._theme: Theme = DONKER if self._instellingen.huidige.thema == "donker" else LICHT
+        self._theme: Theme = resolve_thema(self._instellingen.huidige.thema)
         self._nav_buttons: list[QPushButton] = []
-        self._open_tabs: list[str] = ["projecten"]
-        self._active_tab: str = "projecten"
+        self._open_tabs: list[str] = ["dashboard"]
+        self._active_tab: str = "dashboard"
         self._materialen_page = MaterialenPage(self._theme)
         self._reststukken_page = ReststukkenPage(self._materialen_page.bibliotheek, self._theme)
         self._modellen_page = ModellenPage(self._materialen_page.bibliotheek, self._theme)
+        self._projecten_page = ProjectenPage(
+            self._modellen_page.bibliotheek,
+            self._materialen_page.bibliotheek,
+            self._theme,
+            on_open_project=self._open_tab_project,
+        )
+        self._instellingen_page = InstellingenPage(self._instellingen, self._theme, self._on_instellingen_gewijzigd)
+        # Eén losse, sluitbare ProjectDetailPage per geopend project
+        # (tabsleutel f"project:{project_id}") — anders dan de
+        # bibliotheekschermen hierboven kunnen hier meerdere tegelijk open
+        # staan, en worden ze bij sluiten ook echt vernietigd i.p.v. voor
+        # altijd in leven te blijven (zie _close_tab/_rebuild_content).
+        self._project_pages: dict[str, ProjectDetailPage] = {}
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -151,7 +317,13 @@ class MainWindow(QMainWindow):
             workspace.addWidget(self._reststukken_page, 1)
         elif self._active_tab == "modellen":
             workspace.addWidget(self._modellen_page, 1)
-        else:
+        elif self._active_tab == "instellingen":
+            workspace.addWidget(self._instellingen_page, 1)
+        elif self._active_tab == "projecten":
+            workspace.addWidget(self._projecten_page, 1)
+        elif self._active_tab in self._project_pages:
+            workspace.addWidget(self._project_pages[self._active_tab], 1)
+        else:  # "dashboard"
             workspace.addWidget(self._build_sidebar())
             workspace.addWidget(self._build_main(), 1)
         return workspace
@@ -222,13 +394,14 @@ class MainWindow(QMainWindow):
         edition.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(edition)
 
-        theme_toggle = QToolButton()
-        theme_toggle.setObjectName("ThemeToggle")
-        theme_toggle.setFixedSize(32, 32)
-        theme_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        theme_toggle.setIcon(icon("sun" if self._theme is DONKER else "moon", self._theme.chrome_text_muted, 17))
-        theme_toggle.clicked.connect(self._toggle_theme)
-        layout.addWidget(theme_toggle)
+        settings_button = QToolButton()
+        settings_button.setObjectName("ThemeToggle")
+        settings_button.setFixedSize(32, 32)
+        settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings_button.setToolTip("Instellingen")
+        settings_button.setIcon(icon("sliders", self._theme.chrome_text_muted, 17))
+        settings_button.clicked.connect(lambda: self._open_tab("instellingen"))
+        layout.addWidget(settings_button)
 
         avatar = QLabel("SW")
         avatar.setObjectName("Avatar")
@@ -251,17 +424,31 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
 
         for key in self._open_tabs:
-            titel, icon_naam = _PAGE_TAB[key]
+            titel, icon_naam = self._tab_titel_icoon(key)
             layout.addWidget(self._build_tab_item(key, titel, icon_naam))
         layout.addStretch(1)
 
         return strip
 
+    def _tab_titel_icoon(self, key: str) -> tuple[str, str]:
+        # Losse projecttabbladen zitten niet in _PAGE_TAB (dat is een vaste
+        # tabel voor de hoofdonderdelen) — hun titel volgt de actuele
+        # projectnaam uit de bibliotheek, zodat een naamswijziging in het
+        # projectdetailtabblad meteen ook hier zichtbaar wordt.
+        if key.startswith("project:"):
+            project_id = key.split(":", 1)[1]
+            try:
+                naam = self._projecten_page.bibliotheek.ophalen(project_id).naam
+            except KeyError:
+                naam = "Verwijderd project"
+            return naam, "folder"
+        return _PAGE_TAB[key]
+
     def _build_tab_item(self, key: str, titel: str, icon_naam: str) -> QWidget:
         actief = key == self._active_tab
-        sluitbaar = key != "projecten"
+        sluitbaar = key != "dashboard"
 
-        tab = _KlikbareTab()
+        tab = _KlikbareTab(key, sluitbaar, self._herschik_tab)
         tab.setObjectName("TabItem")
         tab.setProperty("active", "true" if actief else "false")
         tab.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -308,15 +495,83 @@ class MainWindow(QMainWindow):
         self._active_tab = key
         self._rebuild_content()
 
+    def _open_tab_project(self, project_id: str) -> None:
+        # Elk project krijgt zijn eigen tabsleutel (i.p.v. de vaste sleutels
+        # in _PAGE_TAB), zodat meerdere projecten tegelijk een los,
+        # individueel sluitbaar tabblad kunnen hebben — zie
+        # project_detail_page.py voor het scherm zelf.
+        key = f"project:{project_id}"
+        if key not in self._project_pages:
+            self._project_pages[key] = ProjectDetailPage(
+                project_id,
+                self._projecten_page.bibliotheek,
+                self._modellen_page.bibliotheek,
+                self._materialen_page.bibliotheek,
+                self._theme,
+                on_gewijzigd=self._on_project_gewijzigd,
+                on_open_projecten_tab=lambda: self._open_tab("projecten"),
+            )
+        if key not in self._open_tabs:
+            self._open_tabs.append(key)
+        self._active_tab = key
+        self._rebuild_content()
+
+    def _on_project_gewijzigd(self) -> None:
+        # Anders dan bijv. een thema-wissel raakt dit de projectenlijst zelf
+        # (naam/status/samenstelling) — die pagina moet dus expliciet
+        # verversen, niet alleen de chrome/tabbladen (die haalt haar data pas
+        # weer op bij de volgende _rebuild_content-aanroep, hierna).
+        self._projecten_page.ververs()
+        self._rebuild_content()
+
     def _close_tab(self, key: str) -> None:
-        if key == "projecten" or key not in self._open_tabs:
+        if key == "dashboard" or key not in self._open_tabs:
             return
         index = self._open_tabs.index(key)
         was_active = key == self._active_tab
         self._open_tabs.remove(key)
         if was_active:
             self._active_tab = self._open_tabs[max(0, index - 1)]
+        if key.startswith("project:"):
+            # Anders dan de bibliotheekschermen (die voor altijd in leven
+            # blijven, zie _rebuild_content) wordt een projecttabblad bij
+            # sluiten ook echt vernietigd — er kunnen er willekeurig veel
+            # tegelijk open staan, dus ze blijven laten bestaan zou een
+            # sluipend geheugenlek zijn.
+            pagina = self._project_pages.pop(key, None)
+            if pagina is not None:
+                pagina.setParent(None)
+                pagina.deleteLater()
         self._rebuild_content()
+
+    def _herschik_tab(self, bron_key: str, doel_key: str, zijde: str = "links") -> None:
+        # "dashboard" kan hier nooit als bron/doel binnenkomen (niet
+        # versleepbaar, geen geldig sleepdoel, zie _KlikbareTab), maar wordt
+        # hier defensief ook nog geweerd zodat het altijd vooraan blijft
+        # staan, ook als dat ooit anders aangeroepen wordt.
+        if (
+            bron_key == doel_key
+            or "dashboard" in (bron_key, doel_key)
+            or bron_key not in self._open_tabs
+            or doel_key not in self._open_tabs
+        ):
+            return
+        self._open_tabs.remove(bron_key)
+        # doel_index pas ná het verwijderen opvragen: als bron vóór doel
+        # stond, schuift doel's index anders één op en beland je toch aan
+        # de verkeerde kant — precies het probleem dat de drop-indicator
+        # (links/rechts van het midden van de doeltab) belooft op te lossen.
+        doel_index = self._open_tabs.index(doel_key)
+        invoeg_index = doel_index if zijde == "links" else doel_index + 1
+        self._open_tabs.insert(invoeg_index, bron_key)
+        self._rebuild_content()
+
+    # ------------------------------------------------------------------
+    # Dashboard-data
+    # ------------------------------------------------------------------
+
+    def _dashboard_alle_projecten(self) -> list[Project]:
+        return self._projecten_page.bibliotheek.lijst()
 
     # ------------------------------------------------------------------
     # Sidebar
@@ -330,26 +585,29 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(12, 16, 12, 16)
         layout.setSpacing(4)
 
-        layout.addWidget(self._sidebar_label("Projecten"))
+        alle = self._dashboard_alle_projecten()
+        actief = [p for p in alle if not p.gearchiveerd]
+
+        layout.addWidget(self._sidebar_label("Dashboard"))
         overzicht = self._sidebar_item("folder", "Overzicht", checked=True)
         layout.addWidget(overzicht)
-        archief = self._sidebar_item("archive", "Archief", count=3)
+        archief = self._sidebar_item("archive", "Archief", count=sum(1 for p in alle if p.gearchiveerd))
         layout.addWidget(archief)
         layout.addWidget(self._divider())
 
         layout.addWidget(self._sidebar_label("Snelfilters"))
         filters = [
-            (ProjectStatus.WERKVOORBEREIDING, self._theme.neutral_dot, 2),
-            (ProjectStatus.IN_PRODUCTIE, self._theme.accent, 4),
-            (ProjectStatus.INSTALLATIE, self._theme.indigo, 3),
-            (ProjectStatus.AFGEROND, self._theme.success, 3),
+            (ProjectStatus.WERKVOORBEREIDING, self._theme.neutral_dot),
+            (ProjectStatus.IN_PRODUCTIE, self._theme.accent),
+            (ProjectStatus.INSTALLATIE, self._theme.indigo),
+            (ProjectStatus.AFGEROND, self._theme.success),
         ]
-        for status, color, count in filters:
+        for status, color in filters:
+            count = sum(1 for p in actief if p.status == status)
             layout.addWidget(self._filter_row(status.value, color, count))
         layout.addWidget(self._divider())
 
         layout.addWidget(self._sidebar_label("Snelacties"))
-        layout.addWidget(self._sidebar_item("plus", "Nieuw project"))
         layout.addWidget(self._sidebar_item("upload", "Importeren (DXF)"))
 
         layout.addStretch(1)
@@ -423,7 +681,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(self._build_stat_row())
         layout.addLayout(self._build_toolbar_row())
         layout.addLayout(self._build_project_grid())
-        layout.addWidget(self._build_warning_panel())
         layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -433,11 +690,13 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         titles = QVBoxLayout()
         titles.setSpacing(3)
-        title = QLabel("Projecten")
+        title = QLabel("Dashboard")
         title.setObjectName("PageTitle")
         titles.addWidget(title)
-        actief = sum(1 for p in VOORBEELD_PROJECTEN if p.status != ProjectStatus.AFGEROND)
-        sub = QLabel(f"{len(VOORBEELD_PROJECTEN)} projecten · {actief} actief · 3 gearchiveerd")
+        alle = self._dashboard_alle_projecten()
+        actief_count = sum(1 for p in alle if not p.gearchiveerd)
+        archief_count = len(alle) - actief_count
+        sub = QLabel(f"{len(alle)} projecten · {actief_count} actief · {archief_count} gearchiveerd")
         sub.setObjectName("PageSub")
         titles.addWidget(sub)
         row.addLayout(titles)
@@ -449,24 +708,38 @@ class MainWindow(QMainWindow):
         search.setFixedWidth(230)
         search.addAction(icon("search", self._theme.text_faint, 15), QLineEdit.ActionPosition.LeadingPosition)
         row.addWidget(search)
-
-        new_project = QPushButton("  Nieuw project")
-        new_project.setProperty("role", "primary")
-        new_project.setIcon(icon("plus", "#12141B", 14))
-        new_project.setCursor(Qt.CursorShape.PointingHandCursor)
-        row.addWidget(new_project)
         return row
 
     def _build_stat_row(self) -> QHBoxLayout:
+        alle = self._dashboard_alle_projecten()
+        actief = [p for p in alle if not p.gearchiveerd]
+
+        vandaag = date.today()
+        deze_week = sorted(
+            (p for p in actief if p.opleverdatum and vandaag <= p.opleverdatum <= vandaag + timedelta(days=7)),
+            key=lambda p: p.opleverdatum,
+        )
+        if deze_week:
+            eerstvolgende = deze_week[0]
+            oplevering_sub = f"Eerstvolgende: {eerstvolgende.opleverdatum.isoformat()} · {eerstvolgende.naam}"
+        else:
+            oplevering_sub = "Geen opleveringen gepland"
+
+        reststukken_beschikbaar = len(self._reststukken_page.bibliotheek.lijst(status=ReststukStatus.BESCHIKBAAR))
+
         row = QHBoxLayout()
         row.setSpacing(12)
-        row.addWidget(StatTile("Actieve projecten", "9", "2 nieuw deze maand", "folder", self._theme.accent_text, "neutral"))
-        row.addWidget(StatTile("Oplevering deze week", "3", "Eerstvolgende: 8 sep · Keuken Jansen", "calendar", self._theme.accent_text, "neutral"))
-        row.addWidget(StatTile("Materiaal ontbreekt", "2", "Verspreid over 2 projecten", "warning", self._theme.warning_ink, "warn"))
-        row.addWidget(StatTile("Reststukken beschikbaar", "47", "In de reststukkenbibliotheek", "recycle", self._theme.success_ink, "good"))
+        row.addWidget(StatTile("Actieve projecten", str(len(actief)), "Niet gearchiveerd", "folder", self._theme.accent_text, "neutral"))
+        row.addWidget(StatTile("Oplevering deze week", str(len(deze_week)), oplevering_sub, "calendar", self._theme.accent_text, "neutral"))
+        row.addWidget(StatTile("Reststukken beschikbaar", str(reststukken_beschikbaar), "In de reststukkenbibliotheek", "recycle", self._theme.success_ink, "good"))
+        row.addWidget(StatTile("Totaal projecten", str(len(alle)), "Inclusief archief", "layers", self._theme.accent_text, "neutral"))
         return row
 
     def _build_toolbar_row(self) -> QHBoxLayout:
+        alle = self._dashboard_alle_projecten()
+        actief_count = sum(1 for p in alle if not p.gearchiveerd)
+        archief_count = len(alle) - actief_count
+
         row = QHBoxLayout()
         segmented = QWidget()
         segmented.setObjectName("Segmented")
@@ -474,7 +747,8 @@ class MainWindow(QMainWindow):
         seg_layout.setContentsMargins(2, 2, 2, 2)
         seg_layout.setSpacing(2)
         seg_group = QButtonGroup(self)
-        for index, label in enumerate(["Alle · 12", "Actief · 9", "Archief · 3"]):
+        labels = [f"Alle · {len(alle)}", f"Actief · {actief_count}", f"Archief · {archief_count}"]
+        for index, label in enumerate(labels):
             btn = QPushButton(label)
             btn.setProperty("role", "segment")
             btn.setCheckable(True)
@@ -497,58 +771,14 @@ class MainWindow(QMainWindow):
         return row
 
     def _build_project_grid(self) -> QGridLayout:
+        projecten = self._projecten_page.bibliotheek.lijst(gearchiveerd=False)
         grid = QGridLayout()
         grid.setSpacing(14)
         columns = 3
-        for index, project in enumerate(VOORBEELD_PROJECTEN):
-            card = ProjectCard(project, self._theme)
+        for index, project in enumerate(projecten):
+            card = ProjectCard(project, self._theme, on_click=self._open_tab_project)
             grid.addWidget(card, index // columns, index % columns)
-
-        add_index = len(VOORBEELD_PROJECTEN)
-        add_tile = QToolButton()
-        add_tile.setObjectName("AddProjectTile")
-        add_tile.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        add_tile.setIcon(icon("plus", self._theme.text_faint, 22))
-        add_tile.setIconSize(QSize(22, 22))
-        add_tile.setText("Nieuw project")
-        add_tile.setMinimumHeight(176)
-        add_tile.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        grid.addWidget(add_tile, add_index // columns, add_index % columns)
         return grid
-
-    def _build_warning_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setObjectName("WarningPanel")
-        layout = QHBoxLayout(panel)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(12)
-
-        icon_wrap = QFrame()
-        icon_wrap.setObjectName("WarningIconWrap")
-        icon_wrap.setFixedSize(30, 30)
-        icon_wrap_layout = QHBoxLayout(icon_wrap)
-        icon_wrap_layout.setContentsMargins(0, 0, 0, 0)
-        icon_label = QLabel()
-        icon_label.setPixmap(icon_pixmap("warning", "#2B2004", 16))
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_wrap_layout.addWidget(icon_label)
-        layout.addWidget(icon_wrap, 0, Qt.AlignmentFlag.AlignTop)
-
-        text_col = QVBoxLayout()
-        text_col.setSpacing(4)
-        title = QLabel("2 projecten hebben ontbrekend materiaal")
-        title.setObjectName("WarningTitle")
-        text_col.addWidget(title)
-        body = QLabel(
-            "Los dit op vóórdat het zaagplan gegenereerd wordt:\n"
-            "• Inbouwkast Willemsen — Eiken fineer 19mm\n"
-            "• Kantoorkast Smits — MDF gegrond 12mm"
-        )
-        body.setProperty("role", "warningBody")
-        text_col.addWidget(body)
-        layout.addLayout(text_col, 1)
-        return panel
 
     # ------------------------------------------------------------------
     # Status bar
@@ -556,7 +786,6 @@ class MainWindow(QMainWindow):
 
     def _build_status_bar(self) -> None:
         bar = self.statusBar()
-        bar.setFixedHeight(26)
         bar.setSizeGripEnabled(False)
 
         left = QWidget()
@@ -566,34 +795,34 @@ class MainWindow(QMainWindow):
         dot = QLabel()
         dot.setObjectName("LiveDot")
         dot.setFixedSize(7, 7)
-        offline_row = QHBoxLayout()
-        offline_row.setSpacing(6)
-        offline_row.addWidget(dot)
-        offline_row.addWidget(QLabel("Offline modus — lokale database"))
-        offline_widget = QWidget()
-        offline_widget.setLayout(offline_row)
-        left_layout.addWidget(offline_widget)
+        left_layout.addWidget(dot)
+        left_layout.addWidget(QLabel("Offline modus — lokale database"))
         left_layout.addWidget(QLabel("Laatste back-up: vandaag 06:00"))
         bar.addWidget(left)
 
-        totaal = sum(p.modellen_totaal for p in VOORBEELD_PROJECTEN) * 12
+        totaal = sum(len(bouw_zaaglijst(p)) for p in self._dashboard_alle_projecten())
         bar.addPermanentWidget(QLabel(f"{totaal} onderdelen totaal"))
 
     # ------------------------------------------------------------------
     # Thema
     # ------------------------------------------------------------------
 
-    def _toggle_theme(self) -> None:
-        self._theme = DONKER if self._theme is LICHT else LICHT
-        self._instellingen.bijwerken(thema=self._theme.naam)
-        # De materialen-/reststukkenpagina's beheren hun eigen (zoek/filter/
-        # paneel-)status en worden daarom niet zomaar meegesloopt met de rest
-        # van het venster; ze herbouwen hier bewust wél hun eigen iconen/
-        # kleuren voor het nieuwe thema (zien daarbij wél hun open paneel/
-        # zoektekst kwijtraken).
+    def _on_instellingen_gewijzigd(self) -> None:
+        # Het Opties-scherm heeft het thema zelf al opgeslagen via
+        # InstellingenBeheer (dezelfde instantie als hier) zodra de
+        # gebruiker daar een thema-optie aanklikt (live, geen aparte
+        # "Opslaan"-stap voor het thema) — dit hoeft dus alleen de rest van
+        # de chrome/tabbladen te laten meewisselen. ``resolve_thema`` lost
+        # ook "systeem" op naar de daadwerkelijke Windows-voorkeur van dit
+        # moment.
+        self._theme = resolve_thema(self._instellingen.huidige.thema)
         self._materialen_page.set_theme(self._theme)
         self._reststukken_page.set_theme(self._theme)
         self._modellen_page.set_theme(self._theme)
+        self._projecten_page.set_theme(self._theme)
+        self._instellingen_page.set_theme(self._theme)
+        for pagina in self._project_pages.values():
+            pagina.set_theme(self._theme)
         self._rebuild_content()
         self._apply_theme()
 
@@ -604,6 +833,7 @@ class MainWindow(QMainWindow):
         self._modellen_page.sluit_verbinding()
         self._reststukken_page.sluit_verbinding()
         self._materialen_page.sluit_verbinding()
+        self._projecten_page.sluit_verbinding()
         super().closeEvent(event)
 
     def _rebuild_content(self) -> None:
@@ -617,6 +847,10 @@ class MainWindow(QMainWindow):
         self._materialen_page.setParent(None)
         self._reststukken_page.setParent(None)
         self._modellen_page.setParent(None)
+        self._projecten_page.setParent(None)
+        self._instellingen_page.setParent(None)
+        for pagina in self._project_pages.values():
+            pagina.setParent(None)
         central.deleteLater()
         self._nav_buttons = []
         new_central = QWidget()

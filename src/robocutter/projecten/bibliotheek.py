@@ -166,6 +166,41 @@ class ProjectenBibliotheek:
         self._persisteer(project)
         return project
 
+    def los_onderdeel_toevoegen(self, project_id: str, onderdeel: ModelOnderdeel) -> Project:
+        # Anders dan een model-instantie (een vaste snapshot, al gevalideerd op het
+        # moment van toevoegen aan het model) is een los onderdeel live invoer vanuit
+        # het project zelf — dus wél door valideer() heen, net als toevoegen()/bijwerken().
+        project = self._projecten[project_id]
+        if not onderdeel.id:
+            onderdeel.id = uuid.uuid4().hex[:8]
+        project.losse_onderdelen.append(onderdeel)
+        fouten = valideer(project, self._materialen)
+        if fouten:
+            project.losse_onderdelen.remove(onderdeel)
+            raise ValueError("; ".join(fouten))
+        self._persisteer(project)
+        return project
+
+    def los_onderdeel_bijwerken(self, project_id: str, onderdeel: ModelOnderdeel) -> Project:
+        project = self._projecten[project_id]
+        index = next((i for i, o in enumerate(project.losse_onderdelen) if o.id == onderdeel.id), None)
+        if index is None:
+            raise KeyError(f"Onbekend los onderdeel: {onderdeel.id!r}")
+        oorspronkelijk = project.losse_onderdelen[index]
+        project.losse_onderdelen[index] = onderdeel
+        fouten = valideer(project, self._materialen)
+        if fouten:
+            project.losse_onderdelen[index] = oorspronkelijk
+            raise ValueError("; ".join(fouten))
+        self._persisteer(project)
+        return project
+
+    def los_onderdeel_verwijderen(self, project_id: str, onderdeel_id: str) -> Project:
+        project = self._projecten[project_id]
+        project.losse_onderdelen = [o for o in project.losse_onderdelen if o.id != onderdeel_id]
+        self._persisteer(project)
+        return project
+
     # ------------------------------------------------------------------
     # Status en archief (hoofdstuk 1/4)
     # ------------------------------------------------------------------

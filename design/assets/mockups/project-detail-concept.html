@@ -1,0 +1,737 @@
+<title>Project — Keuken Jansen</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF; --accent-soft-border:#CDD6FF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --critical:#C74F4F; --critical-soft:#FBEAEA;
+    --neutral-dot:#9297A8; --indigo:#7B6FE0; --indigo-soft:#EFEDFB;
+    --chrome-bg:#16171D; --chrome-bg-raised:#1D1F27; --chrome-text:#E7E8EE;
+    --chrome-text-muted:#8B8FA3; --chrome-border:#2B2D37; --chrome-active-bg:rgba(95,127,255,0.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --critical:#E57373; --critical-soft:#3A2020;
+      --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --critical:#E57373; --critical-soft:#3A2020;
+    --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Inter","Segoe UI",sans-serif; font-size:13px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{ display:flex; flex-direction:column; height:100vh; min-height:640px; }
+
+  /* ---------- Chrome: header ---------- */
+  .header{
+    height:52px; flex:0 0 auto; background:var(--chrome-bg); border-bottom:1px solid var(--chrome-border);
+    display:flex; align-items:center; gap:28px; padding:0 18px;
+  }
+  .brand{ display:flex; align-items:center; gap:9px; }
+  .brand-mark{
+    width:28px; height:28px; border-radius:8px; background:#F4F5F7;
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+  }
+  .brand-mark svg{ width:18px; height:18px; }
+  .brand-label{ color:var(--chrome-text); font-size:15px; font-weight:800; }
+  .brand-label span{ color:#8CA0FF; }
+  .nav{ display:flex; align-items:center; gap:2px; flex:1; }
+  .nav-btn{
+    display:flex; align-items:center; gap:7px; background:transparent; border:none; border-radius:7px;
+    padding:7px 13px; font-weight:600; font-size:13px; color:var(--chrome-text-muted); cursor:pointer;
+    font-family:inherit;
+  }
+  .nav-btn:hover{ background:rgba(255,255,255,0.07); color:var(--chrome-text); }
+  .nav-btn.active{ background:var(--chrome-active-bg); color:#C7D3FF; }
+  .nav-btn svg{ width:15px; height:15px; flex:0 0 auto; }
+  .edition-badge{
+    color:var(--chrome-text-muted); background:rgba(255,255,255,0.05); border:1px solid var(--chrome-border);
+    border-radius:12px; padding:3px 10px; font-size:12px; font-weight:600;
+  }
+  .icon-btn{
+    width:32px; height:32px; border-radius:7px; background:transparent; border:none; color:var(--chrome-text-muted);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .icon-btn:hover{ background:rgba(255,255,255,0.07); color:var(--chrome-text); }
+  .icon-btn svg{ width:17px; height:17px; }
+  .avatar{
+    width:30px; height:30px; border-radius:15px; background:var(--accent); color:#12141B;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex:0 0 auto;
+  }
+
+  /* ---------- Chrome: tab strip ---------- */
+  .tabstrip{
+    height:38px; flex:0 0 auto; background:var(--chrome-bg-raised); border-bottom:1px solid var(--chrome-border);
+    display:flex; align-items:stretch; padding:0 6px; gap:0;
+  }
+  .tab{
+    display:flex; align-items:center; gap:8px; padding:0 8px 0 14px; cursor:pointer; user-select:none;
+    border-right:1px solid transparent;
+  }
+  .tab svg{ width:14px; height:14px; flex:0 0 auto; color:var(--chrome-text-muted); }
+  .tab span{ font-size:13px; font-weight:500; color:var(--chrome-text-muted); }
+  .tab.active{ background:var(--bg); border-right-color:var(--border); }
+  .tab.active svg{ color:var(--text); }
+  .tab.active span{ font-weight:600; color:var(--text); }
+  .tab:not(.active):hover{ background:rgba(255,255,255,0.03); }
+  .tab-close{
+    width:18px; height:18px; border-radius:4px; border:none; background:transparent; color:var(--chrome-text-muted);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; margin-left:2px;
+  }
+  .tab-close:hover{ background:rgba(255,255,255,0.1); }
+  .tab-close svg{ width:10px; height:10px; }
+  .tab-dot{ width:6px; height:6px; border-radius:3px; background:var(--accent); }
+
+  /* ---------- Workspace ---------- */
+  .workspace{ flex:1; min-height:0; display:flex; }
+
+  /* Project-zijbalk: zelfde opzet als de zijbalk in materialen_page.py/
+     projecten_page.py (vaste 216px, sidebarLabel + sidebarItem-stijl). */
+  .project-sidebar{
+    width:216px; flex:0 0 auto; background:var(--surface); border-right:1px solid var(--border);
+    padding:16px 12px; display:flex; flex-direction:column; gap:4px; overflow-y:auto;
+  }
+  .sidebar-label{
+    color:var(--text-faint); font-size:10.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    padding:4px 8px; margin-bottom:2px;
+  }
+  .sidebar-item{
+    display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:7px; cursor:pointer;
+    font-size:13px; font-weight:500; color:var(--text-muted); background:none; border:none; width:100%;
+    text-align:left; font-family:inherit;
+  }
+  .sidebar-item svg{ width:16px; height:16px; flex:0 0 auto; }
+  .sidebar-item:hover{ background:var(--surface-hover); color:var(--text); }
+  .sidebar-item.active{ background:var(--accent-soft); color:var(--accent-text); font-weight:600; }
+  .sidebar-item .soon{
+    margin-left:auto; font-size:9px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase;
+    background:var(--surface-2); color:var(--text-faint); border-radius:8px; padding:1.5px 5px; flex:0 0 auto;
+  }
+  .sidebar-item.active .soon{ background:var(--surface); }
+  .sidebar-divider{ height:1px; background:var(--border); margin:8px 0; flex:0 0 auto; }
+
+  .project-view{ flex:1; min-width:0; overflow-y:auto; padding:24px 28px 40px; }
+  .project-view-inner{ max-width:1120px; }
+
+  /* Project header */
+  .project-head{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:20px;
+  }
+  .project-head-left{ display:flex; flex-direction:column; gap:8px; }
+  .breadcrumb{
+    display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-faint); font-weight:600;
+  }
+  .breadcrumb svg{ width:12px; height:12px; }
+  .project-title-row{ display:flex; align-items:center; gap:12px; }
+  .project-title{ font-size:22px; font-weight:800; text-wrap:balance; }
+  .meta-row{ display:flex; align-items:center; gap:16px; color:var(--text-muted); font-size:13px; flex-wrap:wrap; }
+  .meta-row .item{ display:flex; align-items:center; gap:6px; }
+  .meta-row svg{ width:14px; height:14px; color:var(--text-faint); flex:0 0 auto; }
+  .head-actions{ display:flex; gap:8px; flex:0 0 auto; }
+
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:3px 9px 3px 8px; border-radius:10px;
+    font-size:11px; font-weight:700;
+  }
+  .chip .dot{ width:7px; height:7px; border-radius:3px; }
+  .chip-prep{ background:var(--surface-2); color:var(--text-muted); }
+  .chip-prep .dot{ background:var(--neutral-dot); }
+  .chip-production{ background:var(--accent-soft); color:var(--accent-text); }
+  .chip-production .dot{ background:var(--accent); }
+  .chip-install{ background:var(--indigo-soft); color:var(--indigo); }
+  .chip-install .dot{ background:var(--indigo); }
+  .chip-done{ background:var(--success-soft); color:var(--success-ink); }
+  .chip-done .dot{ background:var(--success); }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; border-radius:8px; padding:8px 15px; font-weight:600;
+    font-size:13px; cursor:pointer; border:none; font-family:inherit;
+  }
+  .btn svg{ width:14px; height:14px; }
+  .btn-primary{ background:var(--accent); color:#12141B; }
+  .btn-primary:hover{ background:var(--accent-text); color:#fff; }
+  .btn-ghost{ background:var(--surface); color:var(--text); border:1px solid var(--border); }
+  .btn-ghost:hover{ background:var(--surface-hover); }
+
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  /* Cards / sections */
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+  .section-label{
+    color:var(--text-faint); font-size:10.5px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase;
+  }
+  .field-label{ color:var(--text-muted); font-size:12px; font-weight:600; display:block; margin-bottom:6px; }
+  .field{
+    width:100%; background:var(--surface); border:1px solid var(--border); border-radius:7px;
+    padding:8px 10px; font-size:13px; color:var(--text); font-family:inherit;
+  }
+  .field:focus{ outline:none; border-color:var(--accent); }
+  select.field{ appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5.5 8.5l6.5 6.5 6.5-6.5' fill='none' stroke='%239297A8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; background-size:13px; padding-right:30px; }
+
+  /* Overzicht */
+  .form-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px 20px; padding:22px; }
+  .form-grid .full{ grid-column:1 / -1; }
+  .form-footer{
+    display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid var(--border);
+  }
+
+  /* Samenstelling: lijst en toevoegen naast elkaar i.p.v. onder elkaar (op
+     Svens verzoek — voluit-breed genoeg voor beide om leesbaar te zijn). */
+  .samenstelling-stack{ display:flex; flex-direction:column; gap:20px; }
+  .split-card{ display:flex; align-items:stretch; }
+  .split-list{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  .split-add{
+    width:300px; flex:0 0 auto; border-left:1px solid var(--border); background:var(--surface-2);
+    padding:16px 18px; display:flex; flex-direction:column; gap:12px; border-radius:0 12px 12px 0;
+  }
+  @media (max-width:820px){
+    .split-card{ flex-direction:column; }
+    .split-add{ width:auto; border-left:none; border-top:1px solid var(--border); border-radius:0 0 12px 12px; }
+  }
+  .card-head{
+    display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border);
+  }
+  .card-head h3{ margin:0; font-size:14.5px; font-weight:700; }
+  .card-head .count{ color:var(--text-faint); font-size:12px; font-weight:600; }
+  .row-list{ display:flex; flex-direction:column; }
+  .row-item{
+    display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--border);
+  }
+  .row-item:last-child{ border-bottom:none; }
+  .row-icon{
+    width:34px; height:34px; border-radius:8px; background:var(--surface-2); color:var(--text-muted);
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+  }
+  .row-icon svg{ width:16px; height:16px; }
+  .row-main{ flex:1; min-width:0; }
+  .row-title{ font-size:13.5px; font-weight:700; }
+  .row-sub{ color:var(--text-muted); font-size:12px; margin-top:2px; }
+  .row-actions{ display:flex; align-items:center; gap:2px; flex:0 0 auto; }
+  .icon-action{
+    width:28px; height:28px; border-radius:6px; border:none; background:transparent; color:var(--text-faint);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .icon-action:hover{ background:var(--surface-hover); color:var(--text); }
+  .icon-action.danger:hover{ background:var(--critical-soft); color:var(--critical); }
+  .icon-action svg{ width:15px; height:15px; }
+  .badge-count{
+    background:var(--surface-2); color:var(--text-muted); border:1px solid var(--border); border-radius:10px;
+    padding:2px 8px; font-size:11px; font-weight:600; flex:0 0 auto;
+  }
+
+  .split-add .field{ background:var(--surface); }
+  .stepper-row{ display:flex; align-items:center; gap:8px; }
+  .stepper{
+    display:flex; align-items:center; border:1px solid var(--border); border-radius:7px; background:var(--surface);
+    overflow:hidden; flex:0 0 auto;
+  }
+  .stepper button{
+    width:28px; height:34px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; font-size:14px;
+  }
+  .stepper button:hover{ background:var(--surface-hover); }
+  .stepper input{
+    width:40px; border:none; text-align:center; font-size:13px; font-family:inherit; background:transparent; color:var(--text);
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* Model-zoekpopup i.p.v. een kale dropdown — bij veel modellen in de
+     bibliotheek is scrollen door een <select> niet te doen (op Svens
+     verzoek; zelfde patroon straks ook toepassen op de submodel-picker in
+     de Modellenbibliotheek). */
+  .model-picker{ position:relative; }
+  .model-picker .field{ cursor:text; }
+  .model-picker-results{
+    position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--surface);
+    border:1px solid var(--border); border-radius:8px; box-shadow:0 10px 28px rgba(20,20,30,0.18);
+    max-height:220px; overflow-y:auto; z-index:20; display:none; padding:4px;
+  }
+  .model-picker-results.open{ display:block; }
+  .model-result{
+    padding:8px 10px; font-size:13px; font-weight:600; border-radius:6px; cursor:pointer; color:var(--text);
+  }
+  .model-result:hover, .model-result.highlighted{ background:var(--accent-soft); color:var(--accent-text); }
+  .model-result-empty{ padding:10px; font-size:12.5px; color:var(--text-faint); text-align:center; }
+
+  .onderdeel-form{ display:flex; flex-direction:column; gap:12px; }
+  .segmented{
+    display:inline-flex; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:2px;
+  }
+  .segmented button{
+    border:none; background:transparent; border-radius:6px; padding:5px 10px; font-size:11.5px; font-weight:600;
+    color:var(--text-muted); cursor:pointer; font-family:inherit;
+  }
+  .segmented button.checked{ background:var(--surface); color:var(--text); box-shadow:0 0 0 1px var(--border); }
+  .chip-toggle-row{ display:flex; gap:6px; flex-wrap:wrap; }
+  .chip-toggle{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:4px 11px;
+    font-size:11.5px; font-weight:600; color:var(--text-muted); cursor:pointer;
+  }
+  .chip-toggle.checked{ background:var(--accent-soft); border-color:var(--accent-soft-border); color:var(--accent-text); }
+
+  /* Zaaglijst */
+  .zaaglijst-toolbar{
+    display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:14px; flex-wrap:wrap;
+  }
+  .sort-builder{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .sort-builder-label{ font-size:12px; color:var(--text-faint); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+  .sort-level{
+    display:flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:5px 6px 5px 10px;
+  }
+  .sort-level .n{
+    width:16px; height:16px; border-radius:50%; background:var(--accent-soft); color:var(--accent-text);
+    font-size:9.5px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+  }
+  .sort-level select{ border:none; background:transparent; font-size:12.5px; font-weight:600; color:var(--text); font-family:inherit; }
+  .sort-level select:focus{ outline:none; }
+  .sort-level button{ border:none; background:transparent; color:var(--text-faint); cursor:pointer; display:flex; padding:2px; }
+  .sort-level button svg{ width:11px; height:11px; }
+  .add-sort-level{
+    display:flex; align-items:center; gap:5px; border:1px dashed var(--border); border-radius:8px; padding:6px 10px;
+    font-size:12px; font-weight:600; color:var(--text-faint); background:none; cursor:pointer; font-family:inherit;
+  }
+  .add-sort-level:hover{ color:var(--accent-text); border-color:var(--accent-soft-border); }
+  .add-sort-level svg{ width:12px; height:12px; }
+
+  table.zaaglijst{ width:100%; border-collapse:collapse; }
+  table.zaaglijst th{
+    text-align:left; background:var(--surface-2); color:var(--text-faint); font-size:11px; font-weight:700;
+    text-transform:uppercase; padding:9px 12px; border-bottom:1px solid var(--border);
+  }
+  table.zaaglijst td{ padding:11px 12px; border-bottom:1px solid var(--border); font-size:13px; }
+  table.zaaglijst tr:last-child td{ border-bottom:none; }
+  table.zaaglijst td.num{ font-variant-numeric:tabular-nums; }
+  .herkomst-pill{
+    background:var(--surface-2); color:var(--text-muted); border-radius:9px; padding:2px 9px; font-size:11px; font-weight:600;
+  }
+  .zaaglijst-footer{
+    display:flex; justify-content:space-between; align-items:center; padding:12px 12px 0; color:var(--text-muted); font-size:12px;
+  }
+
+  /* Placeholder panels (Labels / Zaagplannen) */
+  .placeholder{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    padding:70px 30px; gap:14px;
+  }
+  .placeholder-icon{
+    width:56px; height:56px; border-radius:16px; background:var(--surface-2); color:var(--text-faint);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .placeholder-icon svg{ width:26px; height:26px; }
+  .placeholder h3{ margin:0; font-size:16px; font-weight:800; }
+  .placeholder p{ margin:0; max-width:440px; color:var(--text-muted); font-size:13px; line-height:1.6; }
+  .placeholder .tag{
+    display:inline-flex; align-items:center; gap:6px; background:var(--surface-2); color:var(--text-faint);
+    border-radius:20px; padding:5px 12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;
+  }
+</style>
+
+<div class="app">
+  <!-- Chrome: header -->
+  <div class="header">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v2.5M7 8h10a2 2 0 012 2v6a3 3 0 01-3 3H8a3 3 0 01-3-3v-6a2 2 0 012-2z" stroke="#20222B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="12.5" r="1.15" fill="#20222B"/><circle cx="14.5" cy="12.5" r="1.15" fill="#20222B"/></svg>
+      </div>
+      <div class="brand-label">Robo<span>Cutter</span></div>
+    </div>
+    <div class="nav">
+      <button class="nav-btn active"><svg viewBox="0 0 24 24" fill="none"><path d="M3.5 6.8a1.3 1.3 0 011.3-1.3H9l2 2.1h8.2a1.3 1.3 0 011.3 1.3v8.4a1.3 1.3 0 01-1.3 1.3H4.8a1.3 1.3 0 01-1.3-1.3V6.8z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>Projecten</button>
+      <button class="nav-btn"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5l8 4.3-8 4.3-8-4.3 8-4.3z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M4 12.2l8 4.3 8-4.3M4 16l8 4.3L20 16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Materialenbibliotheek</button>
+      <button class="nav-btn"><svg viewBox="0 0 24 24" fill="none"><path d="M4.3 12A7.7 7.7 0 0116.8 6.2M19.7 12a7.7 7.7 0 01-12.5 5.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M13.8 3.6l3 2.6-3 2.6M10.2 20.4l-3-2.6 3-2.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Reststukkenbibliotheek</button>
+      <button class="nav-btn"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M4 7.5L12 12l8-4.5M12 12v9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Modellenbibliotheek</button>
+    </div>
+    <div class="edition-badge">Editie: Pro</div>
+    <button class="icon-btn" title="Instellingen"><svg viewBox="0 0 24 24" fill="none"><path d="M3.5 7h9M18.5 7h2M3.5 17h2M9.5 17h11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="14.5" cy="7" r="2.3" stroke="currentColor" stroke-width="1.9"/><circle cx="6.5" cy="17" r="2.3" stroke="currentColor" stroke-width="1.9"/></svg></button>
+    <div class="avatar">SW</div>
+  </div>
+
+  <!-- Chrome: tab strip -->
+  <div class="tabstrip">
+    <div class="tab">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M3.5 11.5L12 4l8.5 7.5M5.5 10v8.2a1 1 0 001 1h4.2v-5.6h2.6v5.6H17.5a1 1 0 001-1V10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Dashboard</span>
+    </div>
+    <div class="tab">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M3.5 6.8a1.3 1.3 0 011.3-1.3H9l2 2.1h8.2a1.3 1.3 0 011.3 1.3v8.4a1.3 1.3 0 01-1.3 1.3H4.8a1.3 1.3 0 01-1.3-1.3V6.8z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>
+      <span>Projecten</span>
+      <button class="tab-close"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="tab active">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M3.5 6.8a1.3 1.3 0 011.3-1.3H9l2 2.1h8.2a1.3 1.3 0 011.3 1.3v8.4a1.3 1.3 0 01-1.3 1.3H4.8a1.3 1.3 0 01-1.3-1.3V6.8z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>
+      <span>Keuken Jansen</span>
+      <button class="tab-close"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg></button>
+    </div>
+  </div>
+
+  <!-- Workspace -->
+  <div class="workspace">
+    <div class="project-sidebar">
+      <div class="sidebar-label">Keuken Jansen</div>
+      <button class="sidebar-item active" data-panel="overzicht">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Overzicht
+      </button>
+      <button class="sidebar-item" data-panel="samenstelling">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5l8 4.3-8 4.3-8-4.3 8-4.3z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M4 12.2l8 4.3 8-4.3M4 16l8 4.3L20 16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Samenstelling
+      </button>
+      <button class="sidebar-item" data-panel="zaaglijst">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        Zaaglijst
+      </button>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-label">Documenten</div>
+      <button class="sidebar-item" data-panel="labels">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12.6 3.5H6a2.5 2.5 0 00-2.5 2.5v6.6c0 .5.2 1 .55 1.35l8.4 8.4a1.9 1.9 0 002.7 0l6.6-6.6a1.9 1.9 0 000-2.7l-8.4-8.4a1.9 1.9 0 00-1.35-.55z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="8.3" cy="8.3" r="1.3" fill="currentColor" stroke="none"/></svg>
+        Labels <span class="soon">binnenkort</span>
+      </button>
+      <button class="sidebar-item" data-panel="zaagplannen">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6.5 3.5h8l4 4v13a1 1 0 01-1 1h-11a1 1 0 01-1-1v-16a1 1 0 011-1z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M14.5 3.5V8h4M8.5 13h7M8.5 16.5h7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        Zaagplannen <span class="soon">binnenkort</span>
+      </button>
+    </div>
+    <div class="project-view">
+      <div class="project-view-inner">
+
+      <div class="project-head">
+        <div class="project-head-left">
+          <div class="breadcrumb">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M3.5 6.8a1.3 1.3 0 011.3-1.3H9l2 2.1h8.2a1.3 1.3 0 011.3 1.3v8.4a1.3 1.3 0 01-1.3 1.3H4.8a1.3 1.3 0 01-1.3-1.3V6.8z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>
+            PROJECTEN
+          </div>
+          <div class="project-title-row">
+            <div class="project-title">Keuken Jansen</div>
+            <div class="chip chip-production"><span class="dot"></span>In productie</div>
+          </div>
+          <div class="meta-row">
+            <div class="item"><svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>fam. Jansen</div>
+            <div class="item"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>OP-2026-014</div>
+            <div class="item"><svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5.2" width="17" height="15.3" rx="2.2" stroke="currentColor" stroke-width="1.9"/><path d="M3.5 9.8h17M8 3.2v3.4M16 3.2v3.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>Oplevering 2026-09-08</div>
+          </div>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-ghost"><svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="4.2" rx="1.2" stroke="currentColor" stroke-width="1.9"/><path d="M4.7 8.7v9.1a1.6 1.6 0 001.6 1.6h11.4a1.6 1.6 0 001.6-1.6V8.7M9.8 13h4.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Archiveren</button>
+        </div>
+      </div>
+
+      <!-- ===== OVERZICHT ===== -->
+      <div class="panel active" id="panel-overzicht">
+        <div class="card">
+          <div class="form-grid">
+            <div>
+              <label class="field-label">Projectnaam</label>
+              <input class="field" value="Keuken Jansen">
+            </div>
+            <div>
+              <label class="field-label">Klant</label>
+              <input class="field" value="fam. Jansen">
+            </div>
+            <div>
+              <label class="field-label">Opdrachtnummer</label>
+              <input class="field" value="OP-2026-014">
+            </div>
+            <div>
+              <label class="field-label">Contactpersoon</label>
+              <input class="field" value="Piet Jansen">
+            </div>
+            <div>
+              <label class="field-label">E-mail</label>
+              <input class="field" value="p.jansen@example.com">
+            </div>
+            <div>
+              <label class="field-label">Telefoon</label>
+              <input class="field" value="06-12345678">
+            </div>
+            <div>
+              <label class="field-label">Startdatum</label>
+              <input class="field" value="2026-08-04" placeholder="jjjj-mm-dd">
+            </div>
+            <div>
+              <label class="field-label">Opleverdatum</label>
+              <input class="field" value="2026-09-08" placeholder="jjjj-mm-dd">
+            </div>
+            <div>
+              <label class="field-label">Status</label>
+              <select class="field">
+                <option>Werkvoorbereiding</option>
+                <option selected>In productie</option>
+                <option>Installatie</option>
+                <option>Afgerond</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-footer">
+            <button class="btn btn-ghost">Annuleren</button>
+            <button class="btn btn-primary">Wijzigingen opslaan</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SAMENSTELLING ===== -->
+      <div class="panel" id="panel-samenstelling">
+        <div class="samenstelling-stack">
+
+          <div class="card split-card">
+            <div class="split-list">
+              <div class="card-head">
+                <h3>Modellen</h3>
+                <span class="count">1 model · 8 onderdelen</span>
+              </div>
+              <div class="row-list">
+                <div class="row-item">
+                  <div class="row-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg></div>
+                  <div class="row-main">
+                    <div class="row-title">Onderkast 60cm <span class="badge-count">× 2</span></div>
+                    <div class="row-sub">8 onderdelen (platgeslagen kopie) · toegevoegd vanuit Modellenbibliotheek</div>
+                  </div>
+                  <div class="row-actions">
+                    <button class="icon-action" title="Bijwerken naar laatste versie"><svg viewBox="0 0 24 24" fill="none"><path d="M4.3 12A7.7 7.7 0 0116.8 6.2M19.7 12a7.7 7.7 0 01-12.5 5.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M13.8 3.6l3 2.6-3 2.6M10.2 20.4l-3-2.6 3-2.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="icon-action danger" title="Verwijderen"><svg viewBox="0 0 24 24" fill="none"><path d="M4.5 7h15M9.5 7V5.2a1.4 1.4 0 011.4-1.4h2.2a1.4 1.4 0 011.4 1.4V7M6.8 7l.8 12a1.8 1.8 0 001.8 1.7h5.2a1.8 1.8 0 001.8-1.7l.8-12" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="split-add">
+              <div class="section-label">MODEL TOEVOEGEN</div>
+              <div class="model-picker">
+                <input class="field" placeholder="Zoek een model…" autocomplete="off" id="model-search">
+                <div class="model-picker-results" id="model-results">
+                  <div class="model-result">Onderkast 60cm</div>
+                  <div class="model-result">Bovenkast 40cm</div>
+                  <div class="model-result">Hoekkast</div>
+                  <div class="model-result">Ladekast 80cm</div>
+                  <div class="model-result">Kolomkast 220cm</div>
+                </div>
+              </div>
+              <div>
+                <label class="field-label">Aantal</label>
+                <div class="stepper-row">
+                  <div class="stepper"><button>−</button><input value="1"><button>+</button></div>
+                </div>
+              </div>
+              <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.5v15M4.5 12h15" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>Model toevoegen</button>
+            </div>
+          </div>
+
+          <div class="card split-card">
+            <div class="split-list">
+              <div class="card-head">
+                <h3>Losse onderdelen</h3>
+                <span class="count">2 onderdelen</span>
+              </div>
+              <div class="row-list">
+                <div class="row-item">
+                  <div class="row-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="10" width="18" height="4.2" rx="1.3" stroke="currentColor" stroke-width="1.9"/></svg></div>
+                  <div class="row-main">
+                    <div class="row-title">Werkblad</div>
+                    <div class="row-sub">Eiken multiplex 18mm · 1200 × 620 mm · aantal 1</div>
+                  </div>
+                  <div class="row-actions">
+                    <button class="icon-action" title="Bewerken"><svg viewBox="0 0 24 24" fill="none"><path d="M14.3 4.8l4.9 4.9M4 20l1-4.6L16.6 3.8a1.7 1.7 0 012.4 0l1.2 1.2a1.7 1.7 0 010 2.4L8.6 19l-4.6 1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="icon-action danger" title="Verwijderen"><svg viewBox="0 0 24 24" fill="none"><path d="M4.5 7h15M9.5 7V5.2a1.4 1.4 0 011.4-1.4h2.2a1.4 1.4 0 011.4 1.4V7M6.8 7l.8 12a1.8 1.8 0 001.8 1.7h5.2a1.8 1.8 0 001.8-1.7l.8-12" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                  </div>
+                </div>
+                <div class="row-item">
+                  <div class="row-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="10" width="18" height="4.2" rx="1.3" stroke="currentColor" stroke-width="1.9"/></svg></div>
+                  <div class="row-main">
+                    <div class="row-title">Achterwand</div>
+                    <div class="row-sub">Wit gemelamineerd 18mm · 1180 × 720 mm · aantal 1</div>
+                  </div>
+                  <div class="row-actions">
+                    <button class="icon-action" title="Bewerken"><svg viewBox="0 0 24 24" fill="none"><path d="M14.3 4.8l4.9 4.9M4 20l1-4.6L16.6 3.8a1.7 1.7 0 012.4 0l1.2 1.2a1.7 1.7 0 010 2.4L8.6 19l-4.6 1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="icon-action danger" title="Verwijderen"><svg viewBox="0 0 24 24" fill="none"><path d="M4.5 7h15M9.5 7V5.2a1.4 1.4 0 011.4-1.4h2.2a1.4 1.4 0 011.4 1.4V7M6.8 7l.8 12a1.8 1.8 0 001.8 1.7h5.2a1.8 1.8 0 001.8-1.7l.8-12" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="split-add">
+              <div class="section-label">NIEUW LOS ONDERDEEL</div>
+              <div>
+                <label class="field-label">Naam</label>
+                <input class="field" placeholder="bv. Plint">
+              </div>
+              <div>
+                <label class="field-label">Materiaal</label>
+                <select class="field"><option>Eiken multiplex 18mm</option><option>Wit gemelamineerd 18mm</option></select>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                  <label class="field-label">Breedte mm</label>
+                  <input class="field" placeholder="0">
+                </div>
+                <div style="flex:1;">
+                  <label class="field-label">Hoogte mm</label>
+                  <input class="field" placeholder="0">
+                </div>
+              </div>
+              <div>
+                <label class="field-label">Aantal</label>
+                <div class="stepper"><button>−</button><input value="1"><button>+</button></div>
+              </div>
+              <div>
+                <label class="field-label">Nerfrichting</label>
+                <div class="segmented">
+                  <button class="checked">Geen</button><button>Lange zijde</button><button>Korte zijde</button>
+                </div>
+              </div>
+              <div>
+                <label class="field-label">Kantenband</label>
+                <div class="chip-toggle-row">
+                  <button class="chip-toggle">Boven</button><button class="chip-toggle checked">Onder</button>
+                  <button class="chip-toggle">Links</button><button class="chip-toggle">Rechts</button>
+                </div>
+              </div>
+              <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.5v15M4.5 12h15" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>Onderdeel toevoegen</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== ZAAGLIJST ===== -->
+      <div class="panel" id="panel-zaaglijst">
+        <div class="zaaglijst-toolbar">
+          <div class="sort-builder">
+            <span class="sort-builder-label">Sorteren op</span>
+            <div class="sort-level">
+              <span class="n">1</span>
+              <select><option>Materiaal</option><option>Naam</option><option selected>Breedte</option><option>Hoogte</option><option>Aantal</option><option>Herkomst</option></select>
+              <button title="Niveau verwijderen"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg></button>
+            </div>
+            <div class="sort-level">
+              <span class="n">2</span>
+              <select><option selected>Materiaal</option><option>Naam</option><option>Breedte</option><option>Hoogte</option><option>Aantal</option><option>Herkomst</option></select>
+              <button title="Niveau verwijderen"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg></button>
+            </div>
+            <button class="add-sort-level"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.5v15M4.5 12h15" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>Niveau toevoegen</button>
+          </div>
+          <button class="btn btn-ghost"><svg viewBox="0 0 24 24" fill="none"><path d="M4.3 12A7.7 7.7 0 0116.8 6.2M19.7 12a7.7 7.7 0 01-12.5 5.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M13.8 3.6l3 2.6-3 2.6M10.2 20.4l-3-2.6 3-2.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Vernieuwen</button>
+        </div>
+        <div class="card">
+          <table class="zaaglijst">
+            <thead>
+              <tr><th>Onderdeel</th><th>Materiaal</th><th>Breedte</th><th>Hoogte</th><th>Aantal</th><th>Herkomst</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Achterwand</td><td>Wit gemelamineerd 18mm</td><td class="num">1180 mm</td><td class="num">720 mm</td><td class="num">1</td><td><span class="herkomst-pill">Los onderdeel</span></td></tr>
+              <tr><td>Deur</td><td>Wit gemelamineerd 18mm</td><td class="num">300 mm</td><td class="num">700 mm</td><td class="num">4</td><td><span class="herkomst-pill">Onderkast 60cm</span></td></tr>
+              <tr><td>Zijkant links</td><td>Eiken multiplex 18mm</td><td class="num">600 mm</td><td class="num">720 mm</td><td class="num">2</td><td><span class="herkomst-pill">Onderkast 60cm</span></td></tr>
+              <tr><td>Zijkant rechts</td><td>Eiken multiplex 18mm</td><td class="num">600 mm</td><td class="num">720 mm</td><td class="num">2</td><td><span class="herkomst-pill">Onderkast 60cm</span></td></tr>
+              <tr><td>Bodemplaat</td><td>Eiken multiplex 18mm</td><td class="num">564 mm</td><td class="num">560 mm</td><td class="num">2</td><td><span class="herkomst-pill">Onderkast 60cm</span></td></tr>
+              <tr><td>Werkblad</td><td>Eiken multiplex 18mm</td><td class="num">1200 mm</td><td class="num">620 mm</td><td class="num">1</td><td><span class="herkomst-pill">Los onderdeel</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="zaaglijst-footer">
+          <span>12 onderdelen totaal</span>
+          <span>Gesorteerd op: breedte, dan materiaal</span>
+        </div>
+      </div>
+
+      <!-- ===== LABELS (placeholder) ===== -->
+      <div class="panel" id="panel-labels">
+        <div class="card placeholder">
+          <div class="placeholder-icon">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12.6 3.5H6a2.5 2.5 0 00-2.5 2.5v6.6c0 .5.2 1 .55 1.35l8.4 8.4a1.9 1.9 0 002.7 0l6.6-6.6a1.9 1.9 0 000-2.7l-8.4-8.4a1.9 1.9 0 00-1.35-.55z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="8.3" cy="8.3" r="1.3" fill="currentColor" stroke="none"/></svg>
+          </div>
+          <span class="tag">Hoofdstuk 6</span>
+          <h3>Labels zijn nog niet beschikbaar</h3>
+          <p>
+            Labels worden straks automatisch gegenereerd zodra het zaagplan voor dit
+            project klaar is — met materiaal, projectnummer en afmeting per onderdeel,
+            optioneel aangevuld met een QR-/barcode. Dat vereist eerst echte
+            zaagplan-generatie vanuit een project, wat nog gebouwd moet worden.
+          </p>
+        </div>
+      </div>
+
+      <!-- ===== ZAAGPLANNEN (placeholder) ===== -->
+      <div class="panel" id="panel-zaagplannen">
+        <div class="card placeholder">
+          <div class="placeholder-icon">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M6.5 3.5h8l4 4v13a1 1 0 01-1 1h-11a1 1 0 01-1-1v-16a1 1 0 011-1z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M14.5 3.5V8h4M8.5 13h7M8.5 16.5h7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          </div>
+          <span class="tag">Nog te bouwen</span>
+          <h3>Zaagplannen zijn nog niet beschikbaar</h3>
+          <p>
+            Hier komen straks de gegenereerde zaagplan-PDF's voor dit project te staan,
+            gebaseerd op de onderdelen uit de Zaaglijst hiernaast — inclusief de historie
+            van eerder gegenereerde versies. Ook dit vereist eerst echte
+            zaagplan-generatie vanuit een project.
+          </p>
+        </div>
+      </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.sidebar-item[data-panel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar-item[data-panel]').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
+    });
+  });
+  document.querySelectorAll('.segmented button, .chip-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('chip-toggle')) { btn.classList.toggle('checked'); return; }
+      btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('checked'));
+      btn.classList.add('checked');
+    });
+  });
+  document.querySelectorAll('.stepper').forEach(st => {
+    const input = st.querySelector('input');
+    st.querySelectorAll('button')[0].addEventListener('click', () => input.value = Math.max(1, (+input.value||1) - 1));
+    st.querySelectorAll('button')[1].addEventListener('click', () => input.value = (+input.value||1) + 1);
+  });
+
+  // Model-zoekpopup: typen filtert de lijst, klikken op een resultaat vult
+  // het veld en sluit de popup — i.p.v. een kale <select> die bij veel
+  // modellen in de bibliotheek onbruikbaar wordt.
+  const modelSearch = document.getElementById('model-search');
+  const modelResults = document.getElementById('model-results');
+  const modelOptions = Array.from(modelResults.querySelectorAll('.model-result')).map(el => el.textContent);
+
+  function renderModelResults(filter){
+    const matches = modelOptions.filter(naam => naam.toLowerCase().includes(filter.toLowerCase()));
+    modelResults.innerHTML = matches.length
+      ? matches.map(naam => `<div class="model-result">${naam}</div>`).join('')
+      : '<div class="model-result-empty">Geen modellen gevonden</div>';
+    modelResults.querySelectorAll('.model-result').forEach(el => {
+      el.addEventListener('click', () => {
+        modelSearch.value = el.textContent;
+        modelResults.classList.remove('open');
+      });
+    });
+  }
+  modelSearch.addEventListener('focus', () => { renderModelResults(modelSearch.value); modelResults.classList.add('open'); });
+  modelSearch.addEventListener('input', () => { renderModelResults(modelSearch.value); modelResults.classList.add('open'); });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.model-picker')) modelResults.classList.remove('open');
+  });
+</script>

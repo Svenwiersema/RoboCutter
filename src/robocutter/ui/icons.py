@@ -82,6 +82,25 @@ _ICONS: dict[str, str] = {
     '''.replace("{stroke}", _STROKE.replace("1.9", "1.8")),
     "check": '<path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
     "close": '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>',
+    "sliders": '''
+        <path d="M3.5 7h9M18.5 7h2M3.5 17h2M9.5 17h11" {stroke}/>
+        <circle cx="14.5" cy="7" r="2.3" fill="none" stroke="currentColor" stroke-width="1.9"/>
+        <circle cx="6.5" cy="17" r="2.3" fill="none" stroke="currentColor" stroke-width="1.9"/>
+    '''.replace("{stroke}", _STROKE),
+    "user": '<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z" {stroke}/>'.replace("{stroke}", _STROKE),
+    "envelope": '''
+        <path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+        <path d="M4 7l8 6 8-6" {stroke}/>
+    '''.replace("{stroke}", _STROKE),
+    "tag": '''
+        <path d="M12.6 3.5H6a2.5 2.5 0 00-2.5 2.5v6.6c0 .5.2 1 .55 1.35l8.4 8.4a1.9 1.9 0 002.7 0l6.6-6.6a1.9 1.9 0 000-2.7l-8.4-8.4a1.9 1.9 0 00-1.35-.55z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+        <circle cx="8.3" cy="8.3" r="1.3" fill="currentColor" stroke="none"/>
+    ''',
+    "document": '''
+        <path d="M6.5 3.5h8l4 4v13a1 1 0 01-1 1h-11a1 1 0 01-1-1v-16a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+        <path d="M14.5 3.5V8h4M8.5 13h7M8.5 16.5h7" {stroke}/>
+    '''.replace("{stroke}", _STROKE),
+    "list": '<path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
 }
 
 
