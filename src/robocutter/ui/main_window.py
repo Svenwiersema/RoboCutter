@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.materialen_page import MaterialenPage
 from robocutter.ui.modellen_page import ModellenPage
@@ -118,7 +119,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("RoboCutter")
         self.resize(1360, 860)
 
-        self._theme: Theme = LICHT
+        self._instellingen = InstellingenBeheer()
+        self._theme: Theme = DONKER if self._instellingen.huidige.thema == "donker" else LICHT
         self._nav_buttons: list[QPushButton] = []
         self._open_tabs: list[str] = ["projecten"]
         self._active_tab: str = "projecten"
@@ -583,6 +585,7 @@ class MainWindow(QMainWindow):
 
     def _toggle_theme(self) -> None:
         self._theme = DONKER if self._theme is LICHT else LICHT
+        self._instellingen.bijwerken(thema=self._theme.naam)
         # De materialen-/reststukkenpagina's beheren hun eigen (zoek/filter/
         # paneel-)status en worden daarom niet zomaar meegesloopt met de rest
         # van het venster; ze herbouwen hier bewust wél hun eigen iconen/

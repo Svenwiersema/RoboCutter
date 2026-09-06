@@ -87,10 +87,9 @@ bronwaarheid voor alle productbeslissingen.
   Pro/Enterprise is één lokale netwerk-server-pc waar de andere
   werkplekken via het lokale netwerk mee verbinden — die server en het
   bijbehorende protocol bestaan nog niet.
-  **Openstaand voor de instellingen-UI (nog niet gebouwd):** Sven wil
-  in de instellingen een locatie kunnen aanwijzen voor waar de
-  materialenbibliotheek wordt opgeslagen (het db-bestand/pad), in
-  plaats van een vast pad in de code.
+  **Update**: deze instelbare opslaglocatie is inmiddels gebouwd — zie
+  de Opties/instellingen-sectie verderop in dit document
+  (`robocutter.instellingen`, `InstellingenBeheer.effectieve_db_pad()`).
 - **Echte VS Code-stijl tabbalk (nieuw):** `MainWindow` houdt nu
   `self._open_tabs` (volgorde van openen) en `self._active_tab` bij i.p.v.
   één actieve pagina. Klikken op "Projecten"/"Materialenbibliotheek" in
@@ -280,6 +279,125 @@ bronwaarheid voor alle productbeslissingen.
   dat het paneel end-to-end aanstuurt (model + onderdeel + submodel
   aanmaken/opslaan/teruglezen, cirkelverwijzing- en
   in-gebruik-detectie, thema-wissel), naast de bestaande pytest-suite.
+- **Projectenbeheer — functie gebouwd (module 1 + 4, nog geen mockup/
+  scherm):** het laatste van de vier hoofdonderdelen, zelfde aanpak als
+  steeds: eerst alleen de functie/logica. `src/robocutter/projecten/`
+  bevat het datamodel (`models.py`: `Project` met klantgegevens,
+  status en twee manieren om onderdelen te verzamelen — modellen als
+  vaste kopie via `ProjectModelInstantie`, en losse onderdelen), de
+  bibliotheeklogica (`bibliotheek.py`: het snapshot-mechanisme en de
+  archiveerworkflow) en een aparte `zaaglijst.py` voor de gecombineerde
+  onderdelenlijst met sortering. Vier dingen zijn met Sven kortgesloten
+  vóór het bouwen:
+  1. **Klantgegevens zijn vrije tekstvelden** (`klant`, `contactpersoon`,
+     `email`, `telefoon`) i.p.v. een aparte klantenbibliotheek — die
+     noemt hoofdstuk 1 wel ("centraal in bibliotheken beheerd") maar
+     bestaat nergens (geen ontwerphoofdstuk, geen code). Sven: RoboCutter
+     onderhoudt dit zelf niet, dat wordt later met een ERP-koppeling
+     (hoofdstuk 9) opgelost.
+  2. **Model-snapshot**: `ProjectenBibliotheek.model_toevoegen` haalt
+     een model op en slaat het plat via `_platslaan` — een recursieve
+     helper die ook geneste submodellen (hoofdstuk 2) meeneemt en
+     aantallen doorvermenigvuldigt. Die platte kopie leeft daarna
+     onafhankelijk van de bibliotheek (`model_id` blijft bewaard voor de
+     expliciete `model_bijwerken_naar_laatste_versie`-actie, die opnieuw
+     platslaat — géén revisieregistratie, zie punt 3).
+  3. **Scope nu**: CRUD + samenstelling (model-snapshots + losse
+     onderdelen) + zaaglijst + archiveren horen er nu bij.
+     Revisiegeschiedenis/sandboxes, "project opslaan als nieuw model",
+     en écht een zaagplan genereren (+ de daarvan afhankelijke
+     "reststukken pas vrijgeven bij Afgerond") zijn expliciet door Sven
+     uitgesteld — net als bij Modellen, eigen substantieel werk dat nog
+     nergens in de app bestaat.
+  4. **Zaaglijst met multi-criteria sortering** (Svens eigen toevoeging
+     aan deze taak: "de gebruiker moet de zaaglijst kunnen sorteren op
+     meerdere criteria zoals materiaal en dan breedte"): `zaaglijst.py`
+     bouwt één `ZaaglijstRegel`-lijst uit alle model-snapshots en losse
+     onderdelen (`bouw_zaaglijst`), en `sorteer_zaaglijst(regels,
+     ["materiaal", "breedte"], materialen)` sorteert op een samengestelde
+     sleutel uit een geordende lijst sleutelnamen (`SORTEERSLEUTELS`:
+     materiaal, naam, breedte, hoogte, aantal, herkomst) — precies
+     "eerst op materiaal, dan op breedte". Onbekende sleutel geeft een
+     duidelijke `OnbekendeSorteersleutelError`.
+  Archiveren volgt het Materialen-patroon (`OngeldigeStatusOvergangError`):
+  alleen mogelijk vanuit status `AFGEROND`, definitief verwijderen alleen
+  vanuit gearchiveerd. De vier statusfasen (Werkvoorbereiding → In
+  productie → Installatie → Afgerond) zijn vrij instelbaar — het ontwerp
+  geeft geen overgangsregels tussen fasen. Kleine opgeruimde duplicatie
+  onderweg: `robocutter.modellen.opslag`'s onderdeel-(de)serialisatie
+  (`onderdeel_naar_dict`/`dict_naar_onderdeel`) is publiek gemaakt zodat
+  Projecten die kan hergebruiken i.p.v. dupliceren; `sample_data.py`
+  importeert `ProjectStatus` nu vanuit `robocutter.projecten.models`
+  i.p.v. een eigen kopie te definiëren. Gedekt door
+  `tests/test_projecten.py` (15 tests: validatie, platslaan incl.
+  geneste submodellen, bijwerken-naar-laatste-versie, archief-workflow,
+  zaaglijst-opbouw én de multi-sort-test die specifiek bewijst dat
+  `["materiaal", "breedte"]` eerst op materiaal groepeert en daarbinnen
+  op breedte sorteert, en een SQLite-persistentie-roundtrip). Ruwe
+  test-ui: `scripts/test_projecten_ui.py`, deelt de materialen-/
+  modellen-testbestanden met de andere test-ui's en heeft een eigen
+  `data/projecten_test.db`, met een zaaglijst-paneel met twee
+  sorteer-keuzelijsten om de multi-criteria-sortering live te
+  proberen. **Geen HTML-mockup of PySide6-scherm in deze stap** — dat
+  volgt later, zelfde mockup-first-werkwijze als steeds.
+- **Opties/instellingen — functie gebouwd, en al echt gekoppeld:**
+  op Svens verzoek gebouwd vóórdat het Projecten-scherm verder werd
+  opgepakt. Hier bestaat geen eigen ontwerphoofdstuk voor — regels
+  staan verspreid (bedrijfslogo in module 1, zaagstrategie in
+  hoofdstuk 5, label-vlaggen in hoofdstuk 6) en er was nergens een
+  opslagmechanisme voor app-brede voorkeuren (geen `QSettings`, geen
+  configbestand). `src/robocutter/instellingen/` bevat het datamodel
+  (`models.py`: `Instellingen` — één enkel record, geen lijst/CRUD
+  zoals de bibliotheken: `opslag_map`, `thema`, `bedrijfslogo_pad`,
+  `standaard_zaagstrategie`, `werkvoorbereider_naam`), opslag
+  (`opslag.py`: bewust GEEN SQLite-tabel in `data/robocutter.db` —
+  circulair, want de instelling die bepaalt wáár die database staat kan
+  niet in diezelfde database leven — maar een klein JSON-bestand op
+  `%APPDATA%\RoboCutter\instellingen.json`) en beheer (`beheer.py`:
+  validatie en `InstellingenBeheer`, met `effectieve_data_map()`/
+  `effectieve_db_pad()` en `wijzig_opslaglocatie()`). Sven koos de
+  scope (naast de expliciet gevraagde instelbare opslaglocatie ook
+  thema-voorkeur, bedrijfslogo, standaard zaagstrategie en
+  werkvoorbereider-naam; label-layout-opties komen later, labels
+  bestaan nog niet als feature) en bevestigde: bij het wijzigen van de
+  opslaglocatie moet een bestaand databasebestand **automatisch mee
+  verhuizen** (`wijzig_opslaglocatie` gebruikt `shutil.move`, met een
+  duidelijke fout als de doelmap al een databasebestand heeft). Bewuste
+  vereenvoudiging: dit herlaadt geen al-open SQLite-verbindingen elders
+  in de app — een lopende sessie moet herstart worden voordat andere
+  schermen de nieuwe locatie gebruiken.
+  **Dit is meteen echt gekoppeld, geen los backend-stukje:**
+  `materialen_page.py`, `reststukken_page.py` en `modellen_page.py`
+  hadden elk onafhankelijk dezelfde `_DB_PAD`-constante — die is nu
+  vervangen door `InstellingenBeheer().effectieve_db_pad()` (lost meteen
+  de bestaande verdrievoudiging op, en zal ook `projecten_page.py`
+  straks gebruiken). `main_window.py` leest bij opstarten
+  `InstellingenBeheer().huidige.thema` (i.p.v. altijd hardcoded
+  `LICHT`) en slaat de keuze op in `_toggle_theme()` — het thema wordt
+  dus nu voor het eerst echt onthouden tussen herstarts. Geverifieerd
+  met de echte app: thema wisselen, opnieuw opvragen via een losse
+  `InstellingenBeheer()`-instantie bevestigt dat het bestand
+  (`%APPDATA%\RoboCutter\instellingen.json`) correct wordt weggeschreven
+  en teruggelezen. `bedrijfslogo_pad`, `standaard_zaagstrategie` en
+  `werkvoorbereider_naam` hebben nog geen consumerende feature
+  (documentgeneratie/zaagplan-vanuit-project bestaan nog niet) en zijn
+  dus voorlopig alleen op te slaan/uit te lezen.
+  **Belangrijke les tijdens het bouwen (zie ook de opgeslagen memory
+  hierover)**: een vroege versie van de tests maakte een
+  `InstellingenBeheer` aan zonder de standaard-datamap te overschrijven,
+  waardoor `wijzig_opslaglocatie()` per ongeluk het **echte**
+  ontwikkel-databasebestand (`data/robocutter.db`, met Svens eigen
+  materialen/modellen) verplaatste naar een pytest-tmp-map. Dit werd
+  direct opgemerkt (de test faalde erop) en het bestand is teruggezet
+  vanuit de nog-niet-opgeruimde tmp-directory — geen dataverlies, maar
+  wel de aanleiding om `InstellingenBeheer` een expliciete
+  `standaard_data_map`-parameter te geven, zodat tests nooit meer
+  stilzwijgend op de echte datamap kunnen aangrijpen. Gedekt door
+  `tests/test_instellingen.py` (11 tests: laden/opslaan-roundtrip,
+  validatie, `wijzig_opslaglocatie` met en zonder bestaand bestand, en
+  het conflict-scenario). Ruwe test-ui: `scripts/test_instellingen_ui.py`
+  — gebruikt bewust eigen testbestanden (nooit de echte
+  `%APPDATA%`-instellingen of `data/robocutter.db`).
 
 ## Aannames in de code die Sven nog moet bevestigen
 
@@ -310,18 +428,26 @@ in plaats van aan te nemen:
 - Meerdere platen tegelijk optimaliseren (nu: één plaat per aanroep;
   er is nog geen logica die onderdelen over meerdere platen van
   hetzelfde materiaal verdeelt).
-- Projectenbeheer (Modules 1 en 4) als echte, werkende functionaliteit
-  — er is alleen een UI-schil met voorbeelddata (zie hierboven), geen
-  database/opslag. Materialenbibliotheek, Reststukkenbibliotheek (Module
-  3) en Modellenbibliotheek (Module 2) hebben inmiddels alle drie wél
-  echte functie-logica mét SQLite-opslag én een echt PySide6-scherm.
+- Revisiegeschiedenis/sandboxes (hoofdstuk 1/2), "project opslaan als
+  nieuw model" (hoofdstuk 4), en echte zaagplan-generatie vanuit een
+  project (+ de daarvan afhankelijke reststukken-vrijgave bij
+  Afronding) — bewust uitgesteld, zie de Projectenbeheer-sectie
+  hierboven. Materialenbibliotheek, Reststukkenbibliotheek (Module 3),
+  Modellenbibliotheek (Module 2) en Projectenbeheer (Module 1+4) hebben
+  nu allemaal wél hun kernfunctie-logica met SQLite-opslag; de eerste
+  drie ook al een echt PySide6-scherm, Projectenbeheer nog niet (zie
+  hierboven).
 - Labels (hoofdstuk 6), DXF/Vectorworks-import (hoofdstuk 10),
   ERP-koppeling (hoofdstuk 9), licentie/commerciële laag
   (hoofdstuk 7-8).
+- Label-layout-opties in Opties/instellingen (bewust later, zie de
+  Opties-sectie hierboven — labels zelf bestaan nog niet als feature).
 - De rest van de UI (PySide6, hoofdstuk 11): de home pagina
   (Projecten-overzicht), de Materialenbibliotheek, de
-  Reststukkenbibliotheek en de Modellenbibliotheek staan er; het losse
-  projecttabblad en een echt Projecten/Modellen-beheer nog niet.
+  Reststukkenbibliotheek en de Modellenbibliotheek staan er; het echte
+  Projecten-scherm (op de nu gebouwde functie-laag), een echt
+  Opties-scherm (de functie is er, zie hierboven) en het losse
+  projecttabblad nog niet.
 
 ## Technische kaders om aan te houden (hoofdstuk 8)
 
@@ -340,15 +466,20 @@ in plaats van aan te nemen:
 
 ## Suggestie voor een logische volgende stap
 
-Sven heeft gekozen om eerst met de UI door te gaan (zie de
-werkwijze hierboven). Alle vier hoofdonderdelen (Projecten, Materialen-,
-Reststukken- en Modellenbibliotheek) hebben nu een scherm. Logische
-vervolgstappen, in overleg met Sven te bepalen: Projecten/modellen-
-beheer als echte functionaliteit (Modules 1/4 — inclusief het
-snapshot-mechanisme project↔model en het losse projecttabblad, zie
-`assets/mockups/projectoverzicht-concept.png`), of de
-optimalisatie-motor verder afmaken (mes/groef, meerdere platen). Beide
-nog niet gekozen als volgende stap.
+Alle vier hoofdonderdelen hebben nu hun kernfunctie-logica
+(Materialen-, Reststukken-, Modellen- en Projectenbeheer), plus nu ook
+Opties/instellingen (met de instelbare opslaglocatie al echt gekoppeld
+aan alle drie bestaande schermen, en thema-voorkeur die nu onthouden
+wordt). De eerste drie bibliotheken hebben ook al een echt
+PySide6-scherm. Logische vervolgstappen, in overleg met Sven te
+bepalen: het echte Projecten-scherm (HTML-mockup + PySide6, op de nu
+gebouwde functie-laag — inclusief een zaaglijst-view met de
+multi-criteria-sortering), revisiegeschiedenis/sandboxes en échte
+zaagplan-generatie vanuit een project (module 1/4, bewust uitgesteld
+bij het bouwen van de functie), het losse projecttabblad (zie
+`assets/mockups/projectoverzicht-concept.png`), een echt
+Opties-scherm, of de optimalisatie-motor verder afmaken (mes/groef,
+meerdere platen). Nog niet gekozen als volgende stap.
 
 ## Werkwijze die Sven prettig vindt
 

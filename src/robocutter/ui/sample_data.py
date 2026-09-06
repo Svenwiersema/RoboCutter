@@ -1,23 +1,20 @@
 """Placeholder-voorbeelddata voor de home pagina.
 
-Module 1 (Projectbeheer) en Module 4 (Projecten) zijn ontwerpmatig
-afgerond (zie ``design/chapters/``) maar hebben nog geen echte
-database-backend. Deze module levert dezelfde voorbeeldprojecten als de
-goedgekeurde HTML-conceptmockup, zodat de UI nu al getoond en getest kan
-worden. Vervang dit door een echte query zodra Module 1/4 gebouwd is.
+Module 1 (Projectbeheer) en Module 4 (Projecten) hebben inmiddels een
+echte functie/logica-laag (``robocutter.projecten``), maar de home
+pagina zelf (het PySide6-scherm) is daar nog niet op aangesloten en
+toont voorlopig deze vaste voorbeeldprojecten, dezelfde als in de
+goedgekeurde HTML-conceptmockup. Vervang dit door een echte query
+zodra de Projecten-pagina gebouwd is.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
+from robocutter.projecten.models import ProjectStatus
 
-class ProjectStatus(str, Enum):
-    WERKVOORBEREIDING = "Werkvoorbereiding"
-    IN_PRODUCTIE = "In productie"
-    INSTALLATIE = "Installatie"
-    AFGEROND = "Afgerond"
+__all__ = ["ProjectStatus", "ProjectSummary", "VOORBEELD_PROJECTEN"]
 
 
 @dataclass(frozen=True)

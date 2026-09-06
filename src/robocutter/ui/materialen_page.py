@@ -4,15 +4,14 @@ Overzicht/Archief, type- en familiefilters; hoofdgedeelte met zoeken,
 een sorteerbare/doorzoekbare tabel, en een uitklapbaar paneel (geen
 pop-up, zie hoofdstuk 3) om een materiaal toe te voegen of te bewerken.
 
-Opslag: lokaal SQLite-bestand (``data/robocutter.db``, zie
-``robocutter.materialen.opslag`` en hoofdstuk 8). Nog geen
-multi-gebruiker-/netwerkopslag, en nog geen instelbare locatie (zie de
-openstaande punten in OVERDRACHT.md).
+Opslag: lokaal SQLite-bestand (standaard ``data/robocutter.db``, zie
+``robocutter.materialen.opslag`` en hoofdstuk 8). De locatie is nu
+instelbaar via ``robocutter.instellingen`` (``InstellingenBeheer.
+effectieve_db_pad()``) i.p.v. een vast pad in de code. Nog geen
+multi-gebruiker-/netwerkopslag.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, Qt, QStringListModel, QTimer
 from PySide6.QtWidgets import (
@@ -40,11 +39,9 @@ from robocutter.materialen.bibliotheek import (
 )
 from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType, Nerfrichting, Rand
 from robocutter.materialen.opslag import open_verbinding
+from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DB_PAD = _REPO_ROOT / "data" / "robocutter.db"
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
@@ -98,8 +95,9 @@ class MaterialenPage(QWidget):
         super().__init__(parent)
         self._theme = theme
 
-        _DB_PAD.parent.mkdir(parents=True, exist_ok=True)
-        self._db = open_verbinding(_DB_PAD)
+        db_pad = InstellingenBeheer().effectieve_db_pad()
+        db_pad.parent.mkdir(parents=True, exist_ok=True)
+        self._db = open_verbinding(db_pad)
         self.bibliotheek = MaterialenBibliotheek(self._db)
         if not self.bibliotheek.lijst():
             for materiaal in _sample_materialen():

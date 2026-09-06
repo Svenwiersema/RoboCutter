@@ -13,12 +13,11 @@ Deelt de ``MaterialenBibliotheek``-instantie van ``MaterialenPage``
 openen — één bron van waarheid in het geheugen, geen risico dat deze
 pagina een verouderde materialenlijst laat zien. Reststukken zelf
 krijgen wél hun eigen SQLite-opslag (``robocutter.reststukken.opslag``,
-zelfde ``data/robocutter.db``-bestand, eigen tabel).
+zelfde databasebestand als Materialen — de locatie is instelbaar via
+``robocutter.instellingen``, zie ``InstellingenBeheer.effectieve_db_pad()``).
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtWidgets import (
@@ -47,11 +46,9 @@ from robocutter.reststukken.bibliotheek import (
 )
 from robocutter.reststukken.models import Reststuk, ReststukStatus
 from robocutter.reststukken.opslag import open_verbinding
+from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DB_PAD = _REPO_ROOT / "data" / "robocutter.db"
 
 _KOLOMBREEDTES = [230, 80, 150, 200, 110, 110]
 _SORT_OPTIES = [("naam", "Sorteren op materiaal"), ("type", "Sorteren op type"), ("status", "Sorteren op status")]
@@ -75,8 +72,9 @@ class ReststukkenPage(QWidget):
         self._theme = theme
         self.materialen = materialen
 
-        _DB_PAD.parent.mkdir(parents=True, exist_ok=True)
-        self._db = open_verbinding(_DB_PAD)
+        db_pad = InstellingenBeheer().effectieve_db_pad()
+        db_pad.parent.mkdir(parents=True, exist_ok=True)
+        self._db = open_verbinding(db_pad)
         self.bibliotheek = ReststukkenBibliotheek(materialen, self._db)
 
         self._status_filter = ReststukStatus.BESCHIKBAAR

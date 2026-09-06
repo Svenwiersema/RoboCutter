@@ -21,15 +21,15 @@ naar PySide6:
 Deelt de ``MaterialenBibliotheek``-instantie van ``MaterialenPage``
 (zie ``main_window.py``) i.p.v. een eigen materialen-verbinding te
 openen. Modellen krijgen wél hun eigen SQLite-opslag
-(``robocutter.modellen.opslag``, zelfde ``data/robocutter.db``-bestand,
-eigen tabel).
+(``robocutter.modellen.opslag``, zelfde databasebestand als Materialen
+— de locatie is instelbaar via ``robocutter.instellingen``, zie
+``InstellingenBeheer.effectieve_db_pad()``).
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, Qt, QStringListModel, QTimer
 from PySide6.QtWidgets import (
@@ -58,11 +58,9 @@ from robocutter.materialen.models import MateriaalStatus
 from robocutter.modellen.bibliotheek import ModelInGebruikError, ModellenBibliotheek, valideer
 from robocutter.modellen.models import Model, ModelOnderdeel, Nerfrichting, Rand, SubModelVerwijzing
 from robocutter.modellen.opslag import open_verbinding
+from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DB_PAD = _REPO_ROOT / "data" / "robocutter.db"
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
@@ -92,8 +90,9 @@ class ModellenPage(QWidget):
         self._theme = theme
         self.materialen = materialen
 
-        _DB_PAD.parent.mkdir(parents=True, exist_ok=True)
-        self._db = open_verbinding(_DB_PAD)
+        db_pad = InstellingenBeheer().effectieve_db_pad()
+        db_pad.parent.mkdir(parents=True, exist_ok=True)
+        self._db = open_verbinding(db_pad)
         self.bibliotheek = ModellenBibliotheek(materialen, self._db)
 
         self._map_filter: str | None = None

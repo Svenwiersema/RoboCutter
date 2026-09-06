@@ -53,17 +53,43 @@ src/robocutter/modellen/
     met bescherming tegen cirkelverwijzingen).
     opslag.py — SQLite-opslag, eigen tabel in hetzelfde
     data/robocutter.db-bestand.
+src/robocutter/projecten/
+    models.py, bibliotheek.py — de projectenbeheer-functie (hoofdstuk
+    1/4): een project heeft klantgegevens (vrije tekstvelden, geen
+    aparte klantenbibliotheek), een status (Werkvoorbereiding/In
+    productie/Installatie/Afgerond) en een samenstelling van modellen
+    (als platgeslagen vaste kopie, inclusief geneste submodellen) en/of
+    losse onderdelen. Archiveren kan alleen vanuit Afgerond (zelfde
+    patroon als Materialen).
+    zaaglijst.py — combineert alle onderdelen van een project tot één
+    lijst en sorteert die op een geordende reeks criteria (bv. eerst
+    materiaal, dan breedte).
+    opslag.py — SQLite-opslag, eigen tabel in hetzelfde
+    data/robocutter.db-bestand.
+src/robocutter/instellingen/
+    models.py, beheer.py — de opties/instellingen-functie: één enkel
+    instellingen-record (thema, opslaglocatie, bedrijfslogo, standaard
+    zaagstrategie, werkvoorbereider-naam). Bewust GEEN SQLite-tabel
+    (circulair voor de opslaglocatie-instelling zelf) maar een JSON-
+    bestand op %APPDATA%\RoboCutter\instellingen.json. Al echt gekoppeld:
+    de Materialen-/Reststukken-/Modellenbibliotheek-pagina's gebruiken
+    `InstellingenBeheer().effectieve_db_pad()` i.p.v. een hardcoded pad,
+    en het thema wordt nu onthouden tussen herstarts.
+    opslag.py — laden/opslaan van het JSON-bestand.
 tests/
-    test_materialen.py, test_reststukken.py, test_modellen.py —
-    pytest-tests voor de drie bibliotheken.
+    test_materialen.py, test_reststukken.py, test_modellen.py,
+    test_projecten.py, test_instellingen.py — pytest-tests.
 scripts/
-    test_materialen_ui.py, test_reststukken_ui.py, test_modellen_ui.py
-    — ruwe, ongestylede PySide6 test-ui's, apart van de echte
-    schermen, om de bibliotheek-functies te proberen tijdens het
-    bouwen. Slaan op in data/materialen_test.db, data/reststukken_test.db
-    resp. data/modellen_test.db (lokaal, .gitignore'd) — de echte
-    Materialenbibliotheek-/Reststukkenbibliotheek-pagina's gebruiken
-    data/robocutter.db.
+    test_materialen_ui.py, test_reststukken_ui.py, test_modellen_ui.py,
+    test_projecten_ui.py, test_instellingen_ui.py — ruwe, ongestylede
+    PySide6 test-ui's, apart van de echte schermen, om de
+    bibliotheek-functies te proberen tijdens het bouwen. Slaan op in
+    data/materialen_test.db, data/reststukken_test.db,
+    data/modellen_test.db, data/projecten_test.db resp. eigen
+    testbestanden voor instellingen (lokaal, .gitignore'd) — de echte
+    Materialenbibliotheek-/Reststukkenbibliotheek-/Modellenbibliotheek-
+    pagina's gebruiken de instelbare locatie (standaard
+    data/robocutter.db).
 ```
 
 Belangrijke aannames die in de code staan (zie ook de docstring
@@ -99,10 +125,12 @@ python3 scripts/demo_render.py
 pip install -e ".[ui]"
 python -m robocutter.ui.app
 
-# Materialen-/reststukken-/modellenbibliotheek-functie los testen (ruwe test-ui's)
+# Materialen-/reststukken-/modellen-/projecten-/instellingenfunctie los testen (ruwe test-ui's)
 python scripts/test_materialen_ui.py
 python scripts/test_reststukken_ui.py
 python scripts/test_modellen_ui.py
+python scripts/test_projecten_ui.py
+python scripts/test_instellingen_ui.py
 ```
 
 Nog niet gedaan (bewust, dit is iteratie 1):
@@ -110,6 +138,8 @@ Nog niet gedaan (bewust, dit is iteratie 1):
   "verder te detailleren").
 - Meerdere platen tegelijk optimaliseren (nu: één plaat per aanroep).
 - UI (PySide6): de home pagina, de Materialenbibliotheek, de
-  Reststukkenbibliotheek en de Modellenbibliotheek staan er, zie
-  `OVERDRACHT.md` voor wat daar nog aan ontbreekt (een los
+  Reststukkenbibliotheek en de Modellenbibliotheek staan er; de
+  projectenbeheer-functie (hoofdstuk 1/4) en de opties/instellingen-
+  functie hebben nu wel een echte functie-laag maar nog geen eigen
+  scherm. Zie `OVERDRACHT.md` voor wat daar nog aan ontbreekt (een los
   projecttabblad, écht meerdere tabbladen tegelijk open).
