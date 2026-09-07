@@ -165,6 +165,74 @@ def test_model_bijwerken_naar_laatste_versie():
     assert len(project.modelinstanties[0].onderdelen) == 2
 
 
+def test_model_onderdeel_materiaal_wijzigen():
+    # Zelfde kast, zelfde corpusmateriaal, maar per project andere
+    # frontjes -- de use case waarvoor deze methode bestaat.
+    materialen, modellen, projecten = _bibliotheken()
+    corpus = materialen.toevoegen(_materiaal(naam="Corpusmateriaal"))
+    front_wit = materialen.toevoegen(_materiaal(naam="Front wit"))
+    front_eiken = materialen.toevoegen(_materiaal(naam="Front eiken"))
+    onderkast = modellen.toevoegen(
+        _model(
+            naam="Onderkast",
+            onderdelen=[
+                _onderdeel(corpus.id, id="zijkant", naam="Zijkant", aantal=2),
+                _onderdeel(front_wit.id, id="deur", naam="Deur", aantal=1),
+            ],
+        )
+    )
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, onderkast.id)
+    instantie_id = project.modelinstanties[0].id
+    deur = next(o for o in project.modelinstanties[0].onderdelen if o.naam == "Deur")
+    zijkant = next(o for o in project.modelinstanties[0].onderdelen if o.naam == "Zijkant")
+
+    project = projecten.model_onderdeel_materiaal_wijzigen(project.id, instantie_id, deur.id, front_eiken.id)
+
+    bijgewerkt = project.modelinstanties[0].onderdelen
+    deur_na = next(o for o in bijgewerkt if o.id == deur.id)
+    zijkant_na = next(o for o in bijgewerkt if o.id == zijkant.id)
+    assert deur_na.materiaal_id == front_eiken.id
+    # De rest van het onderdeel (afmetingen, aantal) blijft ongewijzigd,
+    # en andere onderdelen in dezelfde snapshot blijven ongemoeid.
+    assert deur_na.breedte == deur.breedte and deur_na.aantal == deur.aantal
+    assert zijkant_na.materiaal_id == corpus.id
+
+
+def test_model_onderdeel_materiaal_wijzigen_onbekende_instantie_faalt():
+    materialen, modellen, projecten = _bibliotheken()
+    project = projecten.toevoegen(_project())
+    with pytest.raises(KeyError):
+        projecten.model_onderdeel_materiaal_wijzigen(project.id, "bestaat-niet", "ook-niet", "x")
+
+
+def test_model_onderdeel_materiaal_wijzigen_onbekend_onderdeel_faalt():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    onderkast = modellen.toevoegen(
+        _model(naam="Onderkast", onderdelen=[_onderdeel(materiaal.id, naam="Zijkant")])
+    )
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, onderkast.id)
+    instantie_id = project.modelinstanties[0].id
+    with pytest.raises(KeyError):
+        projecten.model_onderdeel_materiaal_wijzigen(project.id, instantie_id, "bestaat-niet", materiaal.id)
+
+
+def test_model_onderdeel_materiaal_wijzigen_onbekend_materiaal_faalt():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    onderkast = modellen.toevoegen(
+        _model(naam="Onderkast", onderdelen=[_onderdeel(materiaal.id, naam="Zijkant")])
+    )
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, onderkast.id)
+    instantie_id = project.modelinstanties[0].id
+    onderdeel_id = project.modelinstanties[0].onderdelen[0].id
+    with pytest.raises(ValueError):
+        projecten.model_onderdeel_materiaal_wijzigen(project.id, instantie_id, onderdeel_id, "bestaat-niet")
+
+
 def test_los_onderdeel_toevoegen_wijst_id_toe():
     materialen, _, projecten = _bibliotheken()
     materiaal = materialen.toevoegen(_materiaal())

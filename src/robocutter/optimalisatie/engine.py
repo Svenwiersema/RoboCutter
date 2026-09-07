@@ -26,11 +26,15 @@ Vier strategieën (namen/omschrijvingen vastgesteld in
     rechthoekje uit de HELE verzameling vrije ruimtes; "guillotine"
     werkt in plaats daarvan een wachtrij van deelgebieden strikt één
     voor één helemaal af (plaatsen + volledig opsplitsen) voordat het
-    volgende deelgebied aan de beurt is, en bouwt de zaagvolgorde
-    rechtstreeks op uit die opsplitsingen — zo is elke genoteerde snede
-    gegarandeerd een volledige snede van rand tot rand van het
-    deelgebied waarin hij gemaakt wordt, in plaats van de benaderde
-    per-onderdeel-editjes die de andere strategieën gebruiken.
+    volgende deelgebied aan de beurt is. Beide bouwen de zaagvolgorde
+    rechtstreeks op uit hun eigen opsplitsingen (gedeelde hulpfunctie
+    ``_splits_vrije_rechthoek``) — zo is elke genoteerde snede voor
+    zowel "efficient" als "guillotine" gegarandeerd een volledige snede
+    van rand tot rand van het deelgebied waarin hij gemaakt wordt, en
+    loopt hij dus nooit dwars door een al geplaatst onderdeel heen. Het
+    verschil tussen de twee zit dus alleen nog in de
+    plaatsings-/keuzeheuristiek, niet meer in de kwaliteit van de
+    zaagvolgorde zelf.
 
 Belangrijke, expliciete aannames (graag door Sven te bevestigen aan de
 hand van de gegenereerde voorbeelden — zie ``demo.py``):
@@ -53,10 +57,15 @@ hand van de gegenereerde voorbeelden — zie ``demo.py``):
   5. Als een onderdeel een fabriekskantenband nodig heeft, wordt het
      geplaatst tegen de eerste rand in ``materiaal.fabriekskantenband_randen``
      (volgorde: links, onder, boven, rechts) die de plaat heeft.
-  6. De zaagvolgorde (zaagvolgorde-lijst) is een eerste, redelijke
-     benadering op basis van de plaatsingsvolgorde — dit wordt verder
-     verfijnd zodra er meer gegenereerde voorbeelden zijn beoordeeld
-     (zie hoofdstuk 5, "Openstaande vragen").
+  6. De zaagvolgorde-nummering (welke snede het volgnummer 1, 2, ...
+     krijgt) is voor alle vier strategieën een eerste, redelijke
+     benadering op basis van de plaatsings-/opsplitsingsvolgorde — dit
+     wordt verder verfijnd zodra er meer gegenereerde voorbeelden zijn
+     beoordeeld (zie hoofdstuk 5, "Openstaande vragen"). De sneden zélf
+     (positie/start/einde) zijn dat sinds de zaagvolgorde-fix (zie
+     OVERDRACHT.md) niet meer: die zijn voor alle vier strategieën
+     gegarandeerd rand-tot-rand van hun eigen deelgebied/rij en lopen
+     dus nooit door een al geplaatst onderdeel heen.
 """
 
 from __future__ import annotations
@@ -215,16 +224,61 @@ def _classificeer_restruimte(vrije_rechten: list[tuple[float, float, float, floa
     return reststukken, afval
 
 
+def _splits_vrije_rechthoek(
+    fx: float, fy: float, fw: float, fh: float, genomen_b: float, genomen_h: float, volgnr_start: int
+) -> tuple[list[tuple[float, float, float, float]], list[Zaagsnede]]:
+    """Splitst het vrije rechthoek ``(fx, fy, fw, fh)`` in maximaal twee
+    nieuwe vrije rechthoeken nadat er een stuk van ``genomen_b x
+    genomen_h`` (kerf inbegrepen) uit de linkerbenedenhoek genomen is —
+    kortste-as-eerst heuristiek. Gedeeld door ``_pak_efficient`` en
+    ``_pak_guillotine`` zodat beide voor exact dezelfde opsplitsing
+    exact dezelfde (rand-tot-rand, dus nooit door een geplaatst
+    onderdeel heen lopende) zaagsnede opleveren."""
+
+    rest_breedte = fw - genomen_b
+    rest_hoogte = fh - genomen_h
+    nieuwe_rechten: list[tuple[float, float, float, float]] = []
+    sneden: list[Zaagsnede] = []
+
+    if rest_breedte < rest_hoogte:
+        if rest_breedte > 1e-6:
+            snede_x = fx + genomen_b
+            sneden.append(Zaagsnede(volgnr_start + len(sneden), "verticaal", snede_x, fy, fy + fh))
+            nieuwe_rechten.append((snede_x, fy, rest_breedte, fh))
+        if rest_hoogte > 1e-6:
+            snede_y = fy + genomen_h
+            sneden.append(Zaagsnede(volgnr_start + len(sneden), "horizontaal", snede_y, fx, fx + genomen_b))
+            nieuwe_rechten.append((fx, snede_y, genomen_b, rest_hoogte))
+    else:
+        if rest_hoogte > 1e-6:
+            snede_y = fy + genomen_h
+            sneden.append(Zaagsnede(volgnr_start + len(sneden), "horizontaal", snede_y, fx, fx + fw))
+            nieuwe_rechten.append((fx, snede_y, fw, rest_hoogte))
+        if rest_breedte > 1e-6:
+            snede_x = fx + genomen_b
+            sneden.append(Zaagsnede(volgnr_start + len(sneden), "verticaal", snede_x, fy, fy + genomen_h))
+            nieuwe_rechten.append((snede_x, fy, rest_breedte, genomen_h))
+
+    return nieuwe_rechten, sneden
+
+
 def _pak_efficient(
     eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
-) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str]]:
+) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Guillotine free-rectangle packing, best-area-fit, voor de
-    strategie 'meest efficiënte plaatsing'."""
+    strategie 'meest efficiënte plaatsing'. Bouwt de zaagvolgorde
+    rechtstreeks op uit de guillotine-opsplitsingen zelf (zie
+    ``_splits_vrije_rechthoek``, dezelfde aanpak als ``_pak_guillotine``)
+    i.p.v. de eerdere, losse per-plaatsing benadering — zo is elke
+    genoteerde snede gegarandeerd een rand-tot-rand snede van het op
+    dat moment gekozen vrije rechthoek en loopt hij dus nooit dwars
+    door een al geplaatst onderdeel heen."""
 
     x0, y0, x1, y1 = werkgebied
     vrije_rechten: list[tuple[float, float, float, float]] = [(x0, y0, x1 - x0, y1 - y0)]
     plaatsingen: list[Plaatsing] = []
     niet_geplaatst: list[str] = []
+    zaagvolgorde: list[Zaagsnede] = []
 
     # Grootste eerst plaatsen (best-area-fit werkt beter met grote stukken eerst).
     volgorde = sorted(eenheden, key=lambda e: e.breedte * e.hoogte, reverse=True)
@@ -258,27 +312,154 @@ def _pak_efficient(
         genomen_b = b + kerf_r
         genomen_h = h + kerf_o
 
-        # Guillotine-split: verdeel de rest van fw x fh in twee nieuwe
-        # vrije rechthoeken (kortste-as-eerst heuristiek).
-        rest_breedte = fw - genomen_b
-        rest_hoogte = fh - genomen_h
-        if rest_breedte < rest_hoogte:
-            if rest_breedte > 1e-6:
-                vrije_rechten.append((fx + genomen_b, fy, rest_breedte, fh))
-            if rest_hoogte > 1e-6:
-                vrije_rechten.append((fx, fy + genomen_h, genomen_b, rest_hoogte))
-        else:
-            if rest_hoogte > 1e-6:
-                vrije_rechten.append((fx, fy + genomen_h, fw, rest_hoogte))
-            if rest_breedte > 1e-6:
-                vrije_rechten.append((fx + genomen_b, fy, rest_breedte, genomen_h))
+        nieuwe_rechten, sneden = _splits_vrije_rechthoek(
+            fx, fy, fw, fh, genomen_b, genomen_h, len(zaagvolgorde) + 1
+        )
+        zaagvolgorde.extend(sneden)
+        vrije_rechten.extend(nieuwe_rechten)
 
-    return plaatsingen, vrije_rechten, niet_geplaatst
+    return plaatsingen, vrije_rechten, niet_geplaatst, zaagvolgorde
+
+
+_HOOGTE_TOLERANTIE = 1.0  # mm; "(bijna) gelijke hoogte" bij het groeperen in _pak_rijen/_pak_stroken
+
+
+def _groepeer_op_hoogte(
+    genormaliseerd: list[tuple[_Eenheid, float, float, bool]]
+) -> list[list[tuple[_Eenheid, float, float, bool]]]:
+    """Groepeer een op hoogte (aflopend) gesorteerde lijst in
+    aaneengesloten hoogte-groepen: opeenvolgende stukken waarvan de
+    hoogte minder dan ``_HOOGTE_TOLERANTIE`` verschilt van het eerste
+    (hoogste) lid van de groep. Voorkomt dat (bijna) identieke
+    onderdelen toevallig over meerdere rijen versnipperen (zie
+    ``_pak_rijen``'s docstring)."""
+
+    groepen: list[list[tuple[_Eenheid, float, float, bool]]] = []
+    for item in genormaliseerd:
+        if groepen and abs(item[2] - groepen[-1][0][2]) <= _HOOGTE_TOLERANTIE:
+            groepen[-1].append(item)
+        else:
+            groepen.append([item])
+    return groepen
+
+
+def _vul_rij(
+    resterend: list[tuple[_Eenheid, float, float, bool]], x0: float, x1: float, kerf: float
+) -> tuple[list[tuple[_Eenheid, float, float, bool]], list[tuple[_Eenheid, float, float, bool]], float]:
+    """Vult één rij vanaf ``x0`` tot ``x1``. De eerste (hoogte-bepalende)
+    hoogte-groep in ``resterend`` mag gedeeltelijk in de rij komen (de
+    rest wacht op een volgende rij, normaal gedrag als er simpelweg meer
+    stukken van die hoogte zijn dan in één rij passen). Elke latere,
+    kortere hoogte-groep mag alleen als geheel meedoen als opvulling van
+    de resterende breedte — nooit gedeeltelijk, want dat zou (bijna)
+    identieke onderdelen zonder aanleiding over meerdere rijen
+    verspreiden (zie ``_pak_rijen``'s docstring / OVERDRACHT.md)."""
+
+    rij: list[tuple[_Eenheid, float, float, bool]] = []
+    overig: list[tuple[_Eenheid, float, float, bool]] = []
+    cursor_x = x0
+    rij_hoogte = 0.0
+    for i, groep in enumerate(_groepeer_op_hoogte(resterend)):
+        if i == 0:
+            genomen = 0
+            for (eenheid, b, h, rot) in groep:
+                if (cursor_x + b) <= x1 + 1e-9:
+                    rij.append((eenheid, b, h, rot))
+                    rij_hoogte = max(rij_hoogte, h)
+                    cursor_x += b + kerf
+                    genomen += 1
+                else:
+                    break
+            overig.extend(groep[genomen:])
+        else:
+            breedte_nodig = sum(b for (_, b, _, _) in groep) + kerf * (len(groep) - 1)
+            if rij and (cursor_x + breedte_nodig) <= x1 + 1e-9:
+                for (eenheid, b, h, rot) in groep:
+                    rij.append((eenheid, b, h, rot))
+                    rij_hoogte = max(rij_hoogte, h)
+                    cursor_x += b + kerf
+            else:
+                overig.extend(groep)
+    return rij, overig, rij_hoogte
+
+
+def _bouw_rij_kolom_sneden(
+    rij: list[tuple[_Eenheid, float, float, bool]], x0: float, cursor_y: float, rij_hoogte: float, kerf: float
+) -> tuple[list[Plaatsing], list[Zaagsnede], float]:
+    """Plaatst de onderdelen van één rij/strook (van links naar rechts,
+    startend op ``x0``) en bouwt meteen de bijbehorende zaagsnedes
+    (nog met voorlopig volgnummer 0, zie ``_bouw_zaagvolgorde_uit_rijen``)
+    op: een verticale snede tussen elke kolom, met de VOLLEDIGE
+    rijhoogte (niet de hoogte van welk lid dan ook toevallig op een
+    bepaalde y staat), en — voor een kolom die een gestapelde groep is —
+    de interne horizontale sneden tussen de leden, begrensd tot de
+    breedte van die kolom zelf, nooit de volle plaatbreedte. Retourneert
+    ook de eind-x-positie (voor de restruimte-berekening van de
+    aanroeper). Losgetrokken uit ``_pak_rijen``/``_pak_stroken`` omdat
+    beide exact dezelfde kolom-opbouw hebben."""
+
+    plaatsingen: list[Plaatsing] = []
+    sneden: list[Zaagsnede] = []
+    kolom_randen: list[float] = []
+    x = x0
+    for (eenheid, b, h, rot) in rij:
+        nieuwe = eenheid.expand(x, cursor_y, b, h, rot)
+        plaatsingen.extend(nieuwe)
+        if len(nieuwe) > 1:
+            # Gestapelde groep: interne sneden tussen de leden, begrensd
+            # tot deze kolom (x .. x+b) i.p.v. de volle plaatbreedte —
+            # zonder deze begrenzing zou zo'n interne snede dwars door
+            # elk ander onderdeel in dezelfde rij heen lopen.
+            for lid in sorted(nieuwe, key=lambda p: p.y)[:-1]:
+                grens_y = round(lid.y + lid.hoogte, 6)
+                sneden.append(Zaagsnede(0, "horizontaal", grens_y, x, x + b))
+        kolom_randen.append(round(x + b, 6))
+        x += b + kerf
+
+    for grens_x in kolom_randen[:-1]:
+        sneden.append(Zaagsnede(0, "verticaal", grens_x, cursor_y, cursor_y + rij_hoogte))
+
+    return plaatsingen, sneden, x
+
+
+def _bouw_zaagvolgorde_uit_rijen(
+    rij_grenzen: list[tuple[float, float]], kolom_sneden: list[Zaagsnede], x0: float, x1: float, y1: float
+) -> list[Zaagsnede]:
+    """Zet de per-rij verzamelde kolomsneden (``kolom_sneden``, nog met
+    voorlopig volgnummer 0) samen met de volledige-breedte sneden
+    tussen de rijen onderling tot één doorlopend genummerde
+    zaagvolgorde. ``rij_grenzen`` is de lijst (rij_start_y, rij_hoogte)
+    in plaatsingsvolgorde (dus al oplopend in y) — de ENIGE bron voor
+    waar een rij daadwerkelijk begint, in plaats van (zoals voorheen)
+    elke losse y-coördinaat uit de platte plaatsingenlijst te gebruiken,
+    wat bij een gestapelde groep ten onrechte ook diens interne
+    naad-hoogtes als "rijgrens" behandelde en zo een volle-breedte snede
+    dwars door andere onderdelen in dezelfde rij liet lopen."""
+
+    sneden: list[Zaagsnede] = []
+    volgnr = 1
+
+    for (rij_y, _) in rij_grenzen[1:]:
+        sneden.append(Zaagsnede(volgnr, "horizontaal", rij_y, x0, x1))
+        volgnr += 1
+
+    if rij_grenzen:
+        laatste_y, laatste_hoogte = rij_grenzen[-1]
+        top_laatste_rij = laatste_y + laatste_hoogte
+        if top_laatste_rij < y1 - 1e-6:
+            sneden.append(Zaagsnede(volgnr, "horizontaal", top_laatste_rij, x0, x1))
+            volgnr += 1
+
+    for snede in kolom_sneden:
+        sneden.append(replace(snede, volgnummer=volgnr))
+        volgnr += 1
+
+    return sneden
 
 
 def _pak_rijen(
     eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
-) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str]]:
+) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Rij-gebaseerde packing voor de strategie 'lange zijdes eerst':
     volledige-breedte rijen, binnen een rij van links naar rechts."""
 
@@ -300,21 +481,13 @@ def _pak_rijen(
     resterend = list(genormaliseerd)
     cursor_y = y0
     vrije_rechten: list[tuple[float, float, float, float]] = []
+    rij_grenzen: list[tuple[float, float]] = []
+    kolom_sneden: list[Zaagsnede] = []
 
     while resterend:
-        # Nieuwe rij starten met het eerste (hoogste) overgebleven stuk.
-        rij: list[tuple[_Eenheid, float, float, bool]] = []
-        rij_hoogte = 0.0
-        cursor_x = x0
-        overig_na_rij = []
-        for (eenheid, b, h, rot) in resterend:
-            past_in_breedte = (cursor_x + b) <= x1 + 1e-9
-            if past_in_breedte:
-                rij.append((eenheid, b, h, rot))
-                rij_hoogte = max(rij_hoogte, h)
-                cursor_x += b + kerf
-            else:
-                overig_na_rij.append((eenheid, b, h, rot))
+        # Nieuwe rij starten; onderdelen met (bijna) gelijke hoogte
+        # blijven bij voorkeur bij elkaar (zie _vul_rij hierboven).
+        rij, overig_na_rij, rij_hoogte = _vul_rij(resterend, x0, x1, kerf)
         if not rij:
             # Past geen enkel overgebleven stuk meer (te breed of te hoog) -> stoppen.
             niet_geplaatst.extend(e.unit_id for (e, _, _, _) in overig_na_rij)
@@ -324,10 +497,10 @@ def _pak_rijen(
             niet_geplaatst.extend(e.unit_id for (e, _, _, _) in overig_na_rij)
             break
 
-        x = x0
-        for (eenheid, b, h, rot) in rij:
-            plaatsingen.extend(eenheid.expand(x, cursor_y, b, h, rot))
-            x += b + kerf
+        nieuwe_plaatsingen, nieuwe_sneden, x = _bouw_rij_kolom_sneden(rij, x0, cursor_y, rij_hoogte, kerf)
+        plaatsingen.extend(nieuwe_plaatsingen)
+        kolom_sneden.extend(nieuwe_sneden)
+        rij_grenzen.append((cursor_y, rij_hoogte))
         # Restruimte rechts in de rij (indien nog iets overblijft binnen de rijhoogte).
         if x < x1 - 1e-6:
             vrije_rechten.append((x - kerf if rij else x, cursor_y, x1 - x, rij_hoogte))
@@ -339,12 +512,13 @@ def _pak_rijen(
     if cursor_y < y1 - 1e-6:
         vrije_rechten.append((x0, cursor_y, breedte_plaat, y1 - cursor_y))
 
-    return plaatsingen, vrije_rechten, niet_geplaatst
+    zaagvolgorde = _bouw_zaagvolgorde_uit_rijen(rij_grenzen, kolom_sneden, x0, x1, y1)
+    return plaatsingen, vrije_rechten, niet_geplaatst, zaagvolgorde
 
 
 def _pak_stroken(
     eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
-) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str]]:
+) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Rij-gebaseerde packing voor de strategie 'Stroken': zoals
     ``_pak_rijen``, maar met overal dezelfde vaste strookhoogte i.p.v.
     een per-rij aangepaste hoogte. De vaste hoogte is de hoogte van het
@@ -367,29 +541,25 @@ def _pak_stroken(
     resterend = list(genormaliseerd)
     cursor_y = y0
     vrije_rechten: list[tuple[float, float, float, float]] = []
+    rij_grenzen: list[tuple[float, float]] = []
+    kolom_sneden: list[Zaagsnede] = []
 
     while resterend:
         if cursor_y + strook_hoogte > y1 + 1e-9:
             niet_geplaatst.extend(e.unit_id for (e, _, _, _) in resterend)
             break
 
-        rij: list[tuple[_Eenheid, float, float, bool]] = []
-        cursor_x = x0
-        overig_na_rij = []
-        for (eenheid, b, h, rot) in resterend:
-            if (cursor_x + b) <= x1 + 1e-9:
-                rij.append((eenheid, b, h, rot))
-                cursor_x += b + kerf
-            else:
-                overig_na_rij.append((eenheid, b, h, rot))
+        # Onderdelen met (bijna) gelijke hoogte blijven bij voorkeur bij
+        # elkaar in dezelfde strook (zie _vul_rij/_pak_rijen hierboven).
+        rij, overig_na_rij, _ = _vul_rij(resterend, x0, x1, kerf)
         if not rij:
             niet_geplaatst.extend(e.unit_id for (e, _, _, _) in overig_na_rij)
             break
 
-        x = x0
-        for (eenheid, b, h, rot) in rij:
-            plaatsingen.extend(eenheid.expand(x, cursor_y, b, h, rot))
-            x += b + kerf
+        nieuwe_plaatsingen, nieuwe_sneden, x = _bouw_rij_kolom_sneden(rij, x0, cursor_y, strook_hoogte, kerf)
+        plaatsingen.extend(nieuwe_plaatsingen)
+        kolom_sneden.extend(nieuwe_sneden)
+        rij_grenzen.append((cursor_y, strook_hoogte))
         if x < x1 - 1e-6:
             vrije_rechten.append((x - kerf if rij else x, cursor_y, x1 - x, strook_hoogte))
 
@@ -404,7 +574,8 @@ def _pak_stroken(
     if cursor_y < y1 - 1e-6:
         vrije_rechten.append((x0, cursor_y, x1 - x0, y1 - cursor_y))
 
-    return plaatsingen, vrije_rechten, niet_geplaatst
+    zaagvolgorde = _bouw_zaagvolgorde_uit_rijen(rij_grenzen, kolom_sneden, x0, x1, y1)
+    return plaatsingen, vrije_rechten, niet_geplaatst, zaagvolgorde
 
 
 def _pak_guillotine(
@@ -460,79 +631,15 @@ def _pak_guillotine(
         kerf_o = kerf if (fy + h) < y1 - 1e-9 else 0.0
         genomen_b = b + kerf_r
         genomen_h = h + kerf_o
-        rest_breedte = fw - genomen_b
-        rest_hoogte = fh - genomen_h
 
-        if rest_breedte < rest_hoogte:
-            if rest_breedte > 1e-6:
-                snede_x = fx + genomen_b
-                zaagvolgorde.append(Zaagsnede(len(zaagvolgorde) + 1, "verticaal", snede_x, fy, fy + fh))
-                wachtrij.append((snede_x, fy, rest_breedte, fh))
-            if rest_hoogte > 1e-6:
-                snede_y = fy + genomen_h
-                zaagvolgorde.append(Zaagsnede(len(zaagvolgorde) + 1, "horizontaal", snede_y, fx, fx + genomen_b))
-                wachtrij.append((fx, snede_y, genomen_b, rest_hoogte))
-        else:
-            if rest_hoogte > 1e-6:
-                snede_y = fy + genomen_h
-                zaagvolgorde.append(Zaagsnede(len(zaagvolgorde) + 1, "horizontaal", snede_y, fx, fx + fw))
-                wachtrij.append((fx, snede_y, fw, rest_hoogte))
-            if rest_breedte > 1e-6:
-                snede_x = fx + genomen_b
-                zaagvolgorde.append(Zaagsnede(len(zaagvolgorde) + 1, "verticaal", snede_x, fy, fy + genomen_h))
-                wachtrij.append((snede_x, fy, rest_breedte, genomen_h))
+        nieuwe_rechten, sneden = _splits_vrije_rechthoek(
+            fx, fy, fw, fh, genomen_b, genomen_h, len(zaagvolgorde) + 1
+        )
+        zaagvolgorde.extend(sneden)
+        wachtrij.extend(nieuwe_rechten)
 
     niet_geplaatst = [e.unit_id for e in resterend]
     return plaatsingen, vrije_rechten, niet_geplaatst, zaagvolgorde
-
-
-def _bouw_zaagvolgorde_rijen(plaatsingen: list[Plaatsing], werkgebied: tuple[float, float, float, float]) -> list[Zaagsnede]:
-    x0, y0, x1, y1 = werkgebied
-    sneden: list[Zaagsnede] = []
-    volgnr = 1
-    rij_ys = sorted({round(p.y, 6) for p in plaatsingen})
-    rij_hoogtes = {}
-    for ry in rij_ys:
-        hoogtes = [p.hoogte for p in plaatsingen if round(p.y, 6) == ry]
-        rij_hoogtes[ry] = max(hoogtes) if hoogtes else 0.0
-
-    # Volledige-breedte horizontale sneden tussen rijen (van boven naar beneden overgeslagen: eerste snede scheidt eerste rij van de rest).
-    for ry in rij_ys[1:]:
-        sneden.append(Zaagsnede(volgnr, "horizontaal", ry, x0, x1))
-        volgnr += 1
-
-    # Daarna, per rij, de verticale sneden die de rij in onderdelen verdeelt.
-    for ry in rij_ys:
-        rij_plaatsingen = sorted((p for p in plaatsingen if round(p.y, 6) == ry), key=lambda p: p.x)
-        for p in rij_plaatsingen[:-1]:
-            snede_x = round(p.x + p.breedte, 6)
-            sneden.append(Zaagsnede(volgnr, "verticaal", snede_x, ry, ry + rij_hoogtes[ry]))
-            volgnr += 1
-
-    return sneden
-
-
-def _bouw_zaagvolgorde_generiek(plaatsingen: list[Plaatsing]) -> list[Zaagsnede]:
-    """Eenvoudige, plaatsingsvolgorde-gebaseunde benadering van de
-    zaagvolgorde voor de 'efficient'-strategie (zie aanname 6
-    hierboven — dit is een eerste versie)."""
-
-    sneden: list[Zaagsnede] = []
-    gezien_x: set[float] = set()
-    gezien_y: set[float] = set()
-    volgnr = 1
-    for p in plaatsingen:
-        rechts = round(p.x + p.breedte, 6)
-        boven = round(p.y + p.hoogte, 6)
-        if rechts not in gezien_x:
-            sneden.append(Zaagsnede(volgnr, "verticaal", rechts, p.y, p.y + p.hoogte))
-            gezien_x.add(rechts)
-            volgnr += 1
-        if boven not in gezien_y:
-            sneden.append(Zaagsnede(volgnr, "horizontaal", boven, p.x, p.x + p.breedte))
-            gezien_y.add(boven)
-            volgnr += 1
-    return sneden
 
 
 _GELDIGE_STRATEGIEEN = ("efficient", "rijen", "stroken", "guillotine")
@@ -575,6 +682,7 @@ def genereer_zaagplan(
 
     plaatsingen: list[Plaatsing] = []
     niet_geplaatst: list[str] = []
+    fabriek_snede: Zaagsnede | None = None
 
     if rand is not None:
         cursor = x0 if rand in (Rand.LINKS, Rand.RECHTS) else y0
@@ -592,43 +700,49 @@ def genereer_zaagplan(
             cursor += (h if rand in (Rand.LINKS, Rand.RECHTS) else b) + kerf
 
         # Werkgebied voor de rest verkleinen met de strook die de
-        # fabriekskantenband-onderdelen nu innemen.
+        # fabriekskantenband-onderdelen nu innemen, en de snede die deze
+        # strook van de rest scheidt vastleggen (rand-tot-rand van het
+        # werkgebied, want dit is de allereerste snede op deze plaat).
         if rand == Rand.LINKS:
             breedte_strook = max((p.breedte for p in plaatsingen), default=0.0)
             x0 = x0 + breedte_strook + kerf
+            fabriek_snede = Zaagsnede(0, "verticaal", x0, y0, y1)
         elif rand == Rand.RECHTS:
             breedte_strook = max((p.breedte for p in plaatsingen), default=0.0)
             x1 = x1 - breedte_strook - kerf
+            fabriek_snede = Zaagsnede(0, "verticaal", x1, y0, y1)
         elif rand == Rand.ONDER:
             hoogte_strook = max((p.hoogte for p in plaatsingen), default=0.0)
             y0 = y0 + hoogte_strook + kerf
+            fabriek_snede = Zaagsnede(0, "horizontaal", y0, x0, x1)
         else:
             hoogte_strook = max((p.hoogte for p in plaatsingen), default=0.0)
             y1 = y1 - hoogte_strook - kerf
+            fabriek_snede = Zaagsnede(0, "horizontaal", y1, x0, x1)
         werkgebied = (x0, y0, x1, y1)
     else:
         overige_eenheden = eenheden
 
     if strategie == "efficient":
-        p2, vrije, np2 = _pak_efficient(overige_eenheden, werkgebied, kerf)
+        p2, vrije, np2, zaagvolgorde = _pak_efficient(overige_eenheden, werkgebied, kerf)
         alle_plaatsingen = plaatsingen + p2
-        zaagvolgorde = _bouw_zaagvolgorde_generiek(alle_plaatsingen)
     elif strategie == "rijen":
-        p2, vrije, np2 = _pak_rijen(overige_eenheden, werkgebied, kerf)
+        p2, vrije, np2, zaagvolgorde = _pak_rijen(overige_eenheden, werkgebied, kerf)
         alle_plaatsingen = plaatsingen + p2
-        zaagvolgorde = _bouw_zaagvolgorde_rijen(alle_plaatsingen, werkgebied)
     elif strategie == "stroken":
-        p2, vrije, np2 = _pak_stroken(overige_eenheden, werkgebied, kerf)
+        p2, vrije, np2, zaagvolgorde = _pak_stroken(overige_eenheden, werkgebied, kerf)
         alle_plaatsingen = plaatsingen + p2
-        zaagvolgorde = _bouw_zaagvolgorde_rijen(alle_plaatsingen, werkgebied)
     else:  # "guillotine"
         p2, vrije, np2, zaagvolgorde = _pak_guillotine(overige_eenheden, werkgebied, kerf)
         alle_plaatsingen = plaatsingen + p2
-        # Bekende vereenvoudiging: een eventuele fabriekskantenband-strook
-        # (hierboven al apart geplaatst, buiten _pak_guillotine om) krijgt
-        # hier geen eigen scheidingssnede in de zaagvolgorde — zelfde
-        # eerste-benadering-status als de generieke zaagvolgorde-opbouw
-        # hierboven voor de andere strategieën (zie aanname 6 hierboven).
+
+    if fabriek_snede is not None:
+        # De fabriekskantenband-scheidingssnede is altijd de eerste
+        # snede op de plaat; de rest van de (strategie-eigen) volgorde
+        # schuift een plek op.
+        zaagvolgorde = [replace(fabriek_snede, volgnummer=1)] + [
+            replace(s, volgnummer=i) for i, s in enumerate(zaagvolgorde, start=2)
+        ]
 
     niet_geplaatst.extend(np2)
     reststukken, afval = _classificeer_restruimte(vrije, materiaal)
@@ -642,3 +756,80 @@ def genereer_zaagplan(
         zaagvolgorde=zaagvolgorde,
         niet_geplaatst=niet_geplaatst,
     )
+
+
+_MAX_PLATEN = 500  # veiligheidsgrens tegen een oneindige lus, zie genereer_zaagplannen
+
+
+def _onderdelen_voor_niet_geplaatst(
+    onderdelen: list[Onderdeel], niet_geplaatst: list[str]
+) -> list[Onderdeel]:
+    """Bouwt de onderdelenlijst voor de volgende (verse) plaat: alleen
+    de onderdelen die deze keer als ``niet_geplaatst`` zijn teruggekomen,
+    met hun ``aantal`` teruggebracht tot het aantal exemplaren dat nog
+    niet geplaatst is. Een groep (``groep_id``) is altijd atomair — die
+    komt met al zijn leden terug zodra ``"groep:<id>"`` erbij zit, net
+    als in ``_bouw_eenheden``."""
+
+    groepen_niet_geplaatst = {
+        uid.removeprefix("groep:") for uid in niet_geplaatst if uid.startswith("groep:")
+    }
+    volgende: list[Onderdeel] = []
+    for onderdeel in onderdelen:
+        if onderdeel.groep_id:
+            if onderdeel.groep_id in groepen_niet_geplaatst:
+                volgende.append(onderdeel)
+            continue
+        aantal = sum(1 for uid in niet_geplaatst if uid.split("#", 1)[0] == onderdeel.id)
+        if aantal:
+            volgende.append(replace(onderdeel, aantal=aantal))
+    return volgende
+
+
+def genereer_zaagplannen(
+    materiaal: Materiaal, onderdelen: list[Onderdeel], strategie: str = "efficient"
+) -> list[ZaagplanResultaat]:
+    """Genereert zoveel platen van ``materiaal`` als nodig zijn om alle
+    ``onderdelen`` te plaatsen (onbeperkte voorraad aangenomen — dit is
+    geen voorraadbeheer, alleen optimalisatie). Onderdelen die niet op
+    de eerste plaat passen schuiven door naar een volgende, verse plaat,
+    enzovoort, tot alles geplaatst is. Onderdelen die zelfs op een
+    volledig lege plaat niet passen (te groot voor het materiaal) komen
+    terecht in ``niet_geplaatst`` van de laatste gegenereerde plaat i.p.v.
+    tot in het oneindige nieuwe, even lege platen op te leveren."""
+
+    resterend = list(onderdelen)
+    resultaten: list[ZaagplanResultaat] = []
+    for _ in range(_MAX_PLATEN):
+        if not resterend:
+            break
+        resultaat = genereer_zaagplan(materiaal, resterend, strategie=strategie)
+
+        if not resultaat.plaatsingen:
+            # Geen enkel onderdeel van wat nog over was kon zelfs op een
+            # verse, lege plaat geplaatst worden -> definitief gestrand
+            # (een volgende, even lege plaat lost dit niet op). Geen
+            # zinloze extra (helemaal lege) plaat toevoegen; gewoon de
+            # laatst gegenereerde (wél bruikbare) plaat zijn
+            # niet_geplaatst-lijst bijwerken naar deze definitieve stand
+            # — tenzij dit al de allereerste plaat was.
+            if resultaten:
+                resultaten[-1] = replace(resultaten[-1], niet_geplaatst=resultaat.niet_geplaatst)
+            else:
+                resultaten.append(resultaat)
+            break
+
+        if not resultaat.niet_geplaatst:
+            # Alles wat nog over was past op deze plaat -> klaar.
+            resultaten.append(resultaat)
+            break
+
+        # Deze plaat plaatst een deel; de rest schuift door naar een
+        # volgende, verse plaat. Wat híer "niet_geplaatst" heet is dus
+        # nog niet definitief (het wordt hierna alsnog geprobeerd) —
+        # alleen de állerlaatste plaat mag onderdelen als écht niet
+        # geplaatst tonen, dus deze tussenliggende plaat krijgt een lege
+        # niet_geplaatst-lijst.
+        resterend = _onderdelen_voor_niet_geplaatst(resterend, resultaat.niet_geplaatst)
+        resultaten.append(replace(resultaat, niet_geplaatst=[]))
+    return resultaten

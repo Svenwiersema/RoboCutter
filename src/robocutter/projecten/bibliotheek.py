@@ -166,6 +166,33 @@ class ProjectenBibliotheek:
         self._persisteer(project)
         return project
 
+    def model_onderdeel_materiaal_wijzigen(
+        self, project_id: str, instantie_id: str, onderdeel_id: str, materiaal_id: str
+    ) -> Project:
+        """Wijzigt het materiaal van één onderdeel binnen een
+        model-snapshot — bijv. dezelfde kast met hetzelfde
+        corpusmateriaal maar andere frontjes, per project. Bewust de
+        ENIGE toegestane wijziging op een snapshot-onderdeel (de rest —
+        afmetingen, kantenband, nerf, groep — blijft ongewijzigd); voor
+        al het andere is "bijwerken naar laatste versie" (opnieuw
+        platslaan vanuit de bibliotheek) of het model verwijderen en
+        opnieuw toevoegen de weg."""
+
+        project = self._projecten[project_id]
+        instantie = next((i for i in project.modelinstanties if i.id == instantie_id), None)
+        if instantie is None:
+            raise KeyError(f"Onbekende model-instantie: {instantie_id!r}")
+        index = next((i for i, o in enumerate(instantie.onderdelen) if o.id == onderdeel_id), None)
+        if index is None:
+            raise KeyError(f"Onbekend onderdeel: {onderdeel_id!r}")
+        try:
+            self._materialen.ophalen(materiaal_id)
+        except KeyError:
+            raise ValueError(f"Materiaal {materiaal_id!r} bestaat niet.") from None
+        instantie.onderdelen[index] = replace(instantie.onderdelen[index], materiaal_id=materiaal_id)
+        self._persisteer(project)
+        return project
+
     def los_onderdeel_toevoegen(self, project_id: str, onderdeel: ModelOnderdeel) -> Project:
         # Anders dan een model-instantie (een vaste snapshot, al gevalideerd op het
         # moment van toevoegen aan het model) is een los onderdeel live invoer vanuit

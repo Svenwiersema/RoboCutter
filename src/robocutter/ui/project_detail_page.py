@@ -42,7 +42,7 @@ from dataclasses import replace
 from datetime import date
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QStringListModel
+from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
@@ -65,6 +65,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from robocutter.instellingen.beheer import InstellingenBeheer
+from robocutter.instellingen.models import GELDIGE_ZAAGSTRATEGIEEN
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.materialen.models import MateriaalStatus
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
@@ -77,8 +79,11 @@ from robocutter.projecten.bibliotheek import (
 )
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
+from robocutter.projecten.zaagplannen import PlaatZaagplan, genereer_zaagplannen_voor_project
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.stat_tile import StatTile
+from robocutter.ui.widgets.zaagplaat_widget import ZaagplaatWidget
 
 _STATUS_CHIP = {
     ProjectStatus.WERKVOORBEREIDING: ("prep", "neutral_dot"),
@@ -91,7 +96,16 @@ _SORTEER_LABEL = {
     "hoogte": "Hoogte", "aantal": "Aantal", "herkomst": "Herkomst",
 }
 _PANEEL_ITEMS = [("overzicht", "user", "Overzicht"), ("samenstelling", "layers", "Samenstelling"), ("zaaglijst", "list", "Zaaglijst")]
-_DOC_ITEMS = [("labels", "tag", "Labels"), ("zaagplannen", "document", "Zaagplannen")]
+# "Labels" hangt nog vast aan hoofdstuk 6 (niet gebouwd) en blijft dus
+# een "binnenkort"-placeholder; "Zaagplannen" is dat sinds deze stap
+# niet meer, zie _build_zaagplannen_paneel.
+_DOC_ITEMS = [("labels", "tag", "Labels", True), ("zaagplannen", "document", "Zaagplannen", False)]
+_STRATEGIE_LABEL = {
+    "efficient": "Efficiënt",
+    "rijen": "Rijen",
+    "stroken": "Stroken",
+    "guillotine": "Guillotine",
+}
 
 
 def _clear_layout(layout) -> None:
@@ -146,6 +160,10 @@ class ProjectDetailPage(QWidget):
         self._sort_niveaus: list[str] = ["materiaal", "breedte"]
         self._bewerk_los_onderdeel_id: str | None = None
         self._model_naam_naar_id: dict[str, str] = {}
+        self._instanties_uitgeklapt: set[str] = set()
+        self._zaagplan_strategie = self._standaard_zaagstrategie()
+        self._zaagplannen: list[PlaatZaagplan] | None = None
+        self._zaagplan_waarschuwingen: list[str] = []
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -159,6 +177,10 @@ class ProjectDetailPage(QWidget):
 
     def _project(self) -> Project:
         return self._projecten.ophalen(self._project_id)
+
+    def _standaard_zaagstrategie(self) -> str:
+        waarde = InstellingenBeheer().huidige.standaard_zaagstrategie
+        return waarde if waarde in GELDIGE_ZAAGSTRATEGIEEN else GELDIGE_ZAAGSTRATEGIEEN[0]
 
     # ------------------------------------------------------------------
     # Thema: zelfde bewuste volledige-herbouw-aanpak als de andere pagina's
@@ -205,8 +227,8 @@ class ProjectDetailPage(QWidget):
         layout.addWidget(self._divider())
         layout.addWidget(self._sidebar_label("Documenten"))
 
-        for key, icon_naam, tekst in _DOC_ITEMS:
-            widget, knop = self._sidebar_nav_item(icon_naam, tekst, soon=True)
+        for key, icon_naam, tekst, soon in _DOC_ITEMS:
+            widget, knop = self._sidebar_nav_item(icon_naam, tekst, soon=soon)
             knop.clicked.connect(lambda checked=False, k=key: self._zet_paneel(k))
             self._paneel_groep.addButton(knop)
             self._paneel_knoppen[key] = knop
@@ -740,13 +762,23 @@ class ProjectDetailPage(QWidget):
         return kaart
 
     def _bouw_model_instantie_rij(self, instantie: ProjectModelInstantie, is_laatste: bool) -> QWidget:
+        uitgeklapt = instantie.id in self._instanties_uitgeklapt
+
         row = QFrame()
         row.setProperty("role", "rowItem")
-        if is_laatste:
+        if is_laatste and not uitgeklapt:
             row.setStyleSheet("border-bottom: none;")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(18, 12, 18, 12)
         layout.setSpacing(12)
+
+        toggle_btn = QToolButton()
+        toggle_btn.setProperty("role", "rowAction")
+        toggle_btn.setIcon(icon("chevron-down" if uitgeklapt else "chevron-up", self._theme.text_faint, 13))
+        toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle_btn.setToolTip("Onderdelen inklappen" if uitgeklapt else "Onderdelen tonen (materiaal per onderdeel wijzigen)")
+        toggle_btn.clicked.connect(lambda: self._toggle_instantie_uitgeklapt(instantie.id))
+        layout.addWidget(toggle_btn)
 
         icon_box = QFrame()
         icon_box.setProperty("role", "rowIconBox")
@@ -786,6 +818,53 @@ class ProjectDetailPage(QWidget):
         del_btn.setToolTip("Verwijderen")
         del_btn.clicked.connect(lambda: self._model_instantie_verwijderen(instantie.id))
         layout.addWidget(del_btn)
+
+        if not uitgeklapt:
+            return row
+
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+        wrapper_layout.addWidget(row)
+        for index, onderdeel in enumerate(instantie.onderdelen):
+            is_laatste_onderdeel = is_laatste and index == len(instantie.onderdelen) - 1
+            wrapper_layout.addWidget(self._bouw_model_onderdeel_rij(instantie, onderdeel, is_laatste_onderdeel))
+        return wrapper
+
+    def _bouw_model_onderdeel_rij(self, instantie: ProjectModelInstantie, onderdeel: ModelOnderdeel, is_laatste: bool) -> QWidget:
+        row = QFrame()
+        row.setProperty("role", "rowItem")
+        row.setStyleSheet(f"background: {self._theme.surface_2}; border-bottom: none;" if is_laatste else f"background: {self._theme.surface_2};")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(18, 8, 18, 8)
+        layout.setSpacing(12)
+
+        info_col = QVBoxLayout()
+        info_col.setSpacing(1)
+        titel = QLabel(onderdeel.naam + (f"  ×{onderdeel.aantal}" if onderdeel.aantal != 1 else ""))
+        titel.setProperty("role", "dims")
+        info_col.addWidget(titel)
+        sub = QLabel(f"{onderdeel.breedte:g} × {onderdeel.hoogte:g} mm")
+        sub.setProperty("role", "matMeta")
+        info_col.addWidget(sub)
+        layout.addLayout(info_col, 1)
+
+        materiaal_combo = QComboBox()
+        materiaal_combo.setProperty("role", "field")
+        materiaal_combo.setMinimumWidth(220)
+        for materiaal in sorted(self._materialen.lijst(), key=lambda m: m.naam.lower()):
+            label = materiaal.naam
+            if materiaal.status != MateriaalStatus.ACTIEF:
+                label += " (gearchiveerd)"
+            materiaal_combo.addItem(label, materiaal.id)
+        idx = materiaal_combo.findData(onderdeel.materiaal_id)
+        if idx >= 0:
+            materiaal_combo.setCurrentIndex(idx)
+        materiaal_combo.currentIndexChanged.connect(
+            lambda _i, c=materiaal_combo: self._model_onderdeel_materiaal_wijzigen(instantie.id, onderdeel.id, c.currentData())
+        )
+        layout.addWidget(materiaal_combo)
 
         return row
 
@@ -831,6 +910,22 @@ class ProjectDetailPage(QWidget):
 
     def _model_instantie_verwijderen(self, instantie_id: str) -> None:
         self._projecten.model_instantie_verwijderen(self._project_id, instantie_id)
+        self._instanties_uitgeklapt.discard(instantie_id)
+        self._ververs_samenstelling()
+        self._ververs_zaaglijst_paneel()
+        self._meld_gewijzigd()
+
+    def _toggle_instantie_uitgeklapt(self, instantie_id: str) -> None:
+        if instantie_id in self._instanties_uitgeklapt:
+            self._instanties_uitgeklapt.discard(instantie_id)
+        else:
+            self._instanties_uitgeklapt.add(instantie_id)
+        self._ververs_modellen_kaart()
+
+    def _model_onderdeel_materiaal_wijzigen(self, instantie_id: str, onderdeel_id: str, materiaal_id: str) -> None:
+        if not materiaal_id:
+            return
+        self._projecten.model_onderdeel_materiaal_wijzigen(self._project_id, instantie_id, onderdeel_id, materiaal_id)
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()
         self._meld_gewijzigd()
@@ -1276,18 +1371,319 @@ class ProjectDetailPage(QWidget):
             ),
         )
 
+    # ------------------------------------------------------------------
+    # Paneel: Zaagplannen
+    # ------------------------------------------------------------------
     def _build_zaagplannen_paneel(self) -> QWidget:
-        return self._build_placeholder_paneel(
-            icon_naam="document",
-            tag_tekst="Nog te bouwen",
-            titel="Zaagplannen zijn nog niet beschikbaar",
-            tekst=(
-                "Hier komen straks de gegenereerde zaagplan-PDF's voor dit project te staan, "
-                "gebaseerd op de onderdelen uit de Zaaglijst hiernaast — inclusief de historie "
-                "van eerder gegenereerde versies. Ook dit vereist eerst echte "
-                "zaagplan-generatie vanuit een project."
-            ),
+        panel = QWidget()
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(16)
+        self._zaagplannen_content = QVBoxLayout()
+        self._zaagplannen_content.setSpacing(16)
+        outer.addLayout(self._zaagplannen_content)
+        return panel
+
+    def _bouw_strategie_combo(self) -> QComboBox:
+        combo = QComboBox()
+        combo.setProperty("role", "field")
+        for waarde in GELDIGE_ZAAGSTRATEGIEEN:
+            combo.addItem(_STRATEGIE_LABEL[waarde], waarde)
+        idx = combo.findData(self._zaagplan_strategie)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        combo.currentIndexChanged.connect(lambda _i, c=combo: self._zet_zaagplan_strategie(c.currentData()))
+        return combo
+
+    def _zet_zaagplan_strategie(self, waarde: str) -> None:
+        self._zaagplan_strategie = waarde
+
+    def _genereer_zaagplannen(self) -> None:
+        plannen, waarschuwingen = genereer_zaagplannen_voor_project(
+            self._project(), self._materialen, strategie=self._zaagplan_strategie
         )
+        self._zaagplannen = plannen
+        self._zaagplan_waarschuwingen = waarschuwingen
+        self._ververs_zaagplannen_paneel()
+
+    def _ververs_zaagplannen_paneel(self) -> None:
+        _clear_layout(self._zaagplannen_content)
+        if self._zaagplannen is None:
+            self._zaagplannen_content.addWidget(self._bouw_zaagplan_start())
+        else:
+            self._zaagplannen_content.addWidget(self._bouw_zaagplan_resultaat())
+
+    def _bouw_zaagplan_start(self) -> QWidget:
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(30, 56, 30, 56)
+        layout.setSpacing(14)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_box = QFrame()
+        icon_box.setProperty("role", "rowIconBox")
+        icon_box.setFixedSize(56, 56)
+        icon_box_layout = QVBoxLayout(icon_box)
+        icon_box_layout.setContentsMargins(0, 0, 0, 0)
+        icon_label = QLabel()
+        icon_label.setPixmap(icon_pixmap("document", self._theme.text_faint, 26))
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet("background: transparent;")
+        icon_box_layout.addWidget(icon_label)
+        layout.addWidget(icon_box, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        titel = QLabel("Nog geen zaagplan gegenereerd")
+        titel.setProperty("role", "placeholderTitle")
+        titel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(titel)
+
+        aantal_regels = sum(r.onderdeel.aantal for r in bouw_zaaglijst(self._project()))
+        tekst = QLabel(
+            f"RoboCutter verdeelt de {aantal_regels} onderdelen uit de Zaaglijst automatisch over "
+            "zoveel platen per materiaal als nodig, rekening houdend met kerf, randafzaag, "
+            "kantenband en nerfrichting. Onderdelen die zelfs op een lege plaat niet passen "
+            "worden hieronder gemeld als niet geplaatst."
+        )
+        tekst.setProperty("role", "placeholderText")
+        tekst.setWordWrap(True)
+        tekst.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tekst.setMaximumWidth(460)
+        layout.addWidget(tekst, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        opties_row = QHBoxLayout()
+        opties_row.setSpacing(10)
+        opties_row.addStretch(1)
+        strategie_label = QLabel("STRATEGIE")
+        strategie_label.setProperty("role", "fieldSectionLabel")
+        opties_row.addWidget(strategie_label)
+        opties_row.addWidget(self._bouw_strategie_combo())
+        opties_row.addStretch(1)
+        layout.addLayout(opties_row)
+
+        genereer_btn = QPushButton("  Zaagplan genereren")
+        genereer_btn.setProperty("role", "primary")
+        genereer_btn.setIcon(icon("plus", "#12141B", 13))
+        genereer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        genereer_btn.clicked.connect(self._genereer_zaagplannen)
+        layout.addWidget(genereer_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        return kaart
+
+    def _bouw_zaagplan_resultaat(self) -> QWidget:
+        wrapper = QWidget()
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+
+        toolbar = QHBoxLayout()
+        titel_kolom = QVBoxLayout()
+        titel_kolom.setSpacing(2)
+        titel = QLabel("Zaagplannen")
+        titel.setProperty("role", "matName")
+        titel_kolom.addWidget(titel)
+        aantal = len(self._zaagplannen)
+        sub = QLabel(
+            f"{aantal} {'plaat' if aantal == 1 else 'platen'} · strategie {_STRATEGIE_LABEL[self._zaagplan_strategie]}"
+        )
+        sub.setProperty("role", "matMeta")
+        titel_kolom.addWidget(sub)
+        toolbar.addLayout(titel_kolom)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self._bouw_strategie_combo())
+        opnieuw_btn = QPushButton("  Opnieuw genereren")
+        opnieuw_btn.setProperty("role", "ghost")
+        opnieuw_btn.setIcon(icon("recycle", self._theme.text, 13))
+        opnieuw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        opnieuw_btn.clicked.connect(self._genereer_zaagplannen)
+        toolbar.addWidget(opnieuw_btn)
+        layout.addLayout(toolbar)
+
+        if self._zaagplan_waarschuwingen:
+            waarschuwing = QLabel("\n".join(self._zaagplan_waarschuwingen))
+            waarschuwing.setProperty("role", "warningText")
+            waarschuwing.setWordWrap(True)
+            layout.addWidget(waarschuwing)
+
+        stat_row = QHBoxLayout()
+        stat_row.setSpacing(10)
+        aantal_materialen = len({p.materiaal_id for p in self._zaagplannen})
+        gem_benutting = (
+            sum(p.resultaat.benuttingspercentage for p in self._zaagplannen) / aantal if aantal else 0.0
+        )
+        niet_geplaatst_totaal = sum(len(p.resultaat.niet_geplaatst) for p in self._zaagplannen)
+        stat_row.addWidget(StatTile("Platen", str(aantal), f"Over {aantal_materialen} materialen", "document", self._theme.accent_text, "neutral"))
+        stat_row.addWidget(StatTile("Materialen", str(aantal_materialen), "In deze zaaglijst", "layers", self._theme.accent_text, "neutral"))
+        stat_row.addWidget(
+            StatTile(
+                "Gem. benutting", f"{gem_benutting:.1f}%".replace(".", ","), "Gemiddeld over alle platen",
+                "cube", self._theme.success_ink, "good",
+            )
+        )
+        if niet_geplaatst_totaal:
+            stat_row.addWidget(
+                StatTile(
+                    "Niet geplaatst", f"{niet_geplaatst_totaal} onderdelen", "Past niet op een lege plaat",
+                    "warning", self._theme.warning_ink, "warn",
+                )
+            )
+        else:
+            stat_row.addWidget(
+                StatTile("Niet geplaatst", "0 onderdelen", "Alles past op de gegenereerde platen", "check", self._theme.success_ink, "good")
+            )
+        layout.addLayout(stat_row)
+
+        for plan in self._zaagplannen:
+            layout.addWidget(self._bouw_zaagplan_document(plan))
+
+        return wrapper
+
+    def _bouw_zaagplan_document(self, plan: PlaatZaagplan) -> QWidget:
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        head = QFrame()
+        head.setObjectName("ZaagplanDocHead")
+        head_layout = QHBoxLayout(head)
+        head_layout.setContentsMargins(18, 12, 18, 12)
+        head_layout.setSpacing(14)
+        tag = QLabel("ZAAGPLAN")
+        tag.setProperty("role", "docTag")
+        head_layout.addWidget(tag)
+        mat = plan.resultaat.materiaal
+        naam_label = QLabel(plan.materiaal_naam)
+        naam_label.setProperty("role", "docMetaStrong")
+        head_layout.addWidget(naam_label)
+        afmeting_label = QLabel(f"{mat.lengte:g} × {mat.breedte:g} mm")
+        afmeting_label.setProperty("role", "docMeta")
+        head_layout.addWidget(afmeting_label)
+        if plan.platen_totaal > 1:
+            plaat_label = QLabel(f"Plaat {plan.plaat_nummer} van {plan.platen_totaal}")
+            plaat_label.setProperty("role", "docMeta")
+            head_layout.addWidget(plaat_label)
+        head_layout.addStretch(1)
+        layout.addWidget(head)
+
+        plate_wrap = QFrame()
+        plate_wrap.setObjectName("ZaagplanPlateWrap")
+        plate_layout = QVBoxLayout(plate_wrap)
+        plate_layout.setContentsMargins(16, 16, 16, 10)
+        plate_layout.addWidget(ZaagplaatWidget(plan.resultaat, plan.naam_voor, self._theme))
+        layout.addWidget(plate_wrap)
+
+        if plan.resultaat.niet_geplaatst:
+            namen = ", ".join(sorted({plan.naam_voor(uid) for uid in plan.resultaat.niet_geplaatst}))
+            waarschuwing = QLabel(f"⚠ Niet geplaatst: {namen}")
+            waarschuwing.setProperty("role", "warningText")
+            waarschuwing.setContentsMargins(16, 0, 16, 10)
+            waarschuwing.setWordWrap(True)
+            layout.addWidget(waarschuwing)
+
+        layout.addWidget(self._bouw_onderdelen_tabel(plan))
+        layout.addWidget(self._bouw_zaagplan_footer(plan))
+
+        return kaart
+
+    def _bouw_onderdelen_tabel(self, plan: PlaatZaagplan) -> QTableWidget:
+        groepen: dict[str, list] = {}
+        volgorde: list[str] = []
+        for p in plan.resultaat.plaatsingen:
+            if p.onderdeel_id not in groepen:
+                groepen[p.onderdeel_id] = []
+                volgorde.append(p.onderdeel_id)
+            groepen[p.onderdeel_id].append(p)
+
+        tabel = QTableWidget(len(volgorde), 5)
+        tabel.setObjectName("LibraryTable")
+        tabel.setHorizontalHeaderLabels(["Omschrijving", "Aantal", "Afmeting (mm)", "Kantenband", "Herkomst"])
+        tabel.verticalHeader().setVisible(False)
+        tabel.setShowGrid(False)
+        tabel.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        tabel.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        tabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Vaste rijhoogte (zelfde 56px-conventie als de bibliotheekschermen)
+        # i.p.v. resizeRowsToContents(): dat laatste meet de sizeHint van de
+        # cel-widgets vóórdat ze een keer echt gelayout zijn, wat een te
+        # kleine tabelhoogte (en dus een scrollbalk) opleverde. Dit moet
+        # altijd een statische tabel blijven, zonder interne scroll.
+        tabel.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tabel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = tabel.horizontalHeader()
+        header.setStretchLastSection(True)
+        for col, breedte in enumerate([260, 90, 140, 140]):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            tabel.setColumnWidth(col, breedte)
+
+        rij_hoogte = 44
+        for row, oid in enumerate(volgorde):
+            tabel.setRowHeight(row, rij_hoogte)
+            plaatsingen = groepen[oid]
+            info = plan.onderdeel_info.get(oid)
+            naam = info.naam if info else oid
+            eerste = plaatsingen[0]
+            if info and info.fabriekskantenband_vereist:
+                kantenband = "Fabrieksrand"
+            elif info and info.kantenband_randen:
+                kantenband = ", ".join(sorted(r.value for r in info.kantenband_randen))
+            else:
+                kantenband = "—"
+            herkomst = info.herkomst if info else "—"
+            waarden = [naam, str(len(plaatsingen)), f"{eerste.breedte:g} × {eerste.hoogte:g}", kantenband]
+            for col, tekst in enumerate(waarden):
+                tabel.setCellWidget(row, col, self._cel_tekst(tekst))
+            tabel.setCellWidget(row, 4, self._cel_herkomst(herkomst))
+
+        aantal_rijen = max(1, len(volgorde))
+        header_hoogte = header.sizeHint().height()
+        tabel.setFixedHeight(header_hoogte + rij_hoogte * aantal_rijen + 4)
+
+        # header.sizeHint() geeft hier (nog) de kale, ongestylede hoogte
+        # terug -- de padding/border-bottom uit de QSS ("QTableWidget#
+        # LibraryTable QHeaderView::section") wordt pas na een echte
+        # style-polish meegerekend, wat pas gebeurt zodra deze tabel
+        # daadwerkelijk in de zichtbare widgetboom hangt. Zonder correctie
+        # bleef de vaste hoogte te krap, met een (onzichtbare, want
+        # scrollbars staan uit) maar wél muiswiel-scrollbare tabel tot
+        # gevolg. Zelfde uitgestelde-herberekening-patroon als de
+        # stretch-kolom-fix in materialen_page.py.
+        def _herstel_hoogte(tabel=tabel, aantal_rijen=aantal_rijen, rij_hoogte=rij_hoogte) -> None:
+            echte_header_hoogte = tabel.horizontalHeader().height()
+            tabel.setFixedHeight(echte_header_hoogte + rij_hoogte * aantal_rijen + 4)
+
+        QTimer.singleShot(0, _herstel_hoogte)
+        return tabel
+
+    def _bouw_zaagplan_footer(self, plan: PlaatZaagplan) -> QFrame:
+        footer = QFrame()
+        footer.setObjectName("ZaagplanFooter")
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        mat = plan.resultaat.materiaal
+        cellen = [
+            ("Materiaal", plan.materiaal_naam),
+            ("Formaat", f"{mat.lengte:g} × {mat.breedte:g} mm"),
+            ("Dikte", f"{mat.dikte:g} mm"),
+            ("Kerf", f"{mat.kerf:g} mm"),
+            ("Benutting", f"{plan.resultaat.benuttingspercentage:g}%".replace(".", ",")),
+        ]
+        for label, waarde in cellen:
+            cel = QFrame()
+            cel.setProperty("role", "footCell")
+            cel_layout = QVBoxLayout(cel)
+            cel_layout.setContentsMargins(14, 10, 14, 10)
+            cel_layout.setSpacing(2)
+            lbl = QLabel(label.upper())
+            lbl.setProperty("role", "footLabel")
+            cel_layout.addWidget(lbl)
+            val = QLabel(waarde)
+            val.setProperty("role", "footValue")
+            cel_layout.addWidget(val)
+            layout.addWidget(cel, 1)
+        return footer
 
     def _build_placeholder_paneel(self, icon_naam: str, tag_tekst: str, titel: str, tekst: str) -> QWidget:
         kaart = QFrame()
@@ -1335,3 +1731,4 @@ class ProjectDetailPage(QWidget):
         self._ververs_overzicht_paneel()
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()
+        self._ververs_zaagplannen_paneel()

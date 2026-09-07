@@ -707,9 +707,6 @@ in plaats van aan te nemen:
 
 - Mes/groef-plaatsingsregels (hoofdstuk 5 noemt dit zelf nog als
   "verder te detailleren").
-- Meerdere platen tegelijk optimaliseren (nu: één plaat per aanroep;
-  er is nog geen logica die onderdelen over meerdere platen van
-  hetzelfde materiaal verdeelt).
 - Revisiegeschiedenis/sandboxes (hoofdstuk 1/2), "project opslaan als
   nieuw model" (hoofdstuk 4), en echte zaagplan-generatie vanuit een
   project (+ de daarvan afhankelijke reststukken-vrijgave bij
@@ -877,22 +874,441 @@ eerdere aannames in `engine.py`):
   Alle drie zijn in de mockup wel getekend/zichtbaar (het moet immers
   zo werken, resp. het is zichtbaar dat het nu niet zo werkt), maar
   moeten nog in `engine.py` zelf opgelost worden.
-  **Stand aan het eind van deze sessie**: de Zaagplan Generator-mockup
-  zelf is nog niet formeel goedgekeurd — Sven zei alleen "laat de
-  mockup maar eerst zo" om door te kunnen naar de motor-fixes; een
-  volgende sessie kan de mockup dus nog verder bijschaven vóór de
-  PySide6-uitwerking begint, of eerst de drie motor-hiaten hierboven
-  oppakken (dat lijkt de logische volgorde, want de mockup toont nu
-  bewust exact wat de motor doet, inclusief de gebreken).
+  **Stand aan het eind van die sessie**: de Zaagplan Generator-mockup
+  zelf was nog niet formeel goedgekeurd — Sven zei alleen "laat de
+  mockup maar eerst zo" om door te kunnen naar de motor-fixes.
+- **De drie motor-hiaten hierboven zijn opgelost** (op Svens verzoek
+  "pak eerst de motor aan", vóór verder werk aan de Zaagplan Generator-
+  mockup/het scherm zelf):
+  1. **Fabriekskantenband krijgt nu een eigen scheidingssnede.**
+     `genereer_zaagplan` legt de positie van de rand-tot-rand snede
+     tussen de fabriekskantenband-strook en de rest van de plaat al vast
+     op het moment dat het werkgebied ervoor verkleind wordt (dezelfde
+     coördinaat die daarna als nieuwe `x0`/`x1`/`y0`/`y1` gebruikt
+     wordt), en zet 'm als snede 1 vóór de rest van de (strategie-eigen)
+     zaagvolgorde, die daarna één plek opschuift. Dit geldt nu voor
+     **alle vier strategieën inclusief "guillotine"** — de eerdere
+     uitzondering/vereenvoudiging daarvoor in de code-comments is
+     vervallen, want de fix is generiek op het niveau van
+     `genereer_zaagplan` zelf, niet per `_pak_*`-functie.
+  2. **`_bouw_zaagvolgorde_rijen` mist niet langer de laatste
+     horizontale snede.** Naast de sneden tussen rijen onderling wordt nu
+     ook, als er nog restruimte bóven de bovenste rij overblijft, een
+     laatste rand-tot-rand horizontale snede toegevoegd die die rij van
+     dat reststuk scheidt — bij precies één gebruikte rij was dit
+     voorheen de enige (dus volledig ontbrekende) horizontale snede.
+  3. **`_pak_rijen` (en, dezelfde bug, ook `_pak_stroken`) versnipperen
+     niet meer onnodig identieke onderdelen over meerdere rijen.** Nieuwe
+     hulpfuncties `_groepeer_op_hoogte` (groepeert een op hoogte
+     aflopend gesorteerde lijst in aaneengesloten hoogte-groepen, met
+     een tolerantie van 1 mm voor "bijna gelijke hoogte") en `_vul_rij`
+     (gedeeld door `_pak_rijen`/`_pak_stroken`) vullen een rij nu per
+     hoogte-groep i.p.v. per los stuk: de eerste (hoogte-bepalende) groep
+     mag gedeeltelijk in de rij (normaal gedrag als er meer stukken van
+     die hoogte zijn dan er in één rij passen), maar elke latere,
+     kortere groep mag alleen **in zijn geheel** meedoen als opvulling
+     van de resterende breedte — nooit gedeeltelijk. Dat voorkomt precies
+     het Eiken-multiplex-scenario dat Sven zelf ontdekte (twee identieke
+     Bodemplaten die uiteenvielen over twee rijen omdat er na de
+     Zijkant-stukken toevallig net plek was voor precies één). Bewuste
+     keuze om deze fix ook op `_pak_stroken` toe te passen (niet alleen
+     `_pak_rijen`): het is exact dezelfde copy-paste rij-vul-logica met
+     dezelfde bug, dus apart laten staan zou de bug daar bewust laten
+     voortbestaan.
+  Geverifieerd met drie nieuwe, gerichte tests in `tests/test_engine.py`
+  (26 in totaal nu, was 23) die elk hiaot apart aantonen (de
+  fabriekskantenband-snede zelf, de ontbrekende laatste-rij-snede, en het
+  bij-elkaar-blijven van identieke onderdelen met een plaatlengte die
+  bewust net krap genoeg is om de oude bug te reproduceren), plus de
+  volledige suite (102 tests, allemaal groen) en een herrun van
+  `scripts/demo_render.py` — `output/demo_rijen.png` toont nu zichtbaar
+  bodemplaat #1/#2 netjes naast elkaar in dezelfde rij i.p.v.
+  versnipperd.
+  **Nog steeds bewust niet aangepakt** (buiten scope van deze
+  motor-fixes): mes/groef-plaatsingsregels en meerdere platen tegelijk
+  optimaliseren, zie "Nog niet gebouwd" hieronder.
+- **Zaagplan Generator-mockup bijgewerkt met de gefixte motor-output.**
+  De Artifact-link is nu bewaard:
+  https://claude.ai/code/artifact/262106bc-474c-4ab9-98e9-c3ddd2fa49d1
+  — voor Plaat 1 (Eiken multiplex) zijn de plaatsingen, reststukken en
+  zaagvolgorde-coördinaten opnieuw overgenomen uit een echte
+  `genereer_zaagplan(..., strategie="rijen")`-aanroep met dezelfde
+  onderdelen als voorheen (zijkant links ×2 met fabrieksrand, werkblad,
+  bodemplaat ×2, zijkant rechts ×2): de twee Bodemplaten (nu #6/#7)
+  staan zichtbaar samen in één rij i.p.v. verspreid, er is een aparte
+  fabriekskantenband-scheidingssnede (snede 1), en elke rij (incl. de
+  Bodemplaat-rij) heeft nu een sluitende scheidingssnede naar de
+  restruimte erboven. Plaat 2 (Wit gemelamineerd) is om dezelfde reden
+  herbouwd — de rij ligt nu bovenaan de plaat (y=0) met het grote
+  reststuk eronder, een spiegeling t.o.v. de oude tekening, simpelweg
+  omdat dat is waar `_pak_rijen` 'm nu neerzet; functioneel identiek.
+  Tabellen/Nr-kolommen zijn meegenoemd naar de nieuwe piece-nummering.
+  Benuttingspercentages (53,5% / 29,2% / gem. 41,4%) zijn ongewijzigd
+  gebleven, want die zijn onafhankelijk van de plaatsingsvolgorde.
+  **Nog steeds niet formeel goedgekeurd door Sven** — dit is puur de
+  update om de mockup weer te laten kloppen met de motor; de eerdere
+  twee correctierondes (fabrieksrand-visualisatie, PDF-knop, revisies,
+  het weggehaalde maatvoering-experiment en de weggehaalde genummerde
+  bolletjes op sneden) staan onveranderd.
 
-**Nog open, kandidaten voor een volgende stap:**
-revisiegeschiedenis/sandboxes en échte zaagplan-generatie vanuit een
-project (module 1/4, bewust uitgesteld bij het bouwen van de functie —
-zie `assets/mockups/projectoverzicht-concept.png` voor een eerder
-concept van de projectenlijst zelf, en zie hierboven: de motor
-ondersteunt nu wel alle vier strategieën die dat scherm straks moet
-kunnen aanbieden); of de optimalisatie-motor verder afmaken (mes/groef,
-meerdere platen).
+- **Zaagplan Generator — PySide6-uitwerking gebouwd (op Svens
+  expliciete verzoek zónder eerst de bijgewerkte mockup te laten
+  goedkeuren — "je mag het wel alvast uitwerken naar pyside6", met als
+  reden dat de motor nog niet helemaal goed is en hij dit verder in
+  Python wil kunnen testen).**
+  1. **Backend**: nieuw `src/robocutter/projecten/zaagplannen.py` —
+     `genereer_zaagplannen_voor_project(project, materialen, strategie)`
+     groepeert `bouw_zaaglijst()` per `materiaal_id`, zet elke groep om
+     naar het lean `optimalisatie.models`-paar (`Materiaal`/`Onderdeel`,
+     met een synthetische `r{i}`-id per zaaglijstregel) en roept
+     `genereer_zaagplan()` per materiaal aan — één `PlaatZaagplan` per
+     materiaal, bewust **niet** per project in totaal, want de motor
+     ondersteunt nog maar één plaat per aanroep (geen "meerdere platen
+     tegelijk optimaliseren", zie hieronder). Een materiaal dat niet
+     meer bestaat (verwijderd ná toevoegen aan het project) wordt
+     overgeslagen met een Nederlandse waarschuwingsstring i.p.v. een
+     crash. `PlaatZaagplan.naam_voor(unit_id)` vertaalt een
+     `Plaatsing.onderdeel_id` of een ruwe `niet_geplaatst`-id (incl. de
+     `"groep:<id>"`-vorm) terug naar een leesbare naam voor de UI.
+     Geen persistentie/revisies — bewust uitgesteld zolang de motor zelf
+     nog bijgeschaafd wordt, dus "(opnieuw) genereren" berekent gewoon
+     opnieuw. Gedekt door `tests/test_zaagplannen.py` (3 tests: correcte
+     groepering per materiaal, het overslaan-met-waarschuwing-pad, en
+     `naam_voor` voor zowel losse als groep-units).
+  2. **UI**: `project_detail_page.py`'s Zaagplannen-sidebar-item is niet
+     langer een "BINNENKORT"-placeholder (Labels is dat, terecht, nog
+     wel). Het paneel heeft twee toestanden (zelfde opzet als de
+     mockup): een startkaart met strategiekeuze + "Zaagplan genereren"
+     als er nog niets gegenereerd is, en na genereren een resultaatweergave
+     met een toolbar (strategie wijzigen, opnieuw genereren), een
+     stat-rij (hergebruikt de bestaande `StatTile`-widget van het
+     Dashboard), en per materiaal een "document"-kaart (donkere
+     `ZaagplanDocHead`-balk, de getekende plaat, een onderdelentabel,
+     een footer met materiaal/formaat/dikte/kerf/benutting). Geen
+     PDF-/printknoppen deze keer (zouden nu niets doen — "geen
+     half-afgemaakte implementaties") en geen revisiegeschiedenis (zelfde
+     reden als bij de backend). De standaardstrategie bij het openen komt
+     nu voor het eerst uit `InstellingenBeheer().huidige.
+     standaard_zaagstrategie` — de eerste echte consument van die
+     instelling (zie de Opties-sectie hierboven, "nog geen consumerende
+     feature").
+  3. **Nieuwe widget**: `src/robocutter/ui/widgets/zaagplaat_widget.py`
+     (`ZaagplaatWidget`) tekent één `ZaagplanResultaat` met QPainter i.p.v.
+     de SVG-aanpak uit de HTML-mockup — plaatrand, fabrieksrand-lijn(en),
+     reststukken (groen), geplaatste onderdelen (accentkleur, met naam +
+     afmeting als de rechthoek groot genoeg is om leesbaar te blijven) en
+     de zaagvolgorde als rode streepjeslijnen, geschaald naar de
+     widgetbreedte met een vaste hoogte-breedte-verhouding
+     (`heightForWidth`/`resizeEvent`). Bewust vaste pixelgroottes voor
+     tekst i.p.v. mm-geschaalde tekst zoals de SVG dat deed — bij een
+     grote plaat op een klein scherm zou dat onleesbaar worden.
+     Nieuwe theme-regels in `theme.py` onder "Zaagplannen-paneel"
+     (`ZaagplanDocHead`/`ZaagplanPlateWrap`/`ZaagplanFooter` en de
+     `docTag`/`docMeta`/`footLabel`/`footValue`/`warningText`-rollen).
+  4. **Testproject aangemaakt** (op Svens verzoek, "de motor is nog niet
+     helemaal goed dan kunnen we het in python verder testen"):
+     `scripts/maak_test_project_zaagplan.py` (idempotent, zoekt op naam
+     vóór het aanmaken) zet **in de échte database**
+     (`InstellingenBeheer().effectieve_db_pad()`, dezelfde als de
+     draaiende app) drie materialen (Eiken multiplex met
+     fabriekskantenband-links, Wit gemelamineerd, en een bewust te
+     kléin MDF-testreststuk), één model ("Onderkast 60cm (testmodel
+     zaagplan)", exact de onderdelen uit de eerder goedgekeurde
+     mockup-tekening) en het project "Keuken Jansen (testproject
+     zaagplan)" met dat model plus losse onderdelen — inclusief een
+     `groep_id`-groep (ladefronten, doorlopende nerf) die met opzet niet
+     op het te kleine MDF-materiaal past, om het "niet geplaatst"-pad
+     van het nieuwe scherm en de motor tegelijk te kunnen testen.
+  5. **Al een vierde motor-hiaat ontdekt via dit testproject** (nog NIET
+     gefixt, dit is puur de bevinding — aan Sven om te bepalen of dit nu
+     of later wordt opgepakt): met strategie "Rijen"/"Stroken" wordt de
+     hele rest van de onderdelenlijst als "niet geplaatst" weggegooid
+     zodra de EERSTE rij niet verticaal past, ook als kleinere
+     onderdelen verderop in de lijst prima in een latere, lagere rij
+     zouden passen. Concreet in dit testproject (materiaal 600×500mm):
+     de ladefronten-groep (596×588mm) wordt als eerste/hoogste rij
+     gekozen maar past niet in de hoogte (500mm) — in plaats van dan
+     gewoon door te gaan met de twee kleinere "Lade-bodem"-stukken
+     (550×400mm, die ruim zouden passen), markeert `_pak_rijen` in dat
+     geval zowél de mislukte rij als ALLE nog resterende onderdelen als
+     niet geplaatst en stopt helemaal (`break` na de
+     hoogte-controle). Met strategie "Efficiënt"/"Guillotine" gebeurt dit
+     niet (die plaatsen tenminste één Lade-bodem) — het is dus specifiek
+     een `_pak_rijen`/`_pak_stroken`-probleem, vermoedelijk dezelfde
+     `if cursor_y + rij_hoogte > y1: ...; break`-constructie in beide
+     functies. Geverifieerd door `genereer_zaagplannen_voor_project` voor
+     alle vier strategieën op het testproject te draaien (zie
+     git-geschiedenis/sessie-log voor de volledige output).
+  Geverifieerd met een offscreen smoke-test (paneel-navigatie, genereren,
+  schermafdruk — de tekst kwam in de headless-schermafdruk als lege
+  blokjes uit, een bekende font-eigenaardigheid van
+  `QT_QPA_PLATFORM=offscreen` op deze machine, geen echte bug: eerdere
+  échte (niet-headless) screenshots in `Claude outputs/` tonen gewoon
+  scherpe tekst) en daarna de echte, zichtbare app gestart zodat Sven
+  het testproject zelf kan openen en verder kan klikken.
+- **Twee bugs gevonden en gefixt n.a.v. Svens eigen feedback op het
+  scherm, plus bij het maken van een échte (niet-headless) screenshot
+  ter controle:**
+  1. Sven meldde dat de onderdelentabellen in het Zaagplannen-paneel te
+     klein waren en een interne scrollbalk toonden — "dit moet altijd
+     een statische tabel blijven". Oorzaak:
+     `_bouw_onderdelen_tabel` gebruikte `resizeRowsToContents()` om de
+     gewenste tabelhoogte te bepalen, wat de sizeHint van de
+     cel-widgets meet vóórdat ze een keer echt gelayout zijn — dat
+     leverde een te kleine hoogte op. Fix: een vaste rijhoogte (44px,
+     via `setRowHeight`, zelfde soort conventie als de 56px-rijen in de
+     bibliotheekschermen) plus expliciet uitgeschakelde
+     verticale/horizontale scrollbars, zodat de tabel altijd exact zo
+     hoog is als zijn inhoud.
+  2. Bij het maken van een echte screenshot bleek de
+     fabriekskantenband-lijn nergens zichtbaar, terwijl het testproject
+     die wel zou moeten tonen. Twee samenlopende oorzaken:
+     - **Tekenvolgorde-bug in `ZaagplaatWidget`**: de fabrieksrand-lijn
+       werd vóór de onderdelen getekend, terwijl een onderdeel met
+       `fabriekskantenband_vereist` juist per definitie vlak tegen die
+       rand aan ligt (zie `engine.py`) — de rechthoek van dat onderdeel
+       tekende de lijn er dus altijd overheen. Fix: de fabrieksrand-lijn
+       wordt nu ná de onderdelen getekend.
+     - **Naamsbotsing in `scripts/maak_test_project_zaagplan.py`**: de
+       eerste versie zocht materialen op puur op naam ("Eiken multiplex
+       18mm") om idempotent te zijn, maar dat is toevallig ook de naam
+       van een materiaal dat al écht in Svens database stond (met een
+       lege `fabriekskantenband_randen`) — het script hergebruikte dat
+       bestaande materiaal in plaats van een eigen testmateriaal aan te
+       maken, dus de fabriekskantenband-eis kwam nooit op de plaat
+       terecht. Fix: alle drie testmaterialen heten nu expliciet
+       "... (testmateriaal zaagplan)", zodat een naam-lookup nooit meer
+       een bestaand materiaal van Sven kan raken. Het verkeerd-gekoppelde
+       testproject/-model/-materiaal zijn opgeruimd en opnieuw
+       aangemaakt met de gecorrigeerde namen; Svens eigen "Eiken
+       multiplex 18mm" en "Wit gemelamineerd 18mm" zijn zelf niet
+       aangeraakt (alleen gelezen, nooit gewijzigd).
+     **Les voor een volgende keer een script als dit geschreven wordt**:
+     idempotente naam-lookups in de échte database zijn riskant zodra de
+     gebruikte naam ook een realistische, voor de hand liggende
+     materiaalnaam is — geef testdata altijd een expliciete, unieke
+     markering in de naam.
+  Beide geverifieerd met een échte (niet-headless) screenshot van het
+  Zaagplannen-tabblad (niet `QT_QPA_PLATFORM=offscreen`, om het
+  font-tofu-probleem hierboven te vermijden): de fabrieksrand-lijn is nu
+  zichtbaar op de linkerrand van de Eiken-multiplex-plaat, en de
+  onderdelentabellen tonen al hun rijen zonder scrollbalk.
+
+- **Meerdere platen per materiaal (op Svens verzoek, i.p.v. de
+  eerdere "één plaat per aanroep"-beperking):** `engine.py` heeft een
+  nieuwe publieke functie `genereer_zaagplannen()` (meervoud, naast de
+  bestaande enkelvoudige `genereer_zaagplan()`, die ongewijzigd blijft
+  en nog steeds door alle bestaande tests/`demo_render.py` gebruikt
+  wordt). Ze roept `genereer_zaagplan()` herhaald aan op een verse,
+  lege plaat voor wat de vorige ronde als `niet_geplaatst` teruggaf
+  (`_onderdelen_voor_niet_geplaatst`: telt per onderdeel-id hoeveel
+  exemplaren nog niet geplaatst zijn en zet `aantal` daarnaar; een
+  groep is altijd atomair en komt met al zijn leden terug zodra
+  `"groep:<id>"` in `niet_geplaatst` staat), tot alles geplaatst is.
+  **Onbeperkte voorraad aangenomen** — dit is optimalisatie, geen
+  voorraadbeheer, dus er wordt niet gecontroleerd of er ook
+  daadwerkelijk zoveel platen van dat materiaal op voorraad liggen.
+  Een onderdeel dat zelfs op een volledig lege plaat niet past (te
+  groot voor het materiaal) blijft in `niet_geplaatst` van de laatst
+  gegenereerde plaat staan i.p.v. tot in het oneindige nieuwe, lege
+  platen te blijven proberen (`_MAX_PLATEN = 500` als harde
+  veiligheidsgrens, plus een expliciete "geen enkele plaatsing deze
+  ronde" vroege-stop). **Belangrijk detail, in eerste opzet fout en
+  zelf ontdekt via een offscreen UI-smoke-test vóór verificatie**: een
+  tussenliggende plaat die een deel van de onderdelen plaatst en de
+  rest doorschuift naar de volgende plaat mag die rest NIET als
+  `niet_geplaatst` tonen — dat zou een misleidende waarschuwing geven
+  op een plaat terwijl het onderdeel verderop alsnog gewoon geplaatst
+  wordt. Opgelost door de `niet_geplaatst`-lijst van elke
+  tussenliggende plaat leeg te maken vóórdat hij aan de resultatenlijst
+  wordt toegevoegd; alleen de állerlaatste plaat toont een écht
+  definitieve `niet_geplaatst`. 3 nieuwe tests in `tests/test_engine.py`
+  dekken dit (meerdere-platen-nodig incl. de lege-tussenliggende-lijst-
+  check, alles-past-op-1-plaat, en het te-groot-onderdeel-stopt-
+  netjes-scenario).
+  **`projecten/zaagplannen.py`**: `PlaatZaagplan` (nog steeds één
+  fysieke plaat per item, ongewijzigd verder) heeft twee nieuwe velden
+  gekregen, `plaat_nummer`/`platen_totaal`, en
+  `genereer_zaagplannen_voor_project()` roept nu de meervoudsfunctie
+  aan en maakt per materiaal zoveel `PlaatZaagplan`-items als er platen
+  nodig zijn (i.p.v. altijd precies één) — bewust géén bredere
+  refactor van `PlaatZaagplan` zelf (bv. naar een lijst van resultaten
+  per materiaal), want dat zou de UI-code onnodig veel meer laten
+  wijzigen voor hetzelfde eindresultaat. 1 nieuwe test in
+  `tests/test_zaagplannen.py`.
+  **UI (`project_detail_page.py`)**: de documentkaart per plaat toont nu
+  "Plaat X van Y" in de kop zodra een materiaal meer dan één plaat
+  nodig heeft; de ondertitels van de "Platen"- en "Niet geplaatst"-
+  stattegels zijn bijgewerkt (niet meer "1 plaat per materiaal" /
+  "Motor ondersteunt nog 1 plaat/materiaal"), en de introtekst op het
+  nog-niets-gegenereerd-scherm noemt de oude beperking niet meer.
+  Geverifieerd met een offscreen smoke-test (5 identieke onderdelen die
+  precies 3 platen nodig hebben, gecontroleerd dat alle 3
+  `PlaatZaagplan`-items er zijn met de juiste `plaat_nummer`/
+  `platen_totaal` en een lege `niet_geplaatst` behalve waar het
+  definitief is, en dat het paneel zelf zonder crash opbouwt) plus de
+  volledige pytest-suite (109 tests, allemaal groen).
+
+- **Materiaal per model-onderdeel wijzigbaar binnen een project (op
+  Svens verzoek: "gebeurt vaak dat je dezelfde kast gebruikt en dan met
+  zelfde corpusmateriaal maar dan andere frontjes").** De data
+  ondersteunde dit eigenlijk al — elk platgeslagen `ModelOnderdeel` in
+  een `ProjectModelInstantie`-snapshot heeft zijn eigen `materiaal_id`
+  — er ontbrak alleen een manier om dat na het toevoegen nog te
+  wijzigen. Nieuwe backend-methode
+  `ProjectenBibliotheek.model_onderdeel_materiaal_wijzigen(project_id,
+  instantie_id, onderdeel_id, materiaal_id)`: bewust de ENIGE
+  toegestane wijziging op een snapshot-onderdeel (afmetingen/
+  kantenband/nerf/groep blijven bevroren, zoals het snapshot-mechanisme
+  uit hoofdstuk 4 bedoeld is) — voor al het andere blijft "bijwerken
+  naar laatste versie" of het model verwijderen/opnieuw toevoegen de
+  weg. 4 nieuwe tests in `tests/test_projecten.py`.
+  **UI (`project_detail_page.py`, Samenstelling-paneel):** elke
+  model-instantie-rij heeft nu een uitklap-chevron (hergebruikt
+  `icons.py`'s bestaande `chevron-up`/`chevron-down`); uitgeklapt toont
+  de rij per onderdeel uit de snapshot (naam, aantal, afmeting) met een
+  `QComboBox` voor het materiaal — dezelfde kale-combobox-conventie als
+  bij losse onderdelen in ditzelfde bestand (materiaalkeuze kreeg hier
+  bewust geen doorzoekbare popup zoals bij modelkeuze, want dat patroon
+  is in dit bestand specifiek voor "kiezen uit veel modellen", niet voor
+  materiaalkeuze). Uitklapstatus wordt bijgehouden in
+  `self._instanties_uitgeklapt` (een `set[str]` met instantie-id's) en
+  overleeft een `_ververs_samenstelling()`. Geverifieerd met een
+  offscreen smoke-test (uitklappen, materiaal van één onderdeel wijzigen
+  via de handler, controleren dat alleen dát onderdeel wijzigt en de rest
+  van de snapshot ongemoeid blijft).
+- **Twee bugs gemeld door Sven na eigen gebruik, plus een derde
+  zelf ontdekt tijdens het narekenen ervan:**
+  1. **De onderdelentabellen onder een zaagplan waren, ondanks de
+     eerdere "vaste rijhoogte"-fix, nog steeds (muiswiel-)scrollbaar.**
+     Oorzaak, gevonden door de werkelijke widget-geometrie op te vragen
+     i.p.v. alleen visueel te beoordelen: `_bouw_onderdelen_tabel`
+     berekende de vaste tabelhoogte met `header.sizeHint().height()`
+     **vóórdat** de tabel daadwerkelijk in de zichtbare widgetboom hing
+     — op dat moment geeft Qt de kale, ongestylede headerhoogte terug
+     (bv. 16px), niet de werkelijke, door de QSS opgehoogde hoogte (bv.
+     33px, door de `padding: 8px 10px` + `border-bottom` in `theme.py`'s
+     `QTableWidget#LibraryTable QHeaderView::section`-regel). Het
+     gevolg: de vaste hoogte was te krap, en omdat de scrollbars zelf
+     wél uitgeschakeld staan (`ScrollBarAlwaysOff`, onzichtbaar) bleef
+     de tabel in plaats daarvan gewoon muiswiel-scrollbaar met een stuk
+     verborgen/afgesneden inhoud. Fix: dezelfde uitgestelde-
+     herberekening-aanpak (`QTimer.singleShot(0, ...)`) als de
+     al-langer-bestaande stretch-kolom-fix in `materialen_page.py` —
+     ná de eerste echte layout-doorgang wordt `header.height()`
+     (i.p.v. `sizeHint()`) opnieuw opgevraagd en de vaste hoogte
+     daarmee gecorrigeerd. Geverifieerd door de tabel in een los
+     smoke-script daadwerkelijk te tonen en `verticalScrollBar().
+     maximum()` vóór en ná de fix te vergelijken (was >0, nu 0).
+  2. **Op de MDF-plaat liepen zaagsnedes van de "frontjes" dwars door de
+     "bodems" heen.** Grondoorzaak: de "efficient"-strategie bouwde haar
+     zaagvolgorde via `_bouw_zaagvolgorde_generiek` — een losse,
+     per-plaatsing benadering (voor elk geplaatst onderdeel een snede
+     die alléén de eigen breedte/hoogte van dát onderdeel overspant,
+     zie aanname 6) die nooit rekening hield met wat er verderop al op
+     de plaat stond. Bij een krappe/ongelijkmatige plaatsing (zoals
+     twee 550×400 stukken op een 600×500 MDF-plaatje) kon zo'n snede
+     dwars door een ander, al geplaatst stuk heen lopen. **Fix: de
+     "efficient"-strategie bouwt zijn zaagvolgorde nu, net als
+     "guillotine" al deed, rechtstreeks op uit zijn eigen
+     guillotine-opsplitsingen** — `_pak_efficient` en `_pak_guillotine`
+     gebruiken nu een gedeelde hulpfunctie (`_splits_vrije_rechthoek`)
+     die zowel de twee nieuwe vrije rechthoeken als de bijbehorende
+     rand-tot-rand `Zaagsnede` in één keer aflevert. Daarmee is elke
+     genoteerde snede voor beide strategieën gegarandeerd een volledige
+     snede van rand tot rand van het deelgebied waarin hij gemaakt
+     wordt, en loopt hij dus nooit meer dwars door een geplaatst
+     onderdeel heen — exact dezelfde garantie die eerder al voor
+     "guillotine" bewezen was, nu ook voor "efficient". De oude
+     `_bouw_zaagvolgorde_generiek` is verwijderd (geen enkele aanroeper
+     meer over). 2 bestaande guillotine-only rand-tot-rand-tests zijn
+     geparametriseerd over `["efficient", "guillotine"]` om dit te
+     bewijzen (nu 111 tests i.p.v. 109). `demo_render.py`'s
+     `demo_efficient.png` opnieuw gegenereerd ter visuele controle —
+     alle sneden lopen nu netjes rand-tot-rand.
+  3. **Bijvangst tijdens het narekenen van bug 2 met het testproject-
+     script**: het MDF-testmateriaal (`scripts/
+     maak_test_project_zaagplan.py`) bleek in de échte database allang
+     niet meer de "bewust te krappe" 600×500mm te zijn die het script
+     declareert — 2800×2150mm met randafzaag op alle randen, duidelijk
+     ooit door Sven zelf aangepast tijdens het los verkennen van de
+     Materialenbibliotheek-UI. Het script hergebruikte materialen tot
+     nu toe alleen-op-naam (nooit opnieuw aangemaakt), dus zo'n
+     handmatige wijziging bleef bij elke rerun stilzwijgend hangen — met
+     als gevolg dat de bedoelde "niet geplaatst"-testcase (de
+     ladefronten-groep past expres niet op de te kleine MDF-plaat) niet
+     meer reproduceerde, en dat bug 2 hierboven op de échte, veel grotere
+     MDF-plaat waarschijnlijk makkelijker zichtbaar werd. **Fix:**
+     `scripts/maak_test_project_zaagplan.py` verwijdert en herbouwt nu
+     bij elke run niet alleen het testmodel/-project (al zo sinds de
+     vorige sessie) maar ook alle drie testmaterialen
+     (`_materiaal_vers_aanmaken`, archiveren + definitief verwijderen +
+     opnieuw aanmaken) — een rerun geeft dus altijd gegarandeerd exact
+     de in het script gedefinieerde afmetingen/instellingen, ook als
+     iemand ze handmatig heeft aangepast. Zelfde les als de eerdere
+     naamsbotsing-bevinding in dit script: testdata die "idempotent op
+     naam" hergebruikt wordt, drift onopgemerkt weg zodra iemand de UI
+     gebruikt op diezelfde records.
+  **Tegelijk ook gevraagd en toegevoegd**: een nerfrichting-testgeval in
+  hetzelfde script (`Werkblad`, `nerfrichting_vereist=LANGE_ZIJDE` — mag
+  dus nooit roteren), zodat dit gedrag ook via de UI met echte
+  projectdata te verifiëren is, niet alleen via de pytest-suite.
+  Alles geverifieerd met de volledige pytest-suite (115 tests, allemaal
+  groen) en met het testproject-script twee keer achter elkaar
+  gedraaid (bewijst dat de volledige resync-aanpak ook echt idempotent
+  herhaalbaar is) plus een handmatige controle van de gegenereerde
+  zaagvolgordes/materiaalgeometrie per plaat.
+
+- **Zaagsnede-lijnen die dwars door een ander onderdeel liepen — óók nog
+  bij "Rijen"/"Stroken" (Sven meldde dit als nog steeds aanwezig ná de
+  "efficient"-fix hierboven: "hij doet het probleem met de rode
+  stippellijn nogsteeds").** Andere grondoorzaak dan de eerdere
+  "efficient"-bug, in `_bouw_zaagvolgorde_rijen` (nu verwijderd, zie
+  onder): die functie leidde "welke y-waardes zijn een rijgrens" simpelweg
+  af uit **alle** losse `Plaatsing`-y-coördinaten in de platte
+  plaatsingenlijst. Een gestapelde groep (bv. drie ladefronten) expandeert
+  in `_Eenheid.expand()` echter naar meerdere `Plaatsing`-records op
+  verschillende y's **binnen één en dezelfde rij** — die interne
+  naad-y's werden dus onterecht óók als "rijgrens" behandeld, wat een
+  volledige-plaatbreedte horizontale snede opleverde die dwars door elk
+  ánder onderdeel in diezelfde rij heen liep (gereproduceerd met een
+  groep naast een los onderdeel van een heel andere hoogte: 2 van de 4
+  gegenereerde sneden kruisten het losse onderdeel). **Fix**: `_pak_rijen`
+  en `_pak_stroken` bouwen hun zaagvolgorde nu zelf op tijdens het
+  plaatsen (nieuwe gedeelde hulpfuncties `_bouw_rij_kolom_sneden` +
+  `_bouw_zaagvolgorde_uit_rijen`), met de daadwerkelijke rijgrenzen
+  (`rij_grenzen`, bijgehouden in de plaatsingslus zelf) als enige bron
+  voor de volledige-breedte sneden tussen rijen — nooit meer afgeleid uit
+  losse plaatsings-y's. Een groep krijgt zijn interne naad-sneden nog
+  steeds (nodig, want de leden moeten wel degelijk van elkaar gescheiden
+  worden), maar nu correct **begrensd tot de breedte van de groep-kolom
+  zelf** i.p.v. de volle plaatbreedte. Bijkomend voordeel: fabrieks-
+  kantenband-plaatsingen (die hun eigen, aparte snede al krijgen, zie
+  eerder) konden er tot nu toe óók ongemerkt spurieuze "rijgrenzen"
+  doorheen laten glippen als er meer dan één fabriekskantenband-stuk
+  gestapeld stond — dat kan nu niet meer, want de zaagvolgorde-opbouw
+  raakt de fabriek-plaatsingen sowieso niet meer aan. De oude,
+  post-hoc-reconstruerende `_bouw_zaagvolgorde_rijen` is volledig
+  verwijderd (zelfde soort opschoning als eerder bij
+  `_bouw_zaagvolgorde_generiek`). 2 nieuwe, gerichte tests (een groep
+  naast een los onderdeel, met een expliciete check dat de interne
+  groep-sneden precies de kolombreedte raken) plus 1 brede test die over
+  alle vier strategieën tegelijk controleert dat geen enkele snede door
+  een plaatsing heen loopt (nu 121 tests i.p.v. 115).
+  `demo_groepering.png` opnieuw gegenereerd ter visuele controle — de
+  interne ladefronten-naad blijft nu netjes binnen de eigen kolom i.p.v.
+  door te lopen in het reststuk ernaast.
+
+**Nog open, kandidaten voor een volgende stap:** het nog niet gefixte
+vierde motor-hiaat in `_pak_rijen`/`_pak_stroken` (hierboven, "met
+strategie Rijen/Stroken wordt de hele rest weggegooid zodra de eerste
+rij niet past") oppakken; de bijgewerkte Zaagplan Generator-mockup
+alsnog laten goedkeuren door Sven (PDF-export, revisiegeschiedenis, en
+nu ook de "Plaat X van Y"-weergave); of revisiegeschiedenis/sandboxes
+voor projecten in het algemeen (module 1/4, bewust uitgesteld bij het
+bouwen van de functie — zie
+`assets/mockups/projectoverzicht-concept.png` voor een eerder concept
+van de projectenlijst zelf); of mes/groef-plaatsingsregels in de motor.
 
 ## Werkwijze die Sven prettig vindt
 

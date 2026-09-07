@@ -526,4 +526,23 @@ def build_stylesheet(t: Theme) -> str:
     QPushButton[role="addSortLevel"]:hover {{ color: {t.accent_text}; border-color: {t.accent_soft_border}; }}
     QLabel[role="placeholderTitle"] {{ font-size: 16px; font-weight: 800; }}
     QLabel[role="placeholderText"] {{ color: {t.text_muted}; font-size: 13px; }}
+
+    /* ---------- Zaagplannen-paneel (projectdetail) ---------- */
+    QFrame#ZaagplanDocHead {{
+        background: {t.chrome_bg}; border-top-left-radius: 12px; border-top-right-radius: 12px;
+    }}
+    QLabel[role="docTag"] {{ color: {t.chrome_text}; font-size: 12.5px; font-weight: 800; letter-spacing: 0.5px; }}
+    QLabel[role="docMeta"] {{ color: {t.chrome_text_muted}; font-size: 12px; }}
+    QLabel[role="docMetaStrong"] {{ color: {t.chrome_text}; font-size: 12px; font-weight: 700; }}
+    QFrame#ZaagplanPlateWrap {{ background: {t.surface_2}; }}
+    QFrame#ZaagplanFooter {{
+        background: {t.surface_2}; border-top: 1px solid {t.border};
+        border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+    }}
+    QFrame[role="footCell"] {{ border-right: 1px solid {t.border}; }}
+    QLabel[role="footLabel"] {{
+        color: {t.text_faint}; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+    }}
+    QLabel[role="footValue"] {{ color: {t.text}; font-size: 12.5px; font-weight: 700; }}
+    QLabel[role="warningText"] {{ color: {t.warning_ink}; font-size: 12.5px; font-weight: 600; }}
     """
