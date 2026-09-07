@@ -70,6 +70,10 @@ _ICONS: dict[str, str] = {
         <path d="M12 15.5V4.8M8 8.6l4-4 4 4" {stroke}/>
         <path d="M4.5 15v3.2a1.8 1.8 0 001.8 1.8h11.4a1.8 1.8 0 001.8-1.8V15" {stroke}/>
     '''.replace("{stroke}", _STROKE),
+    "download": '''
+        <path d="M12 4.8v10.7M8 12.6l4 4 4-4" {stroke}/>
+        <path d="M4.5 15v3.2a1.8 1.8 0 001.8 1.8h11.4a1.8 1.8 0 001.8-1.8V15" {stroke}/>
+    '''.replace("{stroke}", _STROKE),
     "bar": '<rect x="3" y="10" width="18" height="4.2" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.9"/>',
     "grain": '''
         <path d="M4 8.5c2-2 4-2 6 0s4 2 6 0 4-2 4 0M4 15.5c2-2 4-2 6 0s4 2 6 0 4-2 4 0"

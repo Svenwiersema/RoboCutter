@@ -15,8 +15,9 @@ opstarten). Losse projecttabbladen (tabsleutel ``f"project:{project_id}"``,
 één per geopend project, dus meerdere tegelijk open) tonen
 ``ProjectDetailPage`` (op basis van de goedgekeurde HTML-mockup
 ``design/assets/mockups/project-detail-concept.html``) — bereikbaar via
-het potlood-icoon in ``projecten_page.py``'s rijen of het aanklikken van
-een Dashboard-kaart (``_open_tab_project``). Anders dan de
+het klikken op een rij in ``projecten_page.py`` (geen apart
+potlood-icoon meer, op Svens verzoek) of het aanklikken van een
+Dashboard-kaart (``_open_tab_project``). Anders dan de
 bibliotheekschermen hieronder worden deze tabbladen bij sluiten ook
 echt vernietigd i.p.v. voor altijd in leven te blijven, en zitten ze
 niet in de vaste ``_PAGE_TAB``-tabel maar in ``self._project_pages``
@@ -516,6 +517,12 @@ class MainWindow(QMainWindow):
         self._active_tab = key
         self._rebuild_content()
 
+    def _dashboard_status_wijzigen(self, project_id: str, status) -> None:
+        # Op Svens verzoek: status snel kunnen wijzigen vanaf een
+        # Dashboard-kaart zelf, zonder het project eerst te hoeven openen.
+        self._projecten_page.bibliotheek.zet_status(project_id, status)
+        self._on_project_gewijzigd()
+
     def _on_project_gewijzigd(self) -> None:
         # Anders dan bijv. een thema-wissel raakt dit de projectenlijst zelf
         # (naam/status/samenstelling) — die pagina moet dus expliciet
@@ -776,7 +783,10 @@ class MainWindow(QMainWindow):
         grid.setSpacing(14)
         columns = 3
         for index, project in enumerate(projecten):
-            card = ProjectCard(project, self._theme, on_click=self._open_tab_project)
+            card = ProjectCard(
+                project, self._theme, on_click=self._open_tab_project,
+                on_status_gewijzigd=self._dashboard_status_wijzigen,
+            )
             grid.addWidget(card, index // columns, index % columns)
         return grid
 

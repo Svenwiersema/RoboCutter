@@ -337,6 +337,21 @@ def build_stylesheet(t: Theme) -> str:
     QFrame[chip="done"] {{ background: {t.success_soft}; border-radius: 10px; }}
     QFrame[chip="done"] QLabel {{ color: {t.success_ink}; font-size: 11px; font-weight: 700; }}
 
+    /* Statuschip-achtige QComboBox op een Dashboard-projectkaart, zodat
+       de status meteen vanaf het Dashboard te wijzigen is (op Svens
+       verzoek) — tekstkleur/randkleur worden per instantie inline
+       overschreven (zie widgets/project_card.py) met de kleur van de
+       HUIDIGE status; deze regel levert alleen de gedeelde vorm. */
+    QComboBox[role="cardStatusCombo"] {{
+        background: {t.surface_2}; border: 1px solid transparent; border-radius: 10px;
+        padding: 3px 8px; font-size: 11px; font-weight: 700;
+    }}
+    QComboBox[role="cardStatusCombo"]::drop-down {{ border: none; width: 16px; }}
+    QComboBox[role="cardStatusCombo"] QAbstractItemView {{
+        background: {t.surface}; color: {t.text}; border: 1px solid {t.border};
+        selection-background-color: {t.accent_soft}; selection-color: {t.accent_text};
+    }}
+
     /* ---------- Status bar ---------- */
     QStatusBar {{
         background: {t.chrome_bg};

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -30,24 +31,35 @@ _STATUS_CHIP = {
 }
 
 
-def _status_chip(status: ProjectStatus, theme: Theme) -> QFrame:
-    chip_key, dot_color_attr = _STATUS_CHIP[status]
-    dot_color = getattr(theme, dot_color_attr)
+def _status_combo(project: Project, theme: Theme, on_status_gewijzigd) -> QComboBox:
+    """Zelfde kleurcodering als de statische statuschip, maar nu een
+    echte ``QComboBox`` — op Svens verzoek kun je de status van een
+    project zo meteen vanaf het Dashboard wijzigen, zonder het project
+    eerst te hoeven openen. Consumeert zijn eigen muisklikken (standaard
+    Qt-gedrag voor een QComboBox), dus dit opent nooit per ongeluk ook
+    het project via ``ProjectCard.mousePressEvent``."""
 
-    chip = QFrame()
-    chip.setProperty("chip", chip_key)
-    layout = QHBoxLayout(chip)
-    layout.setContentsMargins(8, 3, 9, 3)
-    layout.setSpacing(6)
+    _, dot_color_attr = _STATUS_CHIP[project.status]
+    accentkleur = getattr(theme, dot_color_attr)
 
-    dot = QLabel()
-    dot.setFixedSize(7, 7)
-    dot.setStyleSheet(f"background: {dot_color}; border-radius: 3px;")
-    layout.addWidget(dot)
-
-    text = QLabel(status.value)
-    layout.addWidget(text)
-    return chip
+    combo = QComboBox()
+    combo.setProperty("role", "cardStatusCombo")
+    combo.setCursor(Qt.CursorShape.PointingHandCursor)
+    combo.setStyleSheet(
+        f"QComboBox[role=\"cardStatusCombo\"] {{ color: {accentkleur}; border-color: {accentkleur}; }}"
+    )
+    for status in ProjectStatus:
+        combo.addItem(status.value, status.value)
+    combo.setCurrentIndex(combo.findData(project.status.value))
+    # QComboBox-userData van een str-Enum komt bij het uitlezen altijd als
+    # kale str terug, nooit als het oorspronkelijke enum-lid (zelfde
+    # Qt/PySide6-eigenaardigheid als elders in deze codebase) -- daarom
+    # hier expliciet met .value opslaan en via de enum-constructor
+    # terugzetten, i.p.v. te vertrouwen op wat currentData() teruggeeft.
+    combo.currentIndexChanged.connect(
+        lambda _i, c=combo: on_status_gewijzigd(project.id, ProjectStatus(c.currentData()))
+    )
+    return combo
 
 
 def _datum_tekst(d) -> str:
@@ -55,7 +67,7 @@ def _datum_tekst(d) -> str:
 
 
 class ProjectCard(QFrame):
-    def __init__(self, project: Project, theme: Theme, on_click, parent=None) -> None:
+    def __init__(self, project: Project, theme: Theme, on_click, on_status_gewijzigd, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("ProjectCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -67,7 +79,7 @@ class ProjectCard(QFrame):
         layout.setSpacing(11)
 
         top_row = QHBoxLayout()
-        top_row.addWidget(_status_chip(project.status, theme))
+        top_row.addWidget(_status_combo(project, theme, on_status_gewijzigd))
         top_row.addStretch(1)
         layout.addLayout(top_row)
 

@@ -110,6 +110,28 @@ def _datum_tekst(d: date | None) -> str:
     return d.isoformat() if d is not None else "—"
 
 
+class _KlikbareCel(QWidget):
+    """Cel-wrapper die een klik ergens binnen zichzelf doorstuurt naar
+    ``on_klik`` — op Svens verzoek i.p.v. een apart potlood-icoon om een
+    project te openen: nu is de hele rij klikbaar. Werkt zonder extra
+    "transparent for mouse events"-gedoe op de kind-labels: een
+    onbehandelde muisklik op een child-widget dat er niets mee doet (zoals
+    een kale QLabel) propageert in Qt automatisch naar de ouder."""
+
+    def __init__(self, inhoud: QWidget, on_klik, parent=None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(inhoud)
+        self._on_klik = on_klik
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._on_klik()
+        super().mousePressEvent(event)
+
+
 class ProjectenPage(QWidget):
     def __init__(
         self,
@@ -445,12 +467,27 @@ class ProjectenPage(QWidget):
 
         for row_index, project in enumerate(rijen):
             self._table.setRowHeight(row_index, 56)
-            self._table.setCellWidget(row_index, 0, self._cel_project(project))
-            self._table.setCellWidget(row_index, 1, self._cel_klant(project))
-            self._table.setCellWidget(row_index, 2, self._cel_status(project))
-            self._table.setCellWidget(row_index, 3, self._cel_tekst(project.opdrachtnummer or "—"))
-            self._table.setCellWidget(row_index, 4, self._cel_tekst(_datum_tekst(project.opleverdatum)))
-            self._table.setCellWidget(row_index, 5, self._cel_onderdelen(project))
+
+            def open_project(pid=project.id) -> None:
+                if self._on_open_project is not None:
+                    self._on_open_project(pid)
+                else:
+                    self._open_drawer(pid)
+
+            # De hele rij is klikbaar om het project te openen (op Svens
+            # verzoek i.p.v. een apart potlood-icoon) — behalve de
+            # actiekolom, die zijn eigen knoppen (archiveren/verwijderen)
+            # houdt en dus NIET in een _KlikbareCel gewikkeld wordt.
+            self._table.setCellWidget(row_index, 0, _KlikbareCel(self._cel_project(project), open_project))
+            self._table.setCellWidget(row_index, 1, _KlikbareCel(self._cel_klant(project), open_project))
+            self._table.setCellWidget(row_index, 2, _KlikbareCel(self._cel_status(project), open_project))
+            self._table.setCellWidget(
+                row_index, 3, _KlikbareCel(self._cel_tekst(project.opdrachtnummer or "—"), open_project)
+            )
+            self._table.setCellWidget(
+                row_index, 4, _KlikbareCel(self._cel_tekst(_datum_tekst(project.opleverdatum)), open_project)
+            )
+            self._table.setCellWidget(row_index, 5, _KlikbareCel(self._cel_onderdelen(project), open_project))
             self._table.setCellWidget(row_index, 6, self._cel_acties(project))
 
     def _cel_project(self, p: Project) -> QWidget:
@@ -512,21 +549,14 @@ class ProjectenPage(QWidget):
         return self._cel_tekst(", ".join(delen) if delen else "Nog leeg")
 
     def _cel_acties(self, p: Project) -> QWidget:
+        # Geen apart "openen"-potlood meer -- de hele rij is klikbaar
+        # (zie _KlikbareCel/_ververs_tabel). Deze cel houdt alleen nog de
+        # archiveer-/verwijderknoppen, die bewust WEL hun eigen klikgebied
+        # houden i.p.v. het project te openen.
         cell = QWidget()
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(1)
-
-        edit_btn = QToolButton()
-        edit_btn.setProperty("role", "rowAction")
-        edit_btn.setIcon(icon("pencil", self._theme.text_faint, 15))
-        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        edit_btn.setToolTip("Openen")
-        if self._on_open_project is not None:
-            edit_btn.clicked.connect(lambda: self._on_open_project(p.id))
-        else:
-            edit_btn.clicked.connect(lambda: self._open_drawer(p.id))
-        layout.addWidget(edit_btn)
 
         if self._confirm_delete_id == p.id:
             label = QLabel("Definitief verwijderen?")

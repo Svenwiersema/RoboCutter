@@ -1340,13 +1340,165 @@ eerdere aannames in `engine.py`):
   gedraaid loste dit meteen op (bevestigt dat de resync-aanpak precies
   doet waarvoor hij bedoeld is).
 
-**Nog open, kandidaten voor een volgende stap:** de bijgewerkte Zaagplan
-Generator-mockup alsnog laten goedkeuren door Sven (PDF-export,
-revisiegeschiedenis, en nu ook de "Plaat X van Y"-weergave); of
-revisiegeschiedenis/sandboxes voor projecten in het algemeen (module 1/4,
-bewust uitgesteld bij het bouwen van de functie — zie
-`assets/mockups/projectoverzicht-concept.png` voor een eerder concept
-van de projectenlijst zelf); of mes/groef-plaatsingsregels in de motor.
+- **PDF-export voor zaagplannen, twee UI-opschoningen in Projecten/
+  Dashboard.** Op Svens verzoek na de vraag of er al genoeg functie is
+  voor een eerste proef/demo — antwoord: ja voor een interne demo, met
+  als kanttekening dat er nog geen PDF-export was en het
+  Zaagplannen-scherm zelf nog geen polish-ronde had gehad. Sven ging
+  akkoord met alle drie:
+  1. **PDF-export** (`_bouw_zaagplan_resultaat`'s toolbar, nieuwe
+     primaire knop "Alles + zaaglijst als PDF", nieuw `download`-icoon in
+     `icons.py`): `ProjectDetailPage._schrijf_zaagplannen_pdf` gebruikt
+     `QtPrintSupport.QPrinter` (A4 liggend) en tekent voor élke plaat
+     gewoon de bestaande `_bouw_zaagplan_document(plan)`-kaart
+     (`QWidget.render()` op een nooit-getoonde widget, geschaald en
+     gecentreerd per pagina) — bewust hergebruik van dezelfde opmaak als
+     het scherm zelf i.p.v. een aparte PDF-lay-out, zodat de twee nooit
+     uit de pas kunnen lopen. De laatste pagina is de volledige
+     zaaglijst, via een nieuwe, PDF-eigen `_bouw_pdf_zaaglijst_tabel()`
+     (bewust NIET de levende `self._zaaglijst_table` hergebruikt, want
+     die zou dan eerst uit zijn eigen paneel-layout gehaald moeten
+     worden om 'm elders te tekenen — dat zou 'm blijvend uit het
+     Zaaglijst-paneel laten verdwijnen).
+     **Twee geverifieerde/opgeloste valkuilen tijdens het bouwen**:
+     (a) `widget.resize(breedte, ...)` gevolgd door `adjustSize()` zet de
+     widget meteen terug naar zijn eigen (veel kleinere) `sizeHint()` —
+     dus bewust GEEN `adjustSize()` na de resize, `resize()` zelf
+     activeert de layout al synchroon (geverifieerd door de
+     widget-afmetingen vóór/na te vergelijken: 648×533 mét de foute
+     `adjustSize()`-aanroep, ~1400×800+ zonder). (b) tabellen erin
+     kregen hun vaste hoogte oorspronkelijk berekend voor het scherm,
+     waar een uitgestelde `QTimer.singleShot`-correctie (zie de
+     tabel-scrollbug-fix van eerder deze sessie) de kale
+     header-`sizeHint()` ophoogt zodra de tabel écht getoond wordt — bij
+     PDF-export wordt niets getoond, dus die correctie loopt nooit, dus
+     krijgt elke tabel in `_render_widget_op_pagina` een eigen, royale
+     vaste veiligheidsmarge (+24px) in plaats daarvan.
+  2. **Projectenlijst: geen los potlood-icoon meer om te openen — de
+     hele rij is nu klikbaar** (Sven: "het zou mooier zijn om deze
+     potlood weg te halen en naar het bewerken gaat als je er al op
+     drukt"). Nieuwe kleine widget `_KlikbareCel` (`projecten_page.py`)
+     wikkelt elke niet-actiekolomcel in en stuurt een klik ergens
+     binnenin door naar `_on_open_project`/`_open_drawer` — zonder dat
+     de kind-labels expliciet "transparent for mouse events" hoeven te
+     worden: een muisklik op een child-widget dat 'm niet zelf afhandelt
+     (zoals een kale `QLabel`) propageert in Qt automatisch naar de
+     ouder (geverifieerd met een gerichte `QMouseEvent`-test: een klik
+     op de naam- én de status-cel opent allebei het project, een klik op
+     een actieknop in de laatste kolom doet dat terecht NIET). De
+     actiekolom zelf (archiveren/verwijderen) blijft ongewijzigd, met
+     zijn eigen klikgebied.
+  3. **Dashboard: status snel wijzigen vanaf een projectkaart** (Svens
+     eigen toevoeging: "ik zou in de dashboard ook de mogelijkheid geven
+     om een project snel van status te kunnen veranderen"). De statische
+     statuschip op `ProjectCard` is vervangen door een echte
+     `QComboBox` (`_status_combo` in `widgets/project_card.py`, met
+     dezelfde statuskleur als accentkleur voor tekst/rand), die
+     `ProjectenBibliotheek.zet_status()` aanroept en daarna
+     `MainWindow._on_project_gewijzigd()` — dezelfde refresh-hook als een
+     wijziging vanuit het projectdetailtabblad. **Belangrijke, bijna
+     gemiste bug**: `ProjectStatus` is een `str`-Enum, en
+     `QComboBox.currentData()` geeft zo'n enum-lid bij het uitlezen altijd
+     als kale `str` terug i.p.v. het oorspronkelijke enum-lid (zelfde
+     Qt/PySide6-eigenaardigheid als eerder gedocumenteerd in dit bestand
+     voor `setProperty`/combobox-userData) — zonder fix zou dit een kale
+     string in `project.status` opslaan, die bij de eerstvolgende
+     SQLite-persistering zou crashen op `project.status.value`
+     (`opslag.py` verwacht een echt enum-lid). Fix: userData wordt met
+     `.value` opgeslagen en bij het teruglezen expliciet met
+     `ProjectStatus(...)` gereconstrueerd. Geverifieerd met een
+     end-to-end smoke-test die ook een "herstart" simuleert (nieuwe
+     bibliotheek-instantie op hetzelfde db-bestand) om zeker te weten dat
+     de status niet alleen in het geheugen maar ook op schijf een echt
+     enum-lid blijft.
+  **Kleine polish-ronde op het Zaagplannen-paneel zelf** (n.a.v. Svens
+  verzoek): consistente `10px`-toolbarspacing (matchte de rest van het
+  paneel al niet helemaal), en de losse "Plaat X van Y"-meta-tekst in de
+  documentkaart-kop samengevoegd met de afmeting-tekst achter hetzelfde
+  "·"-scheidingsteken-patroon dat de rest van de app al gebruikt, i.p.v.
+  twee losse labels naast elkaar.
+  Alles geverifieerd met offscreen smoke-tests (PDF-bestand daadwerkelijk
+  weggeschreven met de juiste paginastructuur — geverifieerd door het
+  bestand te lezen/bekijken; rij-klik opent het project maar een
+  actieknop-klik niet; dashboard-statuswissel persisteert correct en
+  overleeft een "herstart") plus de volledige pytest-suite (124 tests,
+  onveranderd — dit was allemaal UI-werk zonder backend-testdekking per
+  de conventie in dit bestand).
+
+- **PDF-export van hierboven afgekeurd door Sven — opnieuw van de grond
+  af, ditmaal écht mockup-first.** De `_schrijf_zaagplannen_pdf`-aanpak
+  hierboven rendert gewoon de bestaande, DONKER-getinte scherm-widgets
+  (`_bouw_zaagplan_document`) naar de printer — dat gaf een donkere
+  achtergrond op een verder wit PDF-document. Sven: "ik wil echt dat hij
+  de pdfs eigenlijk van de grond opbouwt". **Belangrijke vondst**: er
+  bestonden al eerder door Sven goedgekeurde PDF-referenties uit de
+  Cowork-ontwerpfase, die ik over het hoofd had gezien —
+  `design/voorbeelden/zaagplan-voorbeeld-v1.pdf`/`-v2.pdf` (en de
+  bijbehorende `generate_zaagplan*.py`-scripts, gebouwd met
+  `reportlab`): donkere titelbalk, rode stippellijn-zaagsnedes met
+  genummerde cirkels, groen gemarkeerde herbruikbare reststukken, een
+  onderdelentabel en een footer-strook met QR-placeholder — een volledig
+  losstaand, wit print-ontwerp, nooit gekoppeld aan de scherm-widgets.
+  Op Svens verzoek eerst een nieuwe HTML-mockup gebouwd (Artifact) die
+  deze visuele taal aanhoudt maar met het huidige veldenpalet van de
+  app, vóórdat de echte generator herbouwd wordt. Meerdere
+  correctierondes, alle verwerkt:
+  1. Geen revisienummer/QR/"Bronmateriaal"-veld (bestaan nog niet als
+     features), "Opmerkingen"-kolom vervangen door "Herkomst" (sluit aan
+     op het scherm), strategie-label en "Plaat X van Y" toegevoegd.
+  2. **Logo rechtsboven** (Svens verzoek): uit `Instellingen →
+     bedrijfslogo_pad`; staat dat leeg of is dit de demo-versie, dan
+     valt de PDF terug op het RoboCutter-eigen logo
+     (`design/assets/logo/robocutter_logo_met_tekst.png`). **Werkvoor-
+     bereider-naam ernaast** (Svens verzoek): uit `Instellingen →
+     werkvoorbereider_naam` — tijdelijk, tot er een echt
+     gebruikerssysteem is (Sven noemde dit expliciet als toekomstplan).
+     Dit worden de eerste twee echte consumenten van die twee
+     Instellingen-velden (zie de Opties-sectie hierboven, "nog geen
+     consumerende feature").
+  3. **Titelbalk niet langer een volle donkere vlak** (Svens verzoek,
+     inktbesparend bij printen): wit met een dunne onderrand i.p.v. een
+     dichtgevulde balk.
+  4. **Modelnaam uit de titelbalk gehaald** (Svens verzoek): een plaat
+     kan onderdelen van meerdere modellen of losse onderdelen door
+     elkaar bevatten, dus één modelnaam erboven zou misleidend zijn — de
+     herkomst per onderdeel staat toch al in de tabelkolom "Herkomst".
+  5. **Zaaglijst-paginering**: op Svens vraag "wat gebeurt er als de
+     zaaglijst langer is dan één pagina" toegevoegd/gevisualiseerd —
+     loopt de tabel over meerdere pagina's, dan herhaalt de kolomkop
+     zich op elke vervolgpagina (zelfde principe als "Plaat X van Y"),
+     en de "Totaal"-regel verschijnt alleen op de állerlaatste
+     zaaglijst-pagina. De mockup toont dit concreet door de 10
+     voorbeeldregels kunstmatig te splitsen over 2 pagina's.
+  6. **Afvinkkolom** (Svens verzoek, "zodat ze dit in de werkplaats op
+     papier kunnen doen"): een leeg, echt getekend vierkantje (geen
+     font-checkbox-symbool — zelfde "geen font-emoji"-principe als het
+     oude v1/v2-referentiescript) als eerste kolom in zowel elke
+     onderdelentabel als de zaaglijst.
+  **Definitief goedgekeurd door Sven ("dit ziet er goed uit").** Mockup:
+  https://claude.ai/code/artifact/82f02781-36e3-45b3-a179-26a97fd0c0c1
+  (4 pagina's: Eiken-multiplexplaat volledig geplaatst, MDF-plaat met de
+  "niet geplaatst"-waarschuwingsbalk, en de zaaglijst in 2 vervolgpagina's
+  — alle plaat-/zaagsnede-coördinaten zijn échte
+  `genereer_zaagplan()`-uitvoer, geen verzonnen getallen).
+  **Volgende sessie: de echte generator bouwen volgens deze mockup** —
+  dit vervangt `_schrijf_zaagplannen_pdf`'s huidige
+  `QWidget.render()`-aanpak volledig door directe `QPainter`-tekencode
+  (rechthoeken/lijnen/tekst, zoals het oude reportlab-referentiescript
+  dat ook deed) tegen een eigen, van het schermthema losstaand wit
+  PDF-palet — nooit meer een scherm-widget naar de printer renderen.
+  De HTML-mockup hierboven is de bron van waarheid voor kleuren/
+  lay-outverhoudingen/kolomstructuur.
+
+**Nog open, kandidaten voor een volgende stap:** de PDF-generator
+hierboven écht bouwen (zie direct hierboven — mockup is af en
+goedgekeurd, alleen de `QPainter`-implementatie moet nog); of de
+bijgewerkte Zaagplan Generator-schérm-mockup (het scherm zelf, niet de
+PDF) alsnog laten goedkeuren door Sven; of revisiegeschiedenis/sandboxes
+voor projecten in het algemeen (module 1/4, bewust uitgesteld bij het
+bouwen van de functie — zie `assets/mockups/projectoverzicht-concept.png`
+voor een eerder concept van de projectenlijst zelf); of
+mes/groef-plaatsingsregels in de motor.
 
 ## Werkwijze die Sven prettig vindt
 

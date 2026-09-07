@@ -42,13 +42,16 @@ from dataclasses import replace
 from datetime import date
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QStringListModel, QTimer
+from PySide6.QtGui import QPageLayout, QPageSize, QPainter
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
     QComboBox,
     QCompleter,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -1413,6 +1416,133 @@ class ProjectDetailPage(QWidget):
         else:
             self._zaagplannen_content.addWidget(self._bouw_zaagplan_resultaat())
 
+    # ------------------------------------------------------------------
+    # PDF-export: alle platen + de zaaglijst in één bestand
+    # ------------------------------------------------------------------
+    def _exporteer_pdf(self) -> None:
+        if not self._zaagplannen:
+            return
+        standaard_naam = f"Zaagplan {self._project().naam}.pdf"
+        pad, _ = QFileDialog.getSaveFileName(self, "Zaagplan opslaan als PDF", standaard_naam, "PDF-bestanden (*.pdf)")
+        if not pad:
+            return
+        self._schrijf_zaagplannen_pdf(pad)
+
+    def _schrijf_zaagplannen_pdf(self, pad: str) -> None:
+        # Hergebruikt bewust dezelfde documentkaart-opbouw als het scherm
+        # zelf (_bouw_zaagplan_document per plaat) i.p.v. een aparte
+        # PDF-lay-out te bouwen — zo blijft de PDF er altijd hetzelfde uit
+        # zien als het scherm, zonder dubbele opmaakcode die uit de pas kan
+        # gaan lopen. De zaaglijst krijgt wél een losse, PDF-eigen tabel
+        # (_bouw_pdf_zaaglijst_tabel) i.p.v. de levende
+        # self._zaaglijst_table te hergebruiken — die zou eerst uit zijn
+        # eigen paneel-layout gehaald moeten worden om 'm elders te
+        # tekenen, wat 'm daar blijvend zou laten verdwijnen.
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(pad)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        printer.setPageOrientation(QPageLayout.Orientation.Landscape)
+
+        painter = QPainter(printer)
+        pagina_rect = printer.pageRect(QPrinter.Unit.DevicePixel)
+
+        for i, plan in enumerate(self._zaagplannen):
+            if i > 0:
+                printer.newPage()
+            kaart = self._bouw_zaagplan_document(plan)
+            self._render_widget_op_pagina(painter, kaart, pagina_rect)
+
+        printer.newPage()
+        titel_hoogte = 50.0
+        font = painter.font()
+        font.setPointSize(15)
+        font.setBold(True)
+        painter.setFont(font)
+        titel_rect = QRectF(pagina_rect)
+        titel_rect.setHeight(titel_hoogte)
+        painter.drawText(titel_rect, Qt.AlignmentFlag.AlignVCenter, f"Zaaglijst — {self._project().naam}")
+        tabel_rect = QRectF(pagina_rect)
+        tabel_rect.setTop(tabel_rect.top() + titel_hoogte)
+        self._render_widget_op_pagina(painter, self._bouw_pdf_zaaglijst_tabel(), tabel_rect)
+
+        painter.end()
+
+    def _bouw_pdf_zaaglijst_tabel(self) -> QTableWidget:
+        # Losse, PDF-eigen tabel i.p.v. de interactieve
+        # self._zaaglijst_table (zie _schrijf_zaagplannen_pdf) — zelfde
+        # kolomopzet als _ververs_zaaglijst_paneel.
+        regels = sorteer_zaaglijst(bouw_zaaglijst(self._project()), self._sort_niveaus, self._materialen)
+        tabel = QTableWidget(len(regels), 6)
+        tabel.setObjectName("LibraryTable")
+        tabel.setHorizontalHeaderLabels(["Onderdeel", "Materiaal", "Breedte", "Hoogte", "Aantal", "Herkomst"])
+        tabel.verticalHeader().setVisible(False)
+        tabel.setShowGrid(False)
+        tabel.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        tabel.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        tabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tabel.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tabel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = tabel.horizontalHeader()
+        header.setStretchLastSection(True)
+        for col, breedte in enumerate([260, 220, 100, 100, 90]):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            tabel.setColumnWidth(col, breedte)
+
+        rij_hoogte = 40
+        for row_index, regel in enumerate(regels):
+            tabel.setRowHeight(row_index, rij_hoogte)
+            try:
+                materiaal_naam = self._materialen.ophalen(regel.onderdeel.materiaal_id).naam
+            except KeyError:
+                materiaal_naam = "onbekend materiaal"
+            waarden = [
+                regel.onderdeel.naam, materiaal_naam,
+                f"{regel.onderdeel.breedte:g} mm", f"{regel.onderdeel.hoogte:g} mm", str(regel.onderdeel.aantal),
+            ]
+            for col, tekst in enumerate(waarden):
+                tabel.setCellWidget(row_index, col, self._cel_tekst(tekst))
+            tabel.setCellWidget(row_index, 5, self._cel_herkomst(regel.herkomst))
+
+        aantal_rijen = max(1, len(regels))
+        tabel.setFixedHeight(header.sizeHint().height() + rij_hoogte * aantal_rijen + 4)
+        return tabel
+
+    def _render_widget_op_pagina(self, painter: QPainter, widget: QWidget, doel_rect) -> None:
+        # Tabellen in dit widget kregen hun vaste hoogte berekend met de
+        # kale, ongestylede header-sizeHint (zie _bouw_onderdelen_tabel):
+        # op het scherm corrigeert een uitgestelde QTimer.singleShot dit
+        # zodra de tabel écht getoond wordt, maar bij PDF-export wordt
+        # niets getoond, dus die correctie loopt hier nooit. Vandaar een
+        # eigen, royale veiligheidsmarge — een beetje lege ruimte onderaan
+        # een tabel is onschuldig, een afgesneden rij niet.
+        for tabel in widget.findChildren(QTableWidget):
+            tabel.setFixedHeight(tabel.height() + 24)
+
+        breedte = 1400
+        # Bewust GEEN adjustSize() na deze resize: dat zou de widget
+        # meteen weer terugzetten naar zijn ongedwongen sizeHint()
+        # (de natuurlijke, veel kleinere breedte) i.p.v. de hier
+        # opgelegde breedte te behouden. resize() zelf activeert de
+        # layout al synchroon (ook voor de heightForWidth-afhankelijke
+        # ZaagplaatWidget erin), dus de hoogte hieronder is al correct.
+        widget.resize(breedte, widget.sizeHint().height())
+        hoogte = max(1, widget.height())
+        # Uniform schalen naar de kleinste van de twee verhoudingen (nooit
+        # buiten de pagina laten vallen), en het resultaat vervolgens
+        # centreren i.p.v. linksboven te laten hangen — bij een
+        # afwijkende verhouding (bv. een smal/hoog zaagplan op een brede
+        # liggende pagina) oogt gecentreerd verzorgder dan een lege
+        # strook rechts/onder.
+        schaal = min(doel_rect.width() / breedte, doel_rect.height() / hoogte)
+        offset_x = doel_rect.left() + (doel_rect.width() - breedte * schaal) / 2
+        offset_y = doel_rect.top() + (doel_rect.height() - hoogte * schaal) / 2
+        painter.save()
+        painter.translate(offset_x, offset_y)
+        painter.scale(schaal, schaal)
+        widget.render(painter, QPoint(0, 0))
+        painter.restore()
+
     def _bouw_zaagplan_start(self) -> QWidget:
         kaart = QFrame()
         kaart.setObjectName("TableCard")
@@ -1477,6 +1607,7 @@ class ProjectDetailPage(QWidget):
         layout.setSpacing(16)
 
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(10)
         titel_kolom = QVBoxLayout()
         titel_kolom.setSpacing(2)
         titel = QLabel("Zaagplannen")
@@ -1497,6 +1628,12 @@ class ProjectDetailPage(QWidget):
         opnieuw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         opnieuw_btn.clicked.connect(self._genereer_zaagplannen)
         toolbar.addWidget(opnieuw_btn)
+        pdf_btn = QPushButton("  Alles + zaaglijst als PDF")
+        pdf_btn.setProperty("role", "primary")
+        pdf_btn.setIcon(icon("download", "#12141B", 13))
+        pdf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pdf_btn.clicked.connect(self._exporteer_pdf)
+        toolbar.addWidget(pdf_btn)
         layout.addLayout(toolbar)
 
         if self._zaagplan_waarschuwingen:
@@ -1557,13 +1694,12 @@ class ProjectDetailPage(QWidget):
         naam_label = QLabel(plan.materiaal_naam)
         naam_label.setProperty("role", "docMetaStrong")
         head_layout.addWidget(naam_label)
-        afmeting_label = QLabel(f"{mat.lengte:g} × {mat.breedte:g} mm")
+        afmeting_tekst = f"{mat.lengte:g} × {mat.breedte:g} mm"
+        if plan.platen_totaal > 1:
+            afmeting_tekst += f"  ·  Plaat {plan.plaat_nummer} van {plan.platen_totaal}"
+        afmeting_label = QLabel(afmeting_tekst)
         afmeting_label.setProperty("role", "docMeta")
         head_layout.addWidget(afmeting_label)
-        if plan.platen_totaal > 1:
-            plaat_label = QLabel(f"Plaat {plan.plaat_nummer} van {plan.platen_totaal}")
-            plaat_label.setProperty("role", "docMeta")
-            head_layout.addWidget(plaat_label)
         head_layout.addStretch(1)
         layout.addWidget(head)
 
