@@ -1299,14 +1299,52 @@ eerdere aannames in `engine.py`):
   interne ladefronten-naad blijft nu netjes binnen de eigen kolom i.p.v.
   door te lopen in het reststuk ernaast.
 
-**Nog open, kandidaten voor een volgende stap:** het nog niet gefixte
-vierde motor-hiaat in `_pak_rijen`/`_pak_stroken` (hierboven, "met
-strategie Rijen/Stroken wordt de hele rest weggegooid zodra de eerste
-rij niet past") oppakken; de bijgewerkte Zaagplan Generator-mockup
-alsnog laten goedkeuren door Sven (PDF-export, revisiegeschiedenis, en
-nu ook de "Plaat X van Y"-weergave); of revisiegeschiedenis/sandboxes
-voor projecten in het algemeen (module 1/4, bewust uitgesteld bij het
-bouwen van de functie — zie
+- **Het vierde motor-hiaat is opgelost:** met strategie "Rijen" gooide
+  `_pak_rijen` voorheen de HELE rest van de onderdelenlijst als
+  "niet geplaatst" weg zodra de als-eerste-gekozen (hoogste) rij niet
+  verticaal paste, ook als kleinere onderdelen verderop in de lijst
+  prima in een lagere rij zouden passen — precies het scenario uit het
+  testproject (de ladefronten-groep past niet op de 500mm-hoge
+  MDF-plaat, maar de Lade-bodems ernaast wel). **Fix**: nieuwe helper
+  `_vind_plaatsbare_rij` doorloopt de hoogte-groepen (`_groepeer_op_hoogte`,
+  al aflopend gesorteerd: hoogste eerst) en slaat een groep die niet
+  binnen de resterende hoogte (`y1 - cursor_y`) past definitief over —
+  die groep wordt METEEN als niet-geplaatst gemarkeerd (nooit meer
+  opnieuw geprobeerd, want `cursor_y` loopt alleen maar op, dus de
+  resterende hoogte wordt nooit groter) — en gaat door naar de volgende,
+  lagere hoogte-groep om daarmee alsnog een rij te vullen. Dezelfde
+  aanpak vangt ook een analoog breedte-probleem op (een groep die wél in
+  de hoogte past maar zelfs als enige, dominante kolom te breed is voor
+  de plaat). Pas als zelfs de laagste resterende groep nergens meer past,
+  stopt de plaatsing pas echt (`_pak_rijen`'s while-lus breekt af).
+  **Bewust NIET toegepast op `_pak_stroken`** (de docstring legt dit nu
+  expliciet uit): bij "Stroken" ligt de strookhoogte voor de hele plaat
+  vast op het hoogste onderdeel, dus zodra één strook niet meer past,
+  past er — anders dan bij "Rijen" — ECHT niets meer, hoe klein ook (elke
+  strook is immers altijd even hoog). Het vroegtijdig stoppen was voor
+  "Stroken" dus nooit een bug, alleen voor "Rijen".
+  4 nieuwe tests (twee voor de fix zelf — de te-hoge-groep-wordt-
+  overgeslagen-case en de tegenhanger waarbij zelfs de laagste groep niet
+  meer past — en een expliciete test die bevestigt dat "Stroken" bewust
+  wél meteen stopt), nu 124 tests in totaal. Geverifieerd met het exacte
+  testproject-scenario (via het herbouwde testscript, zie hierboven): de
+  twee Lade-bodems worden nu wél geplaatst (verdeeld over 2 platen dankzij
+  de eerdere meerdere-platen-functionaliteit), de ladefronten-groep blijft
+  terecht definitief niet geplaatst, en er treedt geen enkele
+  snede-kruising op.
+  **Bijvangst tijdens het verifiëren**: het MDF-testmateriaal in de échte
+  database bleek wéér afgeweken te zijn van de scriptdefinitie (terug naar
+  2800×2150mm met randafzaag) — Sven had het kennelijk opnieuw handmatig
+  aangepast tijdens het testen van een eerdere stap in deze sessie. Geen
+  bug, gewoon de al gedocumenteerde drift; het testproject-script opnieuw
+  gedraaid loste dit meteen op (bevestigt dat de resync-aanpak precies
+  doet waarvoor hij bedoeld is).
+
+**Nog open, kandidaten voor een volgende stap:** de bijgewerkte Zaagplan
+Generator-mockup alsnog laten goedkeuren door Sven (PDF-export,
+revisiegeschiedenis, en nu ook de "Plaat X van Y"-weergave); of
+revisiegeschiedenis/sandboxes voor projecten in het algemeen (module 1/4,
+bewust uitgesteld bij het bouwen van de functie — zie
 `assets/mockups/projectoverzicht-concept.png` voor een eerder concept
 van de projectenlijst zelf); of mes/groef-plaatsingsregels in de motor.
 

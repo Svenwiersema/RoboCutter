@@ -457,6 +457,50 @@ def _bouw_zaagvolgorde_uit_rijen(
     return sneden
 
 
+def _vind_plaatsbare_rij(
+    resterend: list[tuple[_Eenheid, float, float, bool]], x0: float, x1: float, cursor_y: float, y1: float, kerf: float
+) -> tuple[list[tuple[_Eenheid, float, float, bool]], list[tuple[_Eenheid, float, float, bool]], float, list[str]]:
+    """Zoekt, hoogte-groep voor hoogte-groep (aflopend, dus hoogste
+    eerst — zie ``_groepeer_op_hoogte``), de eerste groep die nog binnen
+    de resterende hoogte (``y1 - cursor_y``) past én daadwerkelijk een
+    niet-lege rij oplevert (dus ook breed genoeg is), en vult daarmee een
+    rij via ``_vul_rij``. Groepen die worden overgeslagen omdat ze niet
+    passen komen NOOIT meer aan de beurt (``cursor_y`` loopt alleen maar
+    op, dus de resterende hoogte wordt nooit meer groter) en worden dus
+    direct als definitief niet-plaatsbaar teruggegeven — dat is precies
+    de fix voor het hiaat waarbij één te hoge groep (bv. een groep
+    ladefronten die net niet past) tot dan toe de hele rest van de
+    onderdelenlijst onnodig liet weggooien, terwijl kleinere onderdelen
+    verderop in de lijst wél in een lagere rij zouden passen.
+
+    Retourneert (rij, overig_na_rij, rij_hoogte, definitief_niet_plaatsbaar)
+    — ``rij`` is leeg als zelfs de laagste resterende groep niet meer
+    past (qua hoogte of breedte), in welk geval ``overig_na_rij`` leeg is
+    en alle resterende onderdelen in ``definitief_niet_plaatsbaar`` zitten."""
+
+    groepen = _groepeer_op_hoogte(resterend)
+    overgeslagen: list[str] = []
+
+    for i, groep in enumerate(groepen):
+        groep_hoogte = groep[0][2]
+        if cursor_y + groep_hoogte > y1 + 1e-9:
+            overgeslagen.extend(e.unit_id for (e, _, _, _) in groep)
+            continue
+
+        kandidaat = [item for latere_groep in groepen[i:] for item in latere_groep]
+        rij, overig_na_rij, rij_hoogte = _vul_rij(kandidaat, x0, x1, kerf)
+        if not rij:
+            # Zelfs deze (lagere) groep is te breed voor de plaat -> ook
+            # definitief niet plaatsbaar, probeer de volgende (nog lagere) groep.
+            overgeslagen.extend(e.unit_id for (e, _, _, _) in groep)
+            continue
+
+        return rij, overig_na_rij, rij_hoogte, overgeslagen
+
+    # Geen enkele resterende hoogte-groep past nog, ook niet de laagste.
+    return [], [], 0.0, overgeslagen
+
+
 def _pak_rijen(
     eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
 ) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
@@ -486,15 +530,15 @@ def _pak_rijen(
 
     while resterend:
         # Nieuwe rij starten; onderdelen met (bijna) gelijke hoogte
-        # blijven bij voorkeur bij elkaar (zie _vul_rij hierboven).
-        rij, overig_na_rij, rij_hoogte = _vul_rij(resterend, x0, x1, kerf)
+        # blijven bij voorkeur bij elkaar (zie _vul_rij hierboven), en
+        # een te hoge groep slaat niet langer de hele rest van de
+        # onderdelenlijst plat (zie _vind_plaatsbare_rij hierboven).
+        rij, overig_na_rij, rij_hoogte, definitief_niet_plaatsbaar = _vind_plaatsbare_rij(
+            resterend, x0, x1, cursor_y, y1, kerf
+        )
+        niet_geplaatst.extend(definitief_niet_plaatsbaar)
         if not rij:
-            # Past geen enkel overgebleven stuk meer (te breed of te hoog) -> stoppen.
-            niet_geplaatst.extend(e.unit_id for (e, _, _, _) in overig_na_rij)
-            break
-        if cursor_y + rij_hoogte > y1 + 1e-9:
-            niet_geplaatst.extend(e.unit_id for (e, _, _, _) in rij)
-            niet_geplaatst.extend(e.unit_id for (e, _, _, _) in overig_na_rij)
+            # Zelfs de laagste resterende hoogte-groep past niet meer -> stoppen.
             break
 
         nieuwe_plaatsingen, nieuwe_sneden, x = _bouw_rij_kolom_sneden(rij, x0, cursor_y, rij_hoogte, kerf)
@@ -524,7 +568,16 @@ def _pak_stroken(
     een per-rij aangepaste hoogte. De vaste hoogte is de hoogte van het
     hoogste onderdeel over de hele plaat, dus per definitie past elk
     onderdeel op zijn eigen hoogte binnen één strook — enige reden om
-    iets niet te plaatsen is dat de plaat verticaal vol is."""
+    iets niet te plaatsen is dat de plaat verticaal vol is.
+
+    Gebruikt bewust NIET de ``_vind_plaatsbare_rij``-fix die ``_pak_rijen``
+    wel heeft (zie daar): bij "Stroken" is de strookhoogte plaatbreed
+    vast, dus zodra één strook niet meer past, past — anders dan bij
+    "Rijen" — ECHT geen enkel resterend onderdeel meer, hoe klein ook
+    (elke strook is immers altijd even hoog, ongeacht wat erin ligt).
+    Vroegtijdig stoppen zodra ``cursor_y + strook_hoogte`` de plaat niet
+    meer in past, is voor deze strategie dus geen bug maar het juiste
+    gedrag."""
 
     x0, y0, x1, y1 = werkgebied
 

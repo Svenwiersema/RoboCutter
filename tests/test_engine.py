@@ -312,6 +312,64 @@ def test_rijen_houdt_identieke_onderdelen_bij_elkaar_in_een_rij():
     assert bodems[0].y == pytest.approx(bodems[1].y)
 
 
+def test_rijen_slaat_te_hoge_groep_over_en_plaatst_kleinere_onderdelen_alsnog():
+    # Hiaat 4 (zie OVERDRACHT.md): een groep die als hoogste/eerste rij
+    # gekozen wordt maar niet in de plaathoogte past, mocht niet langer de
+    # hele rest van de onderdelenlijst als niet-geplaatst laten wegvallen
+    # -- kleinere onderdelen verderop in de lijst moeten alsnog in een
+    # (lagere) rij geplaatst worden. Exact het testproject-scenario:
+    # de ladefronten-groep past niet op een 600x500 plaatje, de
+    # lade-bodems (elk apart wél passend) horen dan alsnog geplaatst te
+    # worden i.p.v. ook te sneuvelen.
+    mat = _standaard_materiaal(lengte=600, breedte=500, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="front_onder", breedte=596, hoogte=220, groep_id="lades", groep_volgorde=1),
+        Onderdeel(id="front_midden", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=2),
+        Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=3),
+        Onderdeel(id="lade_bodem", breedte=550, hoogte=400, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == ["groep:lades"]
+    assert len(resultaat.plaatsingen) == 1
+    assert resultaat.plaatsingen[0].onderdeel_id == "lade_bodem"
+
+
+def test_rijen_stopt_pas_als_ook_de_laagste_resterende_groep_niet_meer_past():
+    # Tegenhanger van de vorige test: als ZELFS het kleinste resterende
+    # onderdeel niet meer past (plaat verticaal echt vol), moet alles wat
+    # nog over is terecht als niet-geplaatst eindigen -- geen regressie
+    # naar "altijd maar doorproberen".
+    mat = _standaard_materiaal(lengte=600, breedte=250, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="past_al_niet", breedte=550, hoogte=220, aantal=1),
+        Onderdeel(id="past_ook_niet", breedte=550, hoogte=100, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    # De eerste (hoogste) past nog wel (220 < 250); de tweede rij zou
+    # cursor_y=224 + 100 = 324 > 250 zijn, past dus niet meer.
+    assert len(resultaat.plaatsingen) == 1
+    assert resultaat.plaatsingen[0].onderdeel_id == "past_al_niet"
+    assert resultaat.niet_geplaatst == ["past_ook_niet#1"]
+
+
+def test_stroken_stopt_wel_meteen_helemaal_want_strookhoogte_is_plaatbreed_vast():
+    # Bewuste asymmetrie met de twee tests hierboven: "Stroken" gebruikt
+    # NIET de _pak_rijen-fix (zie de docstring van _pak_stroken) omdat de
+    # strookhoogte voor de hele plaat vastligt op het hoogste onderdeel --
+    # als één strook niet meer past, past dus ECHT niets meer, ook geen
+    # kleiner onderdeel (elke strook is immers altijd even hoog).
+    mat = _standaard_materiaal(lengte=600, breedte=500, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="front_onder", breedte=596, hoogte=220, groep_id="lades", groep_volgorde=1),
+        Onderdeel(id="front_midden", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=2),
+        Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=3),
+        Onderdeel(id="lade_bodem", breedte=550, hoogte=400, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="stroken")
+    assert resultaat.plaatsingen == []
+    assert set(resultaat.niet_geplaatst) == {"groep:lades", "lade_bodem#1"}
+
+
 @pytest.mark.parametrize("strategie", ["efficient", "guillotine"])
 def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
