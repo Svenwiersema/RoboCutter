@@ -42,6 +42,12 @@ python scripts/test_instellingen_ui.py
 
 # Visual sanity-check output for the optimizer (writes output/*.png)
 python scripts/demo_render.py
+
+# Build a demo .exe + Windows installer (PyInstaller + Inno Setup — see
+# OVERDRACHT.md for why this is PyInstaller, not the intended Nuitka, pre-release)
+pip install -e ".[build]"
+.\scripts\build_exe.ps1          # -> dist\RoboCutter.exe
+.\installer\build_installer.ps1  # -> installer\Output\RoboCutter-Setup.exe (needs Inno Setup 6)
 ```
 
 There is no lint/format/build tooling configured in this repo — don't invent one.
@@ -61,13 +67,17 @@ Cross-module dependencies are constructor-injected (e.g. `ReststukkenBibliotheek
 
 `src/robocutter/optimalisatie/` is the cutting-plan engine itself (`engine.py`, two placement strategies — `"efficient"`/`"rijen"`), kept intentionally decoupled from every bibliotheek module.
 
+`src/robocutter/projecten/` additionally has two engine-facing modules beyond the usual `models.py`/`bibliotheek.py`/`opslag.py`: `zaaglijst.py` flattens a project's models/parts into one sortable cut list (`bouw_zaaglijst`/`sorteer_zaaglijst`), and `zaagplannen.py` groups that list by `materiaal_id` and calls `optimalisatie.engine.genereer_zaagplannen` per group, converting to/from the engine's lean `Materiaal`/`Onderdeel` shapes. Generated zaagplannen are **not persisted** — no revision history yet (deliberately deferred, see `OVERDRACHT.md`); a plan is recomputed in memory every time the UI asks for it.
+
 ### UI (`src/robocutter/ui/`)
 
 - `app.py` boots `QApplication` → `MainWindow`.
-- `main_window.py`: dark "chrome" header (always dark in both themes) with the four main nav items, a VS Code-style tab strip (`_open_tabs`, closable except the pinned "Projecten" tab), and per-tab page widgets. Page instances (`MaterialenPage`, `ReststukkenPage`, `ModellenPage`) are constructed once and kept alive across theme/tab rebuilds (`_rebuild_content` reparents them before deleting the old central widget) — losing them would drop open SQLite connections and in-progress form state.
+- `main_window.py`: dark "chrome" header (always dark in both themes) with the four main nav items, a VS Code-style tab strip (`_open_tabs`, closable except the pinned "Projecten" tab), and per-tab page widgets. Page instances (`MaterialenPage`, `ReststukkenPage`, `ModellenPage`, `ProjectenPage`, `InstellingenPage`) are constructed once and kept alive across theme/tab rebuilds (`_rebuild_content` reparents them before deleting the old central widget) — losing them would drop open SQLite connections and in-progress form state. Opening a project spawns its own closable `ProjectDetailPage`, cached in `_project_pages: dict[str, ProjectDetailPage]` keyed by project id so re-opening the same project reuses the existing tab.
 - Each `*_page.py` follows the same internal shape: a sidebar (status/type/tag filters), a main area (search + sortable `QTableWidget`), and a slide-in "drawer" panel (add/edit form, no modal pop-ups). Shared helpers (`_field_spin`, `_segmented`, `_rand_chip_rij`, `_clear_layout`) are duplicated per-file rather than factored into a shared module — that's the established convention here, not an oversight.
 - `theme.py` builds one big Qt stylesheet string from a `Theme` dataclass (`LICHT`/`DONKER`); `icons.py` renders hand-drawn SVG icon strings (Phosphor Bold style) to `QPixmap`/`QIcon` at runtime — there's no icon font/resource file.
-- `sample_data.py` is placeholder data for the still-UI-only Projecten home page; `Project`/`ProjectStatus` real backend types live in `robocutter.projecten.models` and `sample_data.ProjectStatus` is just a re-export of that.
+- `sample_data.py`'s `ProjectStatus` is just a re-export of the real `robocutter.projecten.models.ProjectStatus` (kept for backward compat with earlier placeholder-data code, now that `ProjectenPage`/`ProjectDetailPage` are wired to the real SQLite-backed bibliotheek).
+- `widgets/` holds small reusable pieces shared between pages: `project_card.py`, `stat_tile.py` (KPI tiles), `zaagplaat_widget.py` (renders one physical sheet's cut layout).
+- `zaagplan_pdf.py` exports a generated zaagplan to PDF by drawing directly with `QPainter` (rectangles/lines/text) against its own print-specific white palette, in millimeters converted to device pixels via `_dpmm`. **Never** build a print export by calling `QWidget.render()` on the on-screen (dark-themable) widgets — an earlier version did that and shipped a dark background onto an otherwise-white PDF; Sven rejected it explicitly ("ik wil echt dat hij de pdfs eigenlijk van de grond opbouwt").
 
 **Known Qt/PySide6 pitfalls already worked around in this codebase** (don't reintroduce them):
 - A `str`-subclassed `Enum` stored via `QWidget.setProperty` / `QComboBox` userData silently comes back as a plain `str`. Store `.value` and reconstruct via the enum constructor on read.
