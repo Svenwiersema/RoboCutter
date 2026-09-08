@@ -131,6 +131,12 @@ python scripts/test_reststukken_ui.py
 python scripts/test_modellen_ui.py
 python scripts/test_projecten_ui.py
 python scripts/test_instellingen_ui.py
+
+# Demo-exe/installer bouwen (PyInstaller + Inno Setup — zie OVERDRACHT.md
+# voor waarom dit vóór een echte release naar Nuitka moet)
+pip install -e ".[build]"
+.\scripts\build_exe.ps1          # -> dist\RoboCutter.exe
+.\installer\build_installer.ps1  # -> installer\Output\RoboCutter-Setup.exe (vereist Inno Setup 6)
 ```
 
 Nog niet gedaan (bewust, dit is iteratie 1):

@@ -67,6 +67,7 @@ alleen de rest van de chrome/tabbladen te laten meewisselen.
 
 from __future__ import annotations
 
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -107,9 +108,14 @@ from robocutter.ui.widgets.stat_tile import StatTile
 # een gezicht (zie design/chapters/11-ux-ui.md); hoofdstuk 11 wijst voor
 # precies dit doel — werkbalk/systemtray op klein formaat — daarom
 # uitdrukkelijk het vereenvoudigde robotgezicht-icoon aan.
-# Pad is relatief aan de repo-root; bij het bundelen met Nuitka (hoofdstuk 8)
-# moet dit meeverhuizen naar een gebundelde resource.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# Pad is relatief aan de repo-root in dev-modus; in een PyInstaller-build
+# (``sys.frozen``) staat ``design/assets`` als gebundelde data naast de
+# exe (onedir) of uitgepakt in ``sys._MEIPASS`` (onefile) — zie
+# scripts/build_exe.ps1 voor de --add-data-koppeling die dit waarmaakt.
+if getattr(sys, "frozen", False):
+    _REPO_ROOT = Path(getattr(sys, "_MEIPASS", None) or Path(sys.executable).resolve().parent)
+else:
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
 _LOGO_ICON_PATH = _REPO_ROOT / "design" / "assets" / "logo" / "robocutter_icon_toolbar.png"
 
 _NAV_ITEMS = [

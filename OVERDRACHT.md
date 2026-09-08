@@ -1490,15 +1490,128 @@ eerdere aannames in `engine.py`):
   De HTML-mockup hierboven is de bron van waarheid voor kleuren/
   lay-outverhoudingen/kolomstructuur.
 
-**Nog open, kandidaten voor een volgende stap:** de PDF-generator
-hierboven écht bouwen (zie direct hierboven — mockup is af en
-goedgekeurd, alleen de `QPainter`-implementatie moet nog); of de
-bijgewerkte Zaagplan Generator-schérm-mockup (het scherm zelf, niet de
-PDF) alsnog laten goedkeuren door Sven; of revisiegeschiedenis/sandboxes
-voor projecten in het algemeen (module 1/4, bewust uitgesteld bij het
-bouwen van de functie — zie `assets/mockups/projectoverzicht-concept.png`
-voor een eerder concept van de projectenlijst zelf); of
-mes/groef-plaatsingsregels in de motor.
+- **PDF-generator écht gebouwd (nieuwe sessie, vervolg op de
+  goedgekeurde mockup hierboven).** Nieuw bestand
+  `src/robocutter/ui/zaagplan_pdf.py`: één functie
+  `schrijf_zaagplannen_pdf(pad, project, zaagplannen, strategie_label,
+  materialen, sort_niveaus)`, losstaand van `ProjectDetailPage` (die
+  roept 'm nu alleen nog aan) zodat de generator ook zonder een geopend
+  projecttabblad te testen is. `_schrijf_zaagplannen_pdf`,
+  `_bouw_pdf_zaaglijst_tabel` en `_render_widget_op_pagina` in
+  `project_detail_page.py` zijn volledig verwijderd, met hen de
+  `QWidget.render()`-aanpak en de bijbehorende Qt-print-imports
+  (`QPrinter`/`QPageLayout`/`QPageSize`/`QPainter`/`QPoint`/`QRectF`
+  daar nu ongebruikt en dus ook weg).
+  Alle tekstblokken/rechthoeken/lijnen/cirkels van de mockup worden nu
+  echt met `QPainter` getekend in millimeters (omgerekend naar
+  apparaatpixels via de printer-DPI, net als het oude reportlab-
+  referentiescript deed) — geen enkele scherm-widget wordt meer naar de
+  printer gerenderd. Hergebruikt bewust dezelfde geometrische
+  ``ZaagplanResultaat``-data (`plaatsingen`/`reststukken`/
+  `zaagvolgorde`) als `ZaagplaatWidget` (het scherm), maar met een eigen
+  print-kleurenpalet en eigen labelstijl (genummerde groene cirkel per
+  geplaatst onderdeel, ongekaderde vetgedrukt-groene "R#" per
+  reststuk — zonder cirkel, exact zoals de mockup).
+  **Regel voor de genummerde zaagsnede-badges** (niet letterlijk zo in
+  hoofdstuk 5 vastgelegd, afgeleid uit de goedgekeurde mockup zelf): een
+  verticale snede krijgt zijn badge aan het einde (de kant met de
+  grootste y) van zijn eigen segment, een horizontale snede aan het
+  begin (de kant met de kleinste x) — dat kwam letterlijk overeen met
+  alle badge-posities in de mockup toen ze zijn nagerekend.
+  De fabriekskantenband-indicator (dikke donkere lijn net buiten de
+  betreffende plaatrand) tekent voor elke rand een simpel
+  niet-geroteerd bijschrift in plaats van de tekst mee te roteren met
+  verticale randen — een bewuste vereenvoudiging t.o.v. wat in theorie
+  mooier zou kunnen, maar de mockup zelf roteert het bijschrift ook niet
+  mee met zijn eigen (linker) fabrieksrand-voorbeeld.
+  De zaaglijst-pagina's herhalen de kolomkop op elke vervolgpagina en
+  tonen de "Totaal"-rij alleen op de allerlaatste pagina — als de
+  laatste pagina al vol zit (evenveel rijen als er per pagina passen)
+  krijgt de totaalregel een eigen extra pagina in plaats van de tabel te
+  laten overlopen.
+  **Geverifieerd** met een los smoke-script (in-memory bibliotheken,
+  nooit `data/robocutter.db` aangeraakt) dat een PDF wegschrijft voor
+  een scenario met een volledig geplaatste plaat, een "niet
+  geplaatst"-scenario (amberkleurige balk) en een kunstmatig lange
+  zaaglijst (30+ regels) om de paginering/totaalregel-logica te
+  triggeren — gecontroleerd door zowel de pagina's naar PNG te renderen
+  (`QPdfDocument.render`) als de ingebedde tekst terug uit te lezen
+  (`QPdfDocument.getAllText`, om zeker te weten dat de content zelf
+  klopt, los van een renderingseigenaardigheid van die preview-tool die
+  bij een lange tabel af en toe losse rijen als effen zwarte blokken
+  liet zien — de onderliggende PDF-tekst zelf bleek daarbij steeds
+  correct, dus dat bleek een eigenaardigheid van het preview-pad, geen
+  fout in de generator). Leverde ook nog een lastig te vinden bug op:
+  een losstaande `QFontMetricsF(font)` (zonder gekoppeld apparaat) meet
+  in scherm-DPI terwijl de tabel/kop-rechthoeken al in printer-DPI-
+  pixels stonden — daardoor zou eliding van te lange tekst nooit
+  triggeren. Fix: `painter.fontMetrics()` gebruiken (gekoppeld aan de
+  actieve printer als paint device) i.p.v. een losse `QFontMetricsF`.
+  Logo/werkvoorbereider komen nu ook echt uit `Instellingen` (met
+  terugval op het RoboCutter-logo als `bedrijfslogo_pad` leeg is), zoals
+  in de mockup afgesproken.
+
+- **Eerste exe + installer (demo-build), op Svens verzoek na het zien
+  van de PDF-export.** Hoofdstuk 8 legt Nuitka + Inno Setup vast als
+  definitieve bundel-/installer-keuze voor de echte commerciële
+  release, maar Nuitka vereist eenmalig een C-compiler-download en een
+  aanmerkelijk langere buildtijd — voor déze eerste, interne demo koos
+  Sven expliciet voor de snellere **PyInstaller**-route nu, met Nuitka
+  als bewuste vervolgstap vóór een echte release (zie de vraag/
+  antwoord hierover in de sessie).
+  1. **Padresolutie frozen-bewust gemaakt** — drie plekken gingen ervan
+     uit dat de code altijd vanuit de broncode draait
+     (`Path(__file__).resolve().parents[3]` om bij de repo-root te
+     komen): `main_window.py` (het werkbalk-logo),
+     `zaagplan_pdf.py` (het RoboCutter-terugvallogo in de PDF) en
+     `instellingen/beheer.py` (de standaard datamap voor
+     `data/robocutter.db`). Alle drie krijgen nu een `sys.frozen`-tak:
+     de eerste twee lezen in een PyInstaller-build hun pad relatief aan
+     `sys._MEIPASS` (onefile) of de map naast de exe (onedir); de derde
+     valt in een gebundelde build terug op `%APPDATA%\RoboCutter\data`
+     in plaats van een map naast de exe, omdat een exe meestal in een
+     niet-schrijfbare map als Program Files staat — dezelfde
+     `%APPDATA%\RoboCutter`-basis die `instellingen.json` toch al
+     gebruikt, dus geen nieuwe locatie verzonnen.
+  2. **`scripts/build_exe.ps1`**: bouwt `dist/RoboCutter.exe` (één
+     bestand, `--onefile --windowed`, met het nieuwe
+     `design/assets/logo/robocutter_icon.ico` — een multi-resolutie
+     ico, met Pillow gegenereerd uit de bestaande
+     `robocutter_icon_toolbar.png`, want Windows-exe's hebben een
+     `.ico` nodig, geen `.png`) en bundelt `design/assets` mee als data
+     zodat de logo's/het icoon ook buiten de broncode te vinden zijn.
+     Nieuwe `build`-extra in `pyproject.toml` (`pip install -e
+     ".[build]"`) voor PyInstaller.
+  3. **`installer/robocutter.iss`** (Inno Setup) + wrapper-script
+     `installer/build_installer.ps1` (bouwt eerst de exe, compileert
+     daarna de installer): per-user of per-machine installatie (geen
+     verplichte adminrechten), Nederlandstalige wizard, Start Menu- en
+     optionele bureaublad-snelkoppeling, standaard Inno-uninstaller.
+     **Bewust nog geen code signing** (hoofdstuk 8 noemt dit wel, ook
+     om Windows' "onbekende uitgever"-waarschuwing te voorkomen) — er
+     is nog geen certificaat; dit is een openstaand punt voor vóór een
+     echte release, niet voor deze interne demo.
+  4. **Geverifieerd**: de exe los gestart (blijft draaien, schrijft
+     `%APPDATA%\RoboCutter\data\robocutter.db` aan zoals verwacht) en
+     de installer met een stille testinstallatie
+     (`/VERYSILENT /CURRENTUSER /DIR=...`) naar een tijdelijke map,
+     daarna gestart vanuit die installatiemap en weer succesvol
+     verwijderd via de gegenereerde `unins000.exe` — geen sporen
+     achtergelaten op de echte machine buiten de gedeelde
+     `%APPDATA%\RoboCutter\instellingen.json`/`data`, die de gewone
+     dev-app toch al gebruikt.
+  Nieuwe `.gitignore`-regels voor de buildartefacten: `/build/`,
+  `/dist/`, `*.spec`, `/installer/Output/`.
+
+**Nog open, kandidaten voor een volgende stap:** vóór een echte
+(betaalde) release alsnog overstappen op Nuitka + code signing voor de
+exe/installer (zie hierboven, bewust uitgesteld voor deze eerste demo);
+of de bijgewerkte Zaagplan Generator-schérm-mockup (het scherm zelf,
+niet de PDF) alsnog laten goedkeuren door Sven; of
+revisiegeschiedenis/sandboxes voor projecten in het algemeen (module
+1/4, bewust uitgesteld bij het bouwen van de functie — zie
+`assets/mockups/projectoverzicht-concept.png` voor een eerder concept
+van de projectenlijst zelf); of mes/groef-plaatsingsregels in de motor.
 
 ## Werkwijze die Sven prettig vindt
 

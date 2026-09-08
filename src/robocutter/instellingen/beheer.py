@@ -6,13 +6,21 @@ te weten waar hun databasebestand staat.
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 from robocutter.instellingen.models import GELDIGE_THEMAS, GELDIGE_ZAAGSTRATEGIEEN, Instellingen
 from robocutter.instellingen.opslag import laad_instellingen, sla_instellingen_op, standaard_instellingen_pad
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_STANDAARD_DATA_MAP = _REPO_ROOT / "data"
+# In een PyInstaller-build (``sys.frozen``) staat de exe meestal in een
+# niet-schrijfbare map (bv. Program Files), dus valt de standaard
+# datamap daar terug op dezelfde ``%APPDATA%\RoboCutter``-map als
+# instellingen.json — in dev-modus blijft dat gewoon <repo>/data.
+if getattr(sys, "frozen", False):
+    _STANDAARD_DATA_MAP = standaard_instellingen_pad().parent / "data"
+else:
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+    _STANDAARD_DATA_MAP = _REPO_ROOT / "data"
 _DB_BESTANDSNAAM = "robocutter.db"
 
 
