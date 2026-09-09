@@ -2,11 +2,19 @@
 goedgekeurde HTML-conceptmockup. Zijbalk met Mappen- en Tags-filters
 (geen Overzicht/Archief — module 2 kent geen archiveerstap voor
 modellen); hoofdgedeelte met zoeken, een sorteerbare/doorzoekbare
-tabel, en een uitklapbaar paneel (geen pop-up) om een model toe te
-voegen of te bewerken, mét de onderdelen- en submodellen-lijsten die
-bij een model horen (hoofdstuk 2: nesting, materiaal per onderdeel).
+tabel, en een uitklapbaar paneel (geen pop-up) om een NIEUW model toe
+te voegen, mét de onderdelen- en submodellen-lijsten die bij een model
+horen (hoofdstuk 2: nesting, materiaal per onderdeel).
 
-Twee dingen die Sven na de mockup liet fixen tijdens het uitwerken
+Bewerken van een bestaand model gebeurt sinds Svens verzoek ("maak de
+modellen bewerken ook een apart scherm net zoals met projecten") niet
+meer in dit uitklappaneel, maar in een los, sluitbaar tabblad
+(``model_detail_page.py``, tabsleutel ``f"model:{model_id}"``) — net
+als bij Projecten is de hele rij in de tabel klikbaar om dat tabblad te
+openen (geen apart potlood-icoon meer, zie ``_KlikbareCel``/
+``_ververs_tabel``); alleen "Model toevoegen" opent nog dit paneel.
+
+Drie dingen die Sven na de mockup liet fixen tijdens het uitwerken
 naar PySide6:
   1. De pijltjes van getalvelden (aantal, groepsvolgorde) gebruiken
      dezelfde eigen chevron-stapknoppen als Materialen/Reststukken
@@ -17,6 +25,8 @@ naar PySide6:
      "Modellenbibliotheek", terwijl Materialenbibliotheek en
      Reststukkenbibliotheek wél de volledige naam gebruiken — dat is
      rechtgezet in ``main_window.py``.
+  3. Bewerken kreeg een eigen tabblad i.p.v. het uitklappaneel (zie
+     hierboven), met de hele rij klikbaar i.p.v. een potlood-icoon.
 
 Deelt de ``MaterialenBibliotheek``-instantie van ``MaterialenPage``
 (zie ``main_window.py``) i.p.v. een eigen materialen-verbinding te
@@ -98,11 +108,37 @@ class _ZoekVeld(QLineEdit):
             self.completer().complete()
 
 
+class _KlikbareCel(QWidget):
+    """Cel-wrapper die een klik ergens binnen zichzelf doorstuurt naar
+    ``on_klik`` — zelfde patroon als projecten_page.py: op Svens verzoek
+    i.p.v. een apart potlood-icoon om een model te bewerken is nu de hele
+    rij klikbaar."""
+
+    def __init__(self, inhoud: QWidget, on_klik, parent=None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(inhoud)
+        self._on_klik = on_klik
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._on_klik()
+        super().mousePressEvent(event)
+
+
 class ModellenPage(QWidget):
-    def __init__(self, materialen: MaterialenBibliotheek, theme: Theme, parent=None) -> None:
+    def __init__(self, materialen: MaterialenBibliotheek, theme: Theme, on_open_model=None, parent=None) -> None:
         super().__init__(parent)
         self._theme = theme
         self.materialen = materialen
+        # Op Svens verzoek opent een klik op een rij nu het losse
+        # modeldetailtabblad (model_detail_page.py) i.p.v. dit paneel in
+        # bewerk-modus — dit paneel blijft wel de manier om een NIEUW model
+        # aan te maken. Optioneel/None zodat dit bestand ook zonder
+        # main_window.py bruikbaar blijft (bv. scripts/test_modellen_ui.py).
+        self._on_open_model = on_open_model
 
         db_pad = InstellingenBeheer().effectieve_db_pad()
         db_pad.parent.mkdir(parents=True, exist_ok=True)
@@ -153,6 +189,12 @@ class ModellenPage(QWidget):
 
     def sluit_verbinding(self) -> None:
         self._db.close()
+
+    def ververs(self) -> None:
+        """Publiek aanknooppunt zodat main_window.py deze lijst kan laten
+        bijwerken nadat een model elders is gewijzigd (bijv. vanuit een
+        losse model_detail_page.py-tabblad)."""
+        self._ververs_alles()
 
     # ------------------------------------------------------------------
     # Zijbalk
@@ -429,11 +471,22 @@ class ModellenPage(QWidget):
 
         for row_index, model in enumerate(rijen):
             self._table.setRowHeight(row_index, 56)
-            self._table.setCellWidget(row_index, 0, self._cel_model(model))
-            self._table.setCellWidget(row_index, 1, self._cel_map(model))
-            self._table.setCellWidget(row_index, 2, self._cel_onderdelen(model))
-            self._table.setCellWidget(row_index, 3, self._cel_submodellen(model))
-            self._table.setCellWidget(row_index, 4, self._cel_tags(model))
+
+            def open_model(mid=model.id) -> None:
+                if self._on_open_model is not None:
+                    self._on_open_model(mid)
+                else:
+                    self._open_drawer(mid)
+
+            # De hele rij is klikbaar om het model te bewerken (op Svens
+            # verzoek i.p.v. een apart potlood-icoon) — behalve de
+            # actiekolom, die zijn eigen verwijderknop houdt en dus NIET in
+            # een _KlikbareCel gewikkeld wordt.
+            self._table.setCellWidget(row_index, 0, _KlikbareCel(self._cel_model(model), open_model))
+            self._table.setCellWidget(row_index, 1, _KlikbareCel(self._cel_map(model), open_model))
+            self._table.setCellWidget(row_index, 2, _KlikbareCel(self._cel_onderdelen(model), open_model))
+            self._table.setCellWidget(row_index, 3, _KlikbareCel(self._cel_submodellen(model), open_model))
+            self._table.setCellWidget(row_index, 4, _KlikbareCel(self._cel_tags(model), open_model))
             self._table.setCellWidget(row_index, 5, self._cel_acties(model))
 
     def _cel_model(self, m: Model) -> QWidget:
@@ -523,18 +576,14 @@ class ModellenPage(QWidget):
         return None
 
     def _cel_acties(self, m: Model) -> QWidget:
+        # Geen apart "bewerken"-potlood meer -- de hele rij is klikbaar (zie
+        # _KlikbareCel/_ververs_tabel). Deze cel houdt alleen nog de
+        # verwijderknop, die bewust WEL zijn eigen klikgebied houdt i.p.v.
+        # het model te openen.
         cell = QWidget()
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(1)
-
-        edit_btn = QToolButton()
-        edit_btn.setProperty("role", "rowAction")
-        edit_btn.setIcon(icon("pencil", self._theme.text_faint, 15))
-        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        edit_btn.setToolTip("Bewerken")
-        edit_btn.clicked.connect(lambda: self._open_drawer(m.id))
-        layout.addWidget(edit_btn)
 
         if self._confirm_delete_id == m.id:
             gebruiker = self._model_wordt_gebruikt_door(m.id)

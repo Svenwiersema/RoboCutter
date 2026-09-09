@@ -33,7 +33,13 @@ aangepakt).
 Deelt de ``ProjectenBibliotheek``/``ModellenBibliotheek``/
 ``MaterialenBibliotheek``-instanties van ``main_window.py`` i.p.v. eigen
 verbindingen te openen — dit scherm opent zelf geen SQLite-verbinding
-en heeft dus ook geen ``sluit_verbinding()``.
+en heeft dus ook geen ``sluit_verbinding()``. Zelfde voor de gedeelde
+``ZaagplannenOpslag`` (zie ``zaagplannen_opslag.py``): het laatst
+gegenereerde zaagplan van een project wordt bij het openen van dit
+tabblad herladen (i.p.v. altijd leeg te beginnen) en bij elke
+(opnieuw-)generatie meteen opgeslagen — op Svens verzoek ("zorg er ook
+voor dat zaagplannen binnen een project worden opgeslagen"). Geen
+revisiegeschiedenis: alleen de laatste stand overleeft een herstart.
 """
 
 from __future__ import annotations
@@ -58,6 +64,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QStackedWidget,
     QTableWidget,
@@ -81,6 +88,7 @@ from robocutter.projecten.bibliotheek import (
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
 from robocutter.projecten.zaagplannen import PlaatZaagplan, genereer_zaagplannen_voor_project
+from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.stat_tile import StatTile
@@ -144,6 +152,7 @@ class ProjectDetailPage(QWidget):
         projecten: ProjectenBibliotheek,
         modellen: ModellenBibliotheek,
         materialen: MaterialenBibliotheek,
+        zaagplannen_opslag: ZaagplannenOpslag,
         theme: Theme,
         on_gewijzigd: Callable[[], None] | None = None,
         on_open_projecten_tab: Callable[[], None] | None = None,
@@ -154,6 +163,7 @@ class ProjectDetailPage(QWidget):
         self._projecten = projecten
         self._modellen = modellen
         self._materialen = materialen
+        self._zaagplannen_opslag = zaagplannen_opslag
         self._theme = theme
         self._on_gewijzigd = on_gewijzigd
         self._on_open_projecten_tab = on_open_projecten_tab
@@ -163,9 +173,18 @@ class ProjectDetailPage(QWidget):
         self._bewerk_los_onderdeel_id: str | None = None
         self._model_naam_naar_id: dict[str, str] = {}
         self._instanties_uitgeklapt: set[str] = set()
-        self._zaagplan_strategie = self._standaard_zaagstrategie()
-        self._zaagplannen: list[PlaatZaagplan] | None = None
-        self._zaagplan_waarschuwingen: list[str] = []
+        # Een eerder gegenereerd zaagplan van dít project herladen (zie
+        # zaagplannen_opslag.py) i.p.v. altijd leeg te beginnen — op Svens
+        # verzoek ("zorg er ook voor dat zaagplannen binnen een project
+        # worden opgeslagen"). Geen persistentie/revisiegeschiedenis
+        # verder dan dat: alleen de laatst gegenereerde stand.
+        opgeslagen = self._zaagplannen_opslag.laad(self._project_id)
+        if opgeslagen is not None:
+            self._zaagplannen, self._zaagplan_waarschuwingen, self._zaagplan_strategie = opgeslagen
+        else:
+            self._zaagplannen = None
+            self._zaagplan_waarschuwingen = []
+            self._zaagplan_strategie = self._standaard_zaagstrategie()
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -275,7 +294,27 @@ class ProjectDetailPage(QWidget):
         if key == self._actief_paneel:
             return
         self._actief_paneel = key
-        self._stack.setCurrentWidget(self._paneel_widgets[key])
+        self._activeer_stack_paneel(key)
+
+    def _activeer_stack_paneel(self, key: str) -> None:
+        # QStackedWidget/QStackedLayout houdt standaard bij het bepalen van
+        # de eigen sizeHint rekening met ALLE pagina's, niet alleen de
+        # actieve — zonder deze fix bleef de pagina na een bezoek aan het
+        # (potentieel hoge, want tabel- en zaagplaat-afbeeldingen-gevulde)
+        # Zaagplannen-paneel net zo hoog staan bij het terugschakelen naar
+        # bijv. Overzicht, met een grote lege ruimte tot gevolg (Svens
+        # melding: "de ui [wordt] even lang als die van zaagplan"). Fix:
+        # niet-actieve pagina's krijgen size policy Ignored (tellen dan niet
+        # meer mee in de sizeHint-berekening), de actieve pagina krijgt haar
+        # normale Preferred-beleid terug.
+        for widget in self._paneel_widgets.values():
+            widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        actief_widget = self._paneel_widgets[key]
+        actief_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self._stack.setCurrentWidget(actief_widget)
+        actief_widget.adjustSize()
+        self._stack.adjustSize()
+        self._stack.updateGeometry()
 
     # ------------------------------------------------------------------
     # Hoofdgedeelte: projectkop + gestapelde panelen
@@ -303,7 +342,7 @@ class ProjectDetailPage(QWidget):
         }
         for widget in self._paneel_widgets.values():
             self._stack.addWidget(widget)
-        self._stack.setCurrentWidget(self._paneel_widgets[self._actief_paneel])
+        self._activeer_stack_paneel(self._actief_paneel)
         outer.addWidget(self._stack)
 
         scroll.setWidget(content)
@@ -1406,6 +1445,10 @@ class ProjectDetailPage(QWidget):
         )
         self._zaagplannen = plannen
         self._zaagplan_waarschuwingen = waarschuwingen
+        # Meteen opslaan zodat dit zaagplan overleeft als je het project
+        # sluit of de app herstart (zie zaagplannen_opslag.py) — "opnieuw
+        # genereren" overschrijft gewoon de eerder opgeslagen stand.
+        self._zaagplannen_opslag.opslaan(self._project_id, plannen, waarschuwingen, self._zaagplan_strategie)
         self._ververs_zaagplannen_paneel()
 
     def _ververs_zaagplannen_paneel(self) -> None:

@@ -542,6 +542,11 @@ def build_stylesheet(t: Theme) -> str:
     QLabel[role="placeholderTitle"] {{ font-size: 16px; font-weight: 800; }}
     QLabel[role="placeholderText"] {{ color: {t.text_muted}; font-size: 13px; }}
 
+    /* ---------- Modeldetail-tabblad ---------- */
+    QFrame#ModelDetailFooter {{
+        background: {t.surface_2}; border-top: 1px solid {t.border};
+    }}
+
     /* ---------- Zaagplannen-paneel (projectdetail) ---------- */
     QFrame#ZaagplanDocHead {{
         background: {t.chrome_bg}; border-top-left-radius: 12px; border-top-right-radius: 12px;

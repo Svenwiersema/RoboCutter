@@ -1603,6 +1603,171 @@ eerdere aannames in `engine.py`):
   Nieuwe `.gitignore`-regels voor de buildartefacten: `/build/`,
   `/dist/`, `*.spec`, `/installer/Output/`.
 
+- **Nog een zaagmotor-iteratie, op Svens verzoek** ("hij maakt
+  nogsteeds fouten als onderdelen op platen zetten wat helemaal niet
+  past, hij kan nog geen items roteren, en hij maakt nog foutjes met
+  oog op efficient zijn") — drie afzonderlijke problemen, gevonden en
+  bevestigd met een fuzz-script (willekeurige platen/onderdelen/
+  groepen/fabriekskantenband-combinaties over alle vier strategieën,
+  met controles op overlap/buiten-de-plaat/aantal-klopt) vóór het
+  schrijven van een fix, zodat elke fix ook meetbaar geverifieerd kon
+  worden i.p.v. op het oog:
+  1. **Onderdelen buiten de plaat geplaatst — de fabriekskantenband-
+     strook.** `genereer_zaagplan` stapelde alle fabriek-eenheden
+     blindelings in ÉÉN kolom (LINKS/RECHTS) of rij (ONDER/BOVEN) langs
+     de gekozen rand, zonder ooit te checken of dat nog binnen de plaat
+     paste — bij een paar stuks te veel (of gewoon een paar grote
+     stuks) liep de stapel simpelweg door tot ver buiten de plaat, in
+     het fuzz-script tot duizenden mm buiten de plaatgrens, soms zelfs
+     met een NEGATIEVE x/y aan de andere kant. Fix: nieuwe helper
+     `_plaats_fabriek_rand` plaatst ze nu in kolommen/rijen met
+     wraparound zodra de huidige kolom/rij vol is; onderdelen die ook
+     dan nergens meer in de resterende rand-strook passen komen terecht
+     in `niet_geplaatst` (schuiven net als elk ander niet-geplaatst
+     onderdeel door naar een volgende, verse plaat) i.p.v. buiten de
+     plaat geplaatst te worden. Dit was de kern van "onderdelen op
+     platen zetten wat helemaal niet past" — het fuzz-script vond 'm
+     pas zodra ook groepen/fabriekskantenband meegenomen werden (de
+     eerdere, kalere fuzz-ronde zonder die twee vond niets).
+  2. **Geen rotatie in "Rijen"/"Stroken".** Beide strategieën gebruikten
+     voor een vrij-roteerbaar onderdeel (geen nerf-eis) altijd de
+     invoer-oriëntatie van het onderdeel, zonder ooit te roteren — dit
+     terwijl "Rijen" zelf letterlijk "lange zijdes eerst" heet.
+     `_pak_efficient`/`_pak_guillotine` deden dit al langer goed (eigen
+     best-fit-zoektocht over beide oriëntaties). Fix: nieuwe helper
+     `_landschap_indien_vrij` legt een vrij-roteerbaar onderdeel nu met
+     zijn langste zijde langs de x-as, zoals de strategienaam belooft
+     — twee bestaande tests die specifiek op de oude (nooit-roteren)
+     geometrie leunden zijn aangepast met een nerf-eis om hun bedoelde
+     scenario (twee even hoge stukken die gedwongen in dezelfde
+     rij/kolom moeten vallen) overeind te houden.
+  3. **"Efficient" soms minder efficiënt dan "Guillotine".** Fuzz-
+     vergelijking liet zien dat de greedy best-area-fit-heuristiek van
+     `_pak_efficient` op sommige platen aantoonbaar MINDER onderdelen
+     plaatste dan de eenvoudigere FIFO-wachtrij-aanpak van
+     `_pak_guillotine` — een bekende zwakte van greedy bin-packing (de
+     lokaal beste keuze voor het huidige stuk is niet altijd de beste
+     keuze op de lange termijn). Fix: "efficient" probeert nu ALTIJD
+     ook de guillotine-heuristiek en gebruikt via nieuwe helper
+     `_kies_beste_pakresultaat` gewoon de beste van de twee uitkomsten
+     (minste niet-geplaatst, bij gelijke stand het minste afval) i.p.v.
+     blind op één heuristiek te vertrouwen.
+  Geverifieerd: volledige testsuite groen (twee tests aangepast, zie
+  boven, verder geen regressies), plus het fuzz-script zelf op nul
+  fouten over meerdere seeds/duizenden runs (los, niet in de pytest-
+  suite opgenomen — puur gebruikt om deze iteratie te sturen/verifiëren).
+  `scripts/demo_render.py` opnieuw gedraaid en de vier `output/demo_*.png`
+  visueel gecontroleerd, geen regressie in de bestaande voorbeelden.
+
+- **Diezelfde zaagmotor-iteratie bleek zelf twee nieuwe bugs te hebben
+  geïntroduceerd — Sven meldde dit meteen na het testen** ("hij houdt
+  nu geen rekening met fabriekskantenband in rijen en hij plaatst ook
+  niet alles terwijl daar wel ruimte voor is of dat hij gewoon een
+  nieuwe plaat kan pakken"). Weer eerst met een uitgebreider fuzz-script
+  bevestigd vóór het fixen (dit keer óók met fabriekskantenband +
+  groepen samen, en met een multi-plaat-volledigheidscheck: "moet alles
+  wat past ooit ergens landen").
+  1. **Fabriekskantenband-strook: de wraparound-fix hierboven bleek zelf
+     fout.** Een tweede kolom/rij "verder de plaat in" voorkwam de
+     buiten-de-plaat-bug wel, maar raakt de vereiste rand niet meer —
+     wat de hele fabriekskantenband-eis zelf schendt (het punt van een
+     fabriekskantenband is nu juist dat het stuk PLAT tegen die ene rand
+     ligt). Fix: `_plaats_fabriek_rand` doet nu bewust GEEN wraparound
+     meer — gewoon één rechte lijn tegen de rand, en wat daar niet meer
+     bij past wordt echt `niet_geplaatst` (schuift door naar een
+     volgende, verse plaat met een weer volledig lege rand).
+  2. **Fabriekskantenband-stuk permanent niet geplaatst, ook op een
+     verse plaat, als de invoer-oriëntatie toevallig niet past.**
+     `_plaats_fabriek_rand` probeerde nooit de geroteerde oriëntatie van
+     een vrij-roteerbaar stuk (geen nerf-eis) — als de rauwe
+     breedte/hoogte uit de onderdelenlijst niet in het beschikbare
+     werkgebied paste terwijl de andere kant om wél zou passen, sneuvelde
+     het stuk voorgoed. Fix: probeert nu, net als `_pak_efficient`/
+     `_pak_guillotine`, de geroteerde oriëntatie als de natuurlijke niet
+     past.
+  3. **De "lange zijdes eerst"-rotatiefix (zie hierboven) was zelf ook
+     te rigide.** `_landschap_indien_vrij` koos altijd de lange zijde
+     langs x, zónder te checken of dat wel binnen de plaatbreedte paste
+     — een onderdeel dat liggend te breed is voor de plaat maar staand
+     prima zou passen, eindigde zo blijvend als niet-geplaatst, ook op
+     een verse plaat, puur door deze voorkeur zelf (exact Svens tweede
+     klacht: "hij plaatst ook niet alles terwijl daar wel ruimte voor
+     is"). Fix: valt nu terug op de staande oriëntatie zodra landschap
+     niet past maar staand wel.
+  Alle drie de bugs zaten dus in dezelfde categorie: een fix die correct
+  leek voor het gemelde probleem, maar zelf een net iets te absolute
+  regel introduceerde ("altijd wraparound", "nooit roteren in de
+  fabriekstrook", "altijd landschap") zonder een terugvaloptie voor de
+  gevallen waarin die regel het tegenovergestelde effect had. Geverifieerd
+  met het uitgebreide fuzz-script (7 seeds × 400 runs, incl. groepen +
+  fabriekskantenband + multi-plaat-volledigheid): 0 fouten, tegen 1131
+  vóór deze fix (waarvan de meeste overigens fuzz-scriptfouten bleken —
+  onderdelen die door hun EIGEN nerf-eis simpelweg te groot zijn voor het
+  materiaal horen terecht permanent niet-geplaatst te blijven; het script
+  is aangescherpt om dat te onderscheiden van een echte motor-bug).
+  Volledige testsuite blijft groen, `demo_render.py` opnieuw gecontroleerd.
+
+- **Nog een efficiëntie-iteratie plus zaagplan-persistentie, op Svens
+  verzoek** ("nog steeds dingetjes waarvan ik zie dit kan beter
+  georganiseerd worden qua efficiëntie, en zorg er ook voor dat
+  zaagplannen binnen een project worden opgeslagen").
+  1. **"Efficient" probeert nu alle vier heuristieken, niet meer twee.**
+     Fuzz-vergelijking liet zien dat "efficient" (best-area-fit +
+     guillotine, zie de vorige iteratie) in zo'n 10% van de gevallen nog
+     steeds werd verslagen door "rijen" of "stroken" — dus toegevoegd
+     aan de kandidatenlijst in `_kies_beste_pakresultaat`. "Efficient"
+     betekent nu letterlijk "het beste resultaat van alle beschikbare
+     aanpakken", niet één vaste slimme aanpak.
+  2. **Latente bug gevonden door die uitbreiding: `_pak_rijen`/
+     `_pak_stroken`'s tussen-kolom-sneden stopten 1 kerf te vroeg.**
+     Zodra "efficient" voortaan ook op de uitkomst van "rijen"/"stroken"
+     kon uitkomen, faalde de bestaande strikte rand-tot-rand-
+     reconstructietest (die eerder alleen voor "efficient"/"guillotine"
+     draaide) meteen. Grondoorzaak: een tussen-kolom-snede binnen een
+     rij liet zijn bovengrens stoppen bij de CONTENT-hoogte van de rij
+     (zonder kerf), terwijl de rij als fysiek stuk plaat, zodra er nóg
+     een rij op volgt, in werkelijkheid net zo hoog is als waar de
+     horizontale scheidingssnede naar die volgende rij ligt (mét kerf)
+     — een snede die daar te vroeg stopt is geen echte rand-tot-rand
+     snede van het fysieke rij-stuk meer (in de praktijk een verschil
+     van maar een paar mm, maar wel een reële onnauwkeurigheid in de
+     zaagvolgorde). Fix: `_bouw_zaagvolgorde_uit_rijen` bouwt de
+     tussen-kolom-sneden nu pas ná afloop van de hele rij-lus, als de
+     ECHTE rijgrenzen bekend zijn (nieuwe helper `_plaats_rij`
+     losgetrokken uit het oude `_bouw_rij_kolom_sneden`, dat nu alleen
+     nog plaatsingen/groep-naadsneden/kolomranden teruggeeft). De
+     rand-tot-rand-reconstructietest draait nu ook voor "rijen"/
+     "stroken" (was tot dan toe ongedekt, want "efficient" kon er tot
+     deze iteratie nooit intern op uitkomen).
+  3. **Zaagplannen worden nu opgeslagen per project.** Nieuw:
+     `robocutter.projecten.zaagplannen_opslag` (`ZaagplannenOpslag`,
+     eigen `zaagplannen`-tabel in hetzelfde db-bestand) bewaart, per
+     project, het LAATST gegenereerde zaagplan als één JSON-blob (net
+     als `modelinstanties`/`losse_onderdelen` in `projecten/opslag.py`)
+     — bewust GEEN volledige revisiegeschiedenis (Rev A/B/C...), dat
+     blijft een apart, groter onderwerp (zie hieronder). `main_window.py`
+     opent de verbinding één keer (gedeeld tussen alle open
+     projecttabbladen, want die kunnen dezelfde tabel tegelijk lezen/
+     schrijven) en injecteert 'm in elke `ProjectDetailPage`, die bij het
+     openen een eerder opgeslagen zaagplan herlaadt (i.p.v. altijd leeg
+     te beginnen) en bij elke (opnieuw-)generatie meteen opslaat. Geen
+     "is dit zaagplan nog actueel?"-detectie als de projectsamenstelling
+     ná het genereren verandert — "opnieuw genereren" blijft de manier
+     om een verouderde opgeslagen stand te vervangen. Geen automatische
+     opruiming van een wees-rij als een project definitief verwijderd
+     wordt (bewust, klein en onschadelijk: een ongebruikte rij kost
+     alleen wat schijfruimte) — kandidaat voor een latere opschoning.
+     4 nieuwe tests (`tests/test_zaagplannen_opslag.py`): herstart-
+     round-trip (incl. fabriekskantenband/kantenband-velden), lege
+     opslag geeft `None`, opnieuw opslaan overschrijft i.p.v. een tweede
+     rij toe te voegen, en verwijderen.
+  Geverifieerd: volledige testsuite groen (132 tests, was 124), een
+  breder fuzz-script (7 seeds × 400 runs, overlap/buiten-plaat/
+  fabrieksrand/snede-kruist-plaatsing/multi-plaat-volledigheid) op 0
+  fouten, `demo_render.py` opnieuw visueel gecontroleerd, en een
+  offscreen smoke-test van de volledige opslaan→nieuw-tabblad-openen→
+  automatisch-herladen-cyclus op een kopie van de echte database.
+
 **Nog open, kandidaten voor een volgende stap:** vóór een echte
 (betaalde) release alsnog overstappen op Nuitka + code signing voor de
 exe/installer (zie hierboven, bewust uitgesteld voor deze eerste demo);
@@ -1612,6 +1777,13 @@ revisiegeschiedenis/sandboxes voor projecten in het algemeen (module
 1/4, bewust uitgesteld bij het bouwen van de functie — zie
 `assets/mockups/projectoverzicht-concept.png` voor een eerder concept
 van de projectenlijst zelf); of mes/groef-plaatsingsregels in de motor.
+De greedy-heuristieken in de motor ("efficient" incluis, ondanks de
+fix hierboven) zijn nog steeds geen bewezen-optimale bin-packing —
+voor complexere/grotere projecten kan een geavanceerdere aanpak
+(bijv. meerdere heuristieken/volgordes proberen en de beste kiezen,
+zoals nu al voor "efficient" gebeurt, maar breder toegepast) nog meer
+winst opleveren; bewust niet nu gedaan om de scope beheersbaar te
+houden.
 
 ## Werkwijze die Sven prettig vindt
 

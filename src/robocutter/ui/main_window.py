@@ -22,7 +22,14 @@ bibliotheekschermen hieronder worden deze tabbladen bij sluiten ook
 echt vernietigd i.p.v. voor altijd in leven te blijven, en zitten ze
 niet in de vaste ``_PAGE_TAB``-tabel maar in ``self._project_pages``
 (zie ``_tab_titel_icoon`` voor hoe de tabbladtitel dan toch de actuele
-projectnaam volgt).
+projectnaam volgt). Modellen kregen op Svens verzoek later hetzelfde
+patroon ("maak de modellen bewerken ook een apart scherm net zoals met
+projecten"): losse tabbladen (tabsleutel ``f"model:{model_id}"``,
+``self._model_pages``) tonen ``ModelDetailPage``, bereikbaar via het
+klikken op een rij in ``modellen_page.py`` (ook daar geen apart
+potlood-icoon meer). Anders dan bij Projecten heeft Modellenbibliotheek
+geen apart Dashboard-achtig kaartoverzicht dat ook naar dit tabblad
+linkt.
 
 Op Svens verzoek is het onderscheid tussen "Dashboard" (het KPI-/
 overzichtsscherm, tabsleutel ``"dashboard"``, inmiddels ook echt
@@ -92,10 +99,13 @@ from PySide6.QtWidgets import (
 from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.projecten.models import Project, ProjectStatus
 from robocutter.projecten.zaaglijst import bouw_zaaglijst
+from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
+from robocutter.projecten.zaagplannen_opslag import open_verbinding as open_zaagplannen_verbinding
 from robocutter.reststukken.models import ReststukStatus
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.instellingen_page import InstellingenPage
 from robocutter.ui.materialen_page import MaterialenPage
+from robocutter.ui.model_detail_page import ModelDetailPage
 from robocutter.ui.modellen_page import ModellenPage
 from robocutter.ui.project_detail_page import ProjectDetailPage
 from robocutter.ui.projecten_page import ProjectenPage
@@ -286,7 +296,9 @@ class MainWindow(QMainWindow):
         self._active_tab: str = "dashboard"
         self._materialen_page = MaterialenPage(self._theme)
         self._reststukken_page = ReststukkenPage(self._materialen_page.bibliotheek, self._theme)
-        self._modellen_page = ModellenPage(self._materialen_page.bibliotheek, self._theme)
+        self._modellen_page = ModellenPage(
+            self._materialen_page.bibliotheek, self._theme, on_open_model=self._open_tab_model
+        )
         self._projecten_page = ProjectenPage(
             self._modellen_page.bibliotheek,
             self._materialen_page.bibliotheek,
@@ -294,12 +306,24 @@ class MainWindow(QMainWindow):
             on_open_project=self._open_tab_project,
         )
         self._instellingen_page = InstellingenPage(self._instellingen, self._theme, self._on_instellingen_gewijzigd)
+        # Eén gedeelde opslag voor het laatst gegenereerde zaagplan per
+        # project (zie zaagplannen_opslag.py) — hier geopend i.p.v. per
+        # ProjectDetailPage, want er kunnen meerdere tabbladen (dus
+        # meerdere ProjectDetailPage-instanties) tegelijk open staan die
+        # dezelfde onderliggende tabel moeten kunnen lezen/schrijven.
+        zaagplannen_db_pad = self._instellingen.effectieve_db_pad()
+        zaagplannen_db_pad.parent.mkdir(parents=True, exist_ok=True)
+        self._zaagplannen_db = open_zaagplannen_verbinding(zaagplannen_db_pad)
+        self._zaagplannen_opslag = ZaagplannenOpslag(self._zaagplannen_db)
         # Eén losse, sluitbare ProjectDetailPage per geopend project
         # (tabsleutel f"project:{project_id}") — anders dan de
         # bibliotheekschermen hierboven kunnen hier meerdere tegelijk open
         # staan, en worden ze bij sluiten ook echt vernietigd i.p.v. voor
         # altijd in leven te blijven (zie _close_tab/_rebuild_content).
         self._project_pages: dict[str, ProjectDetailPage] = {}
+        # Zelfde patroon voor modellen (tabsleutel f"model:{model_id}") —
+        # zie model_detail_page.py.
+        self._model_pages: dict[str, ModelDetailPage] = {}
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -330,6 +354,8 @@ class MainWindow(QMainWindow):
             workspace.addWidget(self._projecten_page, 1)
         elif self._active_tab in self._project_pages:
             workspace.addWidget(self._project_pages[self._active_tab], 1)
+        elif self._active_tab in self._model_pages:
+            workspace.addWidget(self._model_pages[self._active_tab], 1)
         else:  # "dashboard"
             workspace.addWidget(self._build_sidebar())
             workspace.addWidget(self._build_main(), 1)
@@ -449,6 +475,13 @@ class MainWindow(QMainWindow):
             except KeyError:
                 naam = "Verwijderd project"
             return naam, "folder"
+        if key.startswith("model:"):
+            model_id = key.split(":", 1)[1]
+            try:
+                naam = self._modellen_page.bibliotheek.ophalen(model_id).naam
+            except KeyError:
+                naam = "Verwijderd model"
+            return naam, "cube"
         return _PAGE_TAB[key]
 
     def _build_tab_item(self, key: str, titel: str, icon_naam: str) -> QWidget:
@@ -514,6 +547,7 @@ class MainWindow(QMainWindow):
                 self._projecten_page.bibliotheek,
                 self._modellen_page.bibliotheek,
                 self._materialen_page.bibliotheek,
+                self._zaagplannen_opslag,
                 self._theme,
                 on_gewijzigd=self._on_project_gewijzigd,
                 on_open_projecten_tab=lambda: self._open_tab("projecten"),
@@ -521,6 +555,33 @@ class MainWindow(QMainWindow):
         if key not in self._open_tabs:
             self._open_tabs.append(key)
         self._active_tab = key
+        self._rebuild_content()
+
+    def _open_tab_model(self, model_id: str) -> None:
+        # Zelfde patroon als _open_tab_project: elk model krijgt zijn eigen
+        # tabsleutel, zodat meerdere modellen tegelijk een los, individueel
+        # sluitbaar tabblad kunnen hebben — zie model_detail_page.py.
+        key = f"model:{model_id}"
+        if key not in self._model_pages:
+            self._model_pages[key] = ModelDetailPage(
+                model_id,
+                self._modellen_page.bibliotheek,
+                self._materialen_page.bibliotheek,
+                self._theme,
+                on_gewijzigd=self._on_model_gewijzigd,
+                on_open_modellen_tab=lambda: self._open_tab("modellen"),
+            )
+        if key not in self._open_tabs:
+            self._open_tabs.append(key)
+        self._active_tab = key
+        self._rebuild_content()
+
+    def _on_model_gewijzigd(self) -> None:
+        # Anders dan bijv. een thema-wissel raakt dit de modellenlijst zelf
+        # (naam/onderdelen/submodellen) — die pagina moet dus expliciet
+        # verversen, niet alleen de chrome/tabbladen (die haalt haar data
+        # pas weer op bij de volgende _rebuild_content-aanroep, hierna).
+        self._modellen_page.ververs()
         self._rebuild_content()
 
     def _dashboard_status_wijzigen(self, project_id: str, status) -> None:
@@ -552,6 +613,12 @@ class MainWindow(QMainWindow):
             # tegelijk open staan, dus ze blijven laten bestaan zou een
             # sluipend geheugenlek zijn.
             pagina = self._project_pages.pop(key, None)
+            if pagina is not None:
+                pagina.setParent(None)
+                pagina.deleteLater()
+        elif key.startswith("model:"):
+            # Zelfde reden als bij project-tabbladen hierboven.
+            pagina = self._model_pages.pop(key, None)
             if pagina is not None:
                 pagina.setParent(None)
                 pagina.deleteLater()
@@ -839,6 +906,8 @@ class MainWindow(QMainWindow):
         self._instellingen_page.set_theme(self._theme)
         for pagina in self._project_pages.values():
             pagina.set_theme(self._theme)
+        for pagina in self._model_pages.values():
+            pagina.set_theme(self._theme)
         self._rebuild_content()
         self._apply_theme()
 
@@ -850,6 +919,7 @@ class MainWindow(QMainWindow):
         self._reststukken_page.sluit_verbinding()
         self._materialen_page.sluit_verbinding()
         self._projecten_page.sluit_verbinding()
+        self._zaagplannen_db.close()
         super().closeEvent(event)
 
     def _rebuild_content(self) -> None:
@@ -866,6 +936,8 @@ class MainWindow(QMainWindow):
         self._projecten_page.setParent(None)
         self._instellingen_page.setParent(None)
         for pagina in self._project_pages.values():
+            pagina.setParent(None)
+        for pagina in self._model_pages.values():
             pagina.setParent(None)
         central.deleteLater()
         self._nav_buttons = []

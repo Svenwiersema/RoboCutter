@@ -228,7 +228,12 @@ def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
         Onderdeel(id="front_onder", breedte=596, hoogte=220, groep_id="g1", groep_volgorde=1),
         Onderdeel(id="front_midden", breedte=596, hoogte=180, groep_id="g1", groep_volgorde=2),
         Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="g1", groep_volgorde=3),
-        Onderdeel(id="paneel", breedte=500, hoogte=588, aantal=1),
+        # Nerf-eis vastgezet zodat "paneel" zijn 588-hoogte behoudt (dus in
+        # dezelfde rij/strook als de even hoge groep terechtkomt, wat deze
+        # test bewust nodig heeft) i.p.v. te roteren naar de kortere
+        # landschap-oriëntatie die "rijen"/"stroken" sinds de rotatiefix
+        # kiezen voor een vrij-roteerbaar onderdeel.
+        Onderdeel(id="paneel", breedte=500, hoogte=588, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
     ]
     resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
     assert resultaat.niet_geplaatst == []
@@ -370,7 +375,7 @@ def test_stroken_stopt_wel_meteen_helemaal_want_strookhoogte_is_plaatbreed_vast(
     assert set(resultaat.niet_geplaatst) == {"groep:lades", "lade_bodem#1"}
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine"])
+@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "rijen", "stroken"])
 def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [
@@ -388,15 +393,20 @@ def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
         assert eerste.einde == pytest.approx(mat.lengte)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine"])
+@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "rijen", "stroken"])
 def test_elke_snede_is_rand_tot_rand_van_zijn_eigen_deelgebied(strategie):
     # Sterkere check dan alleen de eerste snede: reconstrueer voor elke
     # snede het deelgebied waarin hij viel (op basis van alle eerdere
     # sneden) en controleer dat start/einde exact de randen van dat
     # deelgebied raken -- dat garandeert dat een snede nooit dwars door
-    # een al geplaatst onderdeel heen loopt. Sinds de zaagvolgorde-fix
-    # geldt dit voor zowel "efficient" als "guillotine" (zie engine.py,
-    # _splits_vrije_rechthoek).
+    # een al geplaatst onderdeel heen loopt. Geldt voor "efficient"/
+    # "guillotine" via _splits_vrije_rechthoek, en sinds de
+    # rij-hoogte-bugfix ook voor "rijen"/"stroken" (zie
+    # _bouw_zaagvolgorde_uit_rijen: een tussen-kolom-snede stopte voorheen
+    # 1 kerf te vroeg t.o.v. de echte fysieke rijgrens zodra er nóg een
+    # rij op volgde — dit was tot nu toe ongedekt, want "efficient" kon
+    # tot deze iteratie nooit intern op de uitkomst van "rijen"/"stroken"
+    # uitkomen).
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [
         Onderdeel(id="a", breedte=850, hoogte=902, aantal=3),
