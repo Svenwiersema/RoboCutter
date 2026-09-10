@@ -1661,17 +1661,25 @@ class ProjectDetailPage(QWidget):
         return kaart
 
     def _bouw_onderdelen_tabel(self, plan: PlaatZaagplan) -> QTableWidget:
+        # De "Nr"-kolom toont dezelfde positienummers als de genummerde
+        # bolletjes op de plaat (ZaagplaatWidget enumereert
+        # plan.resultaat.plaatsingen in dezelfde volgorde) — bij meerdere
+        # plaatsingen van hetzelfde onderdeel staan al hun nummers,
+        # komma-gescheiden, in één rij.
         groepen: dict[str, list] = {}
+        posities: dict[str, list[int]] = {}
         volgorde: list[str] = []
-        for p in plan.resultaat.plaatsingen:
+        for i, p in enumerate(plan.resultaat.plaatsingen, start=1):
             if p.onderdeel_id not in groepen:
                 groepen[p.onderdeel_id] = []
+                posities[p.onderdeel_id] = []
                 volgorde.append(p.onderdeel_id)
             groepen[p.onderdeel_id].append(p)
+            posities[p.onderdeel_id].append(i)
 
-        tabel = QTableWidget(len(volgorde), 5)
+        tabel = QTableWidget(len(volgorde), 6)
         tabel.setObjectName("LibraryTable")
-        tabel.setHorizontalHeaderLabels(["Omschrijving", "Aantal", "Afmeting (mm)", "Kantenband", "Herkomst"])
+        tabel.setHorizontalHeaderLabels(["Nr", "Omschrijving", "Aantal", "Afmeting (mm)", "Kantenband", "Herkomst"])
         tabel.verticalHeader().setVisible(False)
         tabel.setShowGrid(False)
         tabel.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
@@ -1686,7 +1694,7 @@ class ProjectDetailPage(QWidget):
         tabel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header = tabel.horizontalHeader()
         header.setStretchLastSection(True)
-        for col, breedte in enumerate([260, 90, 140, 140]):
+        for col, breedte in enumerate([50, 260, 90, 140, 140]):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
             tabel.setColumnWidth(col, breedte)
 
@@ -1704,10 +1712,11 @@ class ProjectDetailPage(QWidget):
             else:
                 kantenband = "—"
             herkomst = info.herkomst if info else "—"
-            waarden = [naam, str(len(plaatsingen)), f"{eerste.breedte:g} × {eerste.hoogte:g}", kantenband]
+            nr_tekst = ", ".join(str(n) for n in posities[oid])
+            waarden = [nr_tekst, naam, str(len(plaatsingen)), f"{eerste.breedte:g} × {eerste.hoogte:g}", kantenband]
             for col, tekst in enumerate(waarden):
                 tabel.setCellWidget(row, col, self._cel_tekst(tekst))
-            tabel.setCellWidget(row, 4, self._cel_herkomst(herkomst))
+            tabel.setCellWidget(row, 5, self._cel_herkomst(herkomst))
 
         aantal_rijen = max(1, len(volgorde))
         header_hoogte = header.sizeHint().height()

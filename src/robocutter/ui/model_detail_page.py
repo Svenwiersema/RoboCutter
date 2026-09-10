@@ -1,24 +1,36 @@
 """Modeldetail-tabblad: los, sluitbaar tabblad per geopend model
 (analoog aan project_detail_page.py voor Projecten, op Svens verzoek
 — "maak de modellen bewerken ook een apart scherm net zoals met
-projecten"). Vervangt het bewerk-gebruik van het uitklappaneel in
-modellen_page.py: dat paneel blijft alleen de manier om een NIEUW
-model aan te maken (zelfde onderscheid als bij Projecten), bewerken
-van een bestaand model opent voortaan dit tabblad
-(``MainWindow._open_tab_model``, tabsleutel ``f"model:{model_id}"``),
-bereikbaar door ergens in een modellenrij te klikken (geen apart
-potlood-icoon meer, ook analoog aan de Projecten-rijklik, zie
-``modellen_page.py``'s ``_KlikbareCel``).
+projecten"). Vervangt het uitklappaneel in modellen_page.py volledig:
+zowel bewerken van een bestaand model (rijklik, geen apart
+potlood-icoon, analoog aan de Projecten-rijklik, zie
+``modellen_page.py``'s ``_KlikbareCel``) als een NIEUW model toevoegen
+openen voortaan dit tabblad (``MainWindow._open_tab_model``,
+tabsleutel ``f"model:{model_id}"`` resp. het tijdelijke ``"model:new"``
+zolang een nieuw model nog niet voor het eerst is opgeslagen) — Sven
+vroeg dit expliciet ook voor het nieuw-toevoegen-pad: "ik wil ook dat
+met eerste instantie als je nieuw model toevoegd dat hij een tab opent
+inplaats van het oude menu dat rechts verschijnt". Anders dan bij
+Projecten (waar nieuw toevoegen nog wél het uitklappaneel gebruikt)
+wijkt Modellen hier dus bewust af van het Projecten-patroon; het
+uitklappaneel in modellen_page.py blijft in de code staan als
+defensieve terugval voor het geval deze pagina ooit zonder
+``on_open_model``-callback geconstrueerd wordt, maar wordt door de
+echte app niet meer aangeroepen.
 
 Anders dan ProjectDetailPage heeft dit scherm geen zijbalk met
 meerdere panelen (Overzicht/Samenstelling/...) — een model heeft geen
 vergelijkbare rijkdom aan submodules (geen klantgegevens, geen eigen
 zaaglijst/zaagplannen-data), dus alle velden staan gewoon onder elkaar
 in één scrollend formulier: basisgegevens, onderdelen en submodellen
-(nesting) — dezelfde drie secties en dezelfde onderdelen-/
-submodellenformulieren als voorheen in het uitklappaneel van
-modellen_page.py, hier alleen op volledige paginabreedte i.p.v. een
-480px-breed paneel.
+(nesting). Het onderdelenformulier zelf staat, op Svens verzoek ("niet
+dat dat hele menu eronder staat maar dat er dan een menu rechts
+verschijnt waar je de info kan invullen"), als een vaste 300px-kaart
+rechts naast de onderdelenlijst i.p.v. eronder — zelfde split-kaart-
+patroon als ``project_detail_page.py``'s Losse onderdelen-kaart, zie
+``_build_onderdelen_kaart``. Submodellen (nesting) bleven wel het
+eenvoudigere inline-formulier onder de lijst, zoals voorheen in het
+uitklappaneel van modellen_page.py.
 
 Deelt de ``ModellenBibliotheek``/``MaterialenBibliotheek``-instanties
 van ``main_window.py`` i.p.v. eigen verbindingen te openen — dit
@@ -92,14 +104,25 @@ class _ZoekVeld(QLineEdit):
 class ModelDetailPage(QWidget):
     def __init__(
         self,
-        model_id: str,
+        model_id: str | None,
         modellen: ModellenBibliotheek,
         materialen: MaterialenBibliotheek,
         theme: Theme,
         on_gewijzigd: Callable[[], None] | None = None,
         on_open_modellen_tab: Callable[[], None] | None = None,
+        on_aangemaakt: Callable[[str], None] | None = None,
+        on_annuleren_nieuw: Callable[[], None] | None = None,
         parent=None,
     ) -> None:
+        """``model_id=None`` opent dit tabblad in "nieuw model"-modus (op
+        Svens verzoek dezelfde tab als bewerken, i.p.v. het oude
+        uitklappaneel in modellen_page.py): het formulier start leeg en
+        ``_opslaan`` roept ``bibliotheek.toevoegen`` i.p.v. ``bijwerken``
+        aan, waarna ``on_aangemaakt(nieuw_id)`` MainWindow laat weten dat
+        dit tabblad voortaan bij dat definitieve model hoort. Annuleren
+        vóór de eerste keer opslaan heeft niets om naar terug te vallen,
+        dus roept dan ``on_annuleren_nieuw`` aan (sluit het tabblad) i.p.v.
+        ``_laad_model`` + terug naar de modellenlijst."""
         super().__init__(parent)
         self._model_id = model_id
         self.bibliotheek = modellen
@@ -107,6 +130,8 @@ class ModelDetailPage(QWidget):
         self._theme = theme
         self._on_gewijzigd = on_gewijzigd
         self._on_open_modellen_tab = on_open_modellen_tab
+        self._on_aangemaakt = on_aangemaakt
+        self._on_annuleren_nieuw = on_annuleren_nieuw
 
         self._werk_onderdelen: list[ModelOnderdeel] = []
         self._werk_submodellen: list[SubModelVerwijzing] = []
@@ -124,6 +149,8 @@ class ModelDetailPage(QWidget):
         self._laad_model()
 
     def _model(self) -> Model:
+        if self._model_id is None:
+            return Model(id="", naam="", omschrijving="", map="", tags=())
         return self.bibliotheek.ophalen(self._model_id)
 
     # ------------------------------------------------------------------
@@ -209,7 +236,7 @@ class ModelDetailPage(QWidget):
 
     def _ververs_head(self) -> None:
         model = self._model()
-        self._titel_label.setText(model.naam)
+        self._titel_label.setText(model.naam or ("Nieuw model" if self._model_id is None else "Naamloos model"))
         delen = [
             f"{len(model.onderdelen)} onderdeel" if len(model.onderdelen) == 1 else f"{len(model.onderdelen)} onderdelen",
             f"{len(model.submodellen)} submodel" if len(model.submodellen) == 1 else f"{len(model.submodellen)} submodellen",
@@ -240,6 +267,13 @@ class ModelDetailPage(QWidget):
         return footer
 
     def _annuleren(self) -> None:
+        if self._model_id is None:
+            # Een nog nooit opgeslagen nieuw model heeft niets om naar terug
+            # te vallen — annuleren sluit dit tabblad dus meteen i.p.v. een
+            # leeg formulier te blijven tonen.
+            if self._on_annuleren_nieuw is not None:
+                self._on_annuleren_nieuw()
+            return
         self._laad_model()
         if self._on_open_modellen_tab is not None:
             self._on_open_modellen_tab()
@@ -247,7 +281,7 @@ class ModelDetailPage(QWidget):
     def _opslaan(self) -> None:
         tags = tuple(t.strip() for t in self._in_tags.text().split(",") if t.strip())
         kandidaat = Model(
-            id=self._model_id,
+            id=self._model_id or "",
             naam=self._in_naam.text().strip(),
             omschrijving=self._in_omschrijving.text().strip(),
             map=self._in_map.text().strip(),
@@ -262,7 +296,13 @@ class ModelDetailPage(QWidget):
             self._validation_banner.show()
             return
 
-        self.bibliotheek.bijwerken(kandidaat)
+        if self._model_id is None:
+            nieuw = self.bibliotheek.toevoegen(kandidaat)
+            self._model_id = nieuw.id
+            if self._on_aangemaakt is not None:
+                self._on_aangemaakt(nieuw.id)
+        else:
+            self.bibliotheek.bijwerken(kandidaat)
         self._meld_gewijzigd()
         self._laad_model()
 
@@ -396,90 +436,115 @@ class ModelDetailPage(QWidget):
         return section
 
     def _build_onderdelen_sectie(self) -> QVBoxLayout:
+        # Split-kaart (lijst links, invulformulier vast rechts, 300px) i.p.v.
+        # het formulier onder de lijst — zelfde patroon als de Losse
+        # onderdelen-kaart op de projectdetailpagina
+        # (project_detail_page.py::_build_losse_onderdelen_kaart), op Svens
+        # verzoek: "niet dat dat hele menu eronder staat maar dat er dan een
+        # menu rechts verschijnt waar je de info kan invullen".
         section = QVBoxLayout()
         section.setSpacing(10)
         self._onderdelen_label = QLabel("ONDERDELEN (0)")
         self._onderdelen_label.setProperty("role", "fieldSectionLabel")
         section.addWidget(self._onderdelen_label)
+        section.addWidget(self._build_onderdelen_kaart())
+        return section
 
+    def _build_onderdelen_kaart(self) -> QFrame:
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        outer = QHBoxLayout(kaart)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        links = QWidget()
+        links_layout = QVBoxLayout(links)
+        links_layout.setContentsMargins(0, 0, 0, 0)
+        links_layout.setSpacing(0)
         self._onderdelen_container = QVBoxLayout()
-        self._onderdelen_container.setSpacing(6)
-        section.addLayout(self._onderdelen_container)
+        self._onderdelen_container.setSpacing(0)
+        links_layout.addLayout(self._onderdelen_container)
+        self._onderdelen_leeg_label = QLabel("Nog geen onderdelen toegevoegd.")
+        self._onderdelen_leeg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._onderdelen_leeg_label.setStyleSheet(f"color: {self._theme.text_faint}; font-size: 13px; padding: 32px 0;")
+        links_layout.addWidget(self._onderdelen_leeg_label)
+        links_layout.addStretch(1)
+        outer.addWidget(links, 1)
 
-        self._onderdeel_form_titel = self._field_label("Onderdeel toevoegen")
-        section.addWidget(self._onderdeel_form_titel)
+        rechts = QFrame()
+        rechts.setProperty("role", "splitAdd")
+        rechts.setFixedWidth(300)
+        rechts_layout = QVBoxLayout(rechts)
+        rechts_layout.setContentsMargins(18, 16, 18, 16)
+        rechts_layout.setSpacing(10)
 
-        rij1 = QHBoxLayout()
-        rij1.setSpacing(8)
-        kol1 = QVBoxLayout()
-        kol1.addWidget(self._field_label("Naam"))
+        self._onderdeel_form_titel = QLabel("NIEUW ONDERDEEL")
+        self._onderdeel_form_titel.setProperty("role", "fieldSectionLabel")
+        rechts_layout.addWidget(self._onderdeel_form_titel)
+
+        rechts_layout.addWidget(self._field_label("Naam"))
         self._of_naam = self._field_input()
         self._of_naam.setPlaceholderText("bijv. Zijkant links")
-        kol1.addWidget(self._of_naam)
-        rij1.addLayout(kol1, 1)
-        kol2 = QVBoxLayout()
-        kol2.addWidget(self._field_label("Materiaal"))
+        rechts_layout.addWidget(self._of_naam)
+
+        rechts_layout.addWidget(self._field_label("Materiaal"))
         self._of_materiaal = QComboBox()
         self._of_materiaal.setProperty("role", "field")
-        kol2.addWidget(self._of_materiaal)
-        rij1.addLayout(kol2, 1)
-        section.addLayout(rij1)
+        rechts_layout.addWidget(self._of_materiaal)
 
-        rij2 = QHBoxLayout()
-        rij2.setSpacing(8)
-        kol3 = QVBoxLayout()
-        kol3.addWidget(self._field_label("Breedte (mm)"))
+        afmeting_rij = QHBoxLayout()
+        afmeting_rij.setSpacing(8)
+        breedte_col = QVBoxLayout()
+        breedte_col.addWidget(self._field_label("Breedte mm"))
         breedte_wrap, self._of_breedte = self._field_spin()
-        kol3.addWidget(breedte_wrap)
-        rij2.addLayout(kol3)
-        kol4 = QVBoxLayout()
-        kol4.addWidget(self._field_label("Hoogte (mm)"))
+        breedte_col.addWidget(breedte_wrap)
+        afmeting_rij.addLayout(breedte_col)
+        hoogte_col = QVBoxLayout()
+        hoogte_col.addWidget(self._field_label("Hoogte mm"))
         hoogte_wrap, self._of_hoogte = self._field_spin()
-        kol4.addWidget(hoogte_wrap)
-        rij2.addLayout(kol4)
-        kol5 = QVBoxLayout()
-        kol5.addWidget(self._field_label("Aantal"))
-        aantal_wrap, self._of_aantal = self._field_spin_int(minimum=1, maximum=1000)
-        kol5.addWidget(aantal_wrap)
-        rij2.addLayout(kol5)
-        section.addLayout(rij2)
+        hoogte_col.addWidget(hoogte_wrap)
+        afmeting_rij.addLayout(hoogte_col)
+        rechts_layout.addLayout(afmeting_rij)
 
-        section.addWidget(self._field_label("Nerfrichting"))
+        rechts_layout.addWidget(self._field_label("Aantal"))
+        aantal_wrap, self._of_aantal = self._field_spin_int(minimum=1, maximum=1000)
+        rechts_layout.addWidget(aantal_wrap)
+
+        rechts_layout.addWidget(self._field_label("Nerfrichting"))
         nerf_widget, self._of_nerf_group = self._segmented(
             [(Nerfrichting.GEEN, "Geen"), (Nerfrichting.LANGE_ZIJDE, "Lange zijde"), (Nerfrichting.KORTE_ZIJDE, "Korte zijde")]
         )
-        section.addWidget(nerf_widget)
+        rechts_layout.addWidget(nerf_widget)
 
-        section.addWidget(self._field_label("Kantenband op"))
-        self._of_rand_buttons = self._rand_chip_rij(section)
+        rechts_layout.addWidget(self._field_label("Kantenband op"))
+        self._of_rand_buttons = self._rand_chip_rij(rechts_layout)
 
         self._of_fabriek = QCheckBox("Fabriekskantenband vereist")
-        section.addWidget(self._of_fabriek)
+        rechts_layout.addWidget(self._of_fabriek)
 
-        rij3 = QHBoxLayout()
-        rij3.setSpacing(8)
-        kol6 = QVBoxLayout()
-        kol6.addWidget(self._field_label("Groepsnaam"))
+        groep_rij = QHBoxLayout()
+        groep_rij.setSpacing(8)
+        groep_naam_col = QVBoxLayout()
+        groep_naam_col.addWidget(self._field_label("Groepsnaam"))
         self._of_groep_naam = self._field_input()
         self._of_groep_naam.setPlaceholderText("optioneel — leeg = geen groep")
-        kol6.addWidget(self._of_groep_naam)
-        rij3.addLayout(kol6, 1)
-        kol7 = QVBoxLayout()
-        kol7.addWidget(self._field_label("Volgorde"))
+        groep_naam_col.addWidget(self._of_groep_naam)
+        groep_rij.addLayout(groep_naam_col, 1)
+        groep_volgorde_col = QVBoxLayout()
+        groep_volgorde_col.addWidget(self._field_label("Volgorde"))
         groep_volgorde_wrap, self._of_groep_volgorde = self._field_spin_int(minimum=0, maximum=1000)
-        kol7.addWidget(groep_volgorde_wrap)
-        rij3.addLayout(kol7)
-        section.addLayout(rij3)
+        groep_volgorde_col.addWidget(groep_volgorde_wrap)
+        groep_rij.addLayout(groep_volgorde_col)
+        rechts_layout.addLayout(groep_rij)
         groep_hint = QLabel(
             "Onderdelen met dezelfde groepsnaam blijven in vaste volgorde en roteren niet los van "
             "elkaar — bijv. laatjes die precies op elkaar moeten aansluiten."
         )
         groep_hint.setProperty("role", "fieldHint")
         groep_hint.setWordWrap(True)
-        section.addWidget(groep_hint)
+        rechts_layout.addWidget(groep_hint)
 
         knoppen_rij = QHBoxLayout()
-        knoppen_rij.addStretch(1)
         self._btn_onderdeel_annuleren = QPushButton("Annuleren")
         self._btn_onderdeel_annuleren.setProperty("role", "ghost")
         self._btn_onderdeel_annuleren.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -487,14 +552,16 @@ class ModelDetailPage(QWidget):
         self._btn_onderdeel_annuleren.hide()
         knoppen_rij.addWidget(self._btn_onderdeel_annuleren)
         self._btn_onderdeel_opslaan = QPushButton("  Onderdeel toevoegen")
-        self._btn_onderdeel_opslaan.setProperty("role", "ghost")
-        self._btn_onderdeel_opslaan.setIcon(icon("plus", self._theme.text, 12))
+        self._btn_onderdeel_opslaan.setProperty("role", "primary")
+        self._btn_onderdeel_opslaan.setIcon(icon("plus", "#12141B", 12))
         self._btn_onderdeel_opslaan.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_onderdeel_opslaan.clicked.connect(self._onderdeel_opslaan_klik)
-        knoppen_rij.addWidget(self._btn_onderdeel_opslaan)
-        section.addLayout(knoppen_rij)
+        knoppen_rij.addWidget(self._btn_onderdeel_opslaan, 1)
+        rechts_layout.addLayout(knoppen_rij)
+        rechts_layout.addStretch(1)
+        outer.addWidget(rechts)
 
-        return section
+        return kaart
 
     def _build_submodellen_sectie(self) -> QVBoxLayout:
         section = QVBoxLayout()
@@ -562,6 +629,7 @@ class ModelDetailPage(QWidget):
     def _ververs_onderdelen(self) -> None:
         self._onderdelen_label.setText(f"ONDERDELEN ({len(self._werk_onderdelen)})")
         _clear_layout(self._onderdelen_container)
+        self._onderdelen_leeg_label.setVisible(not self._werk_onderdelen)
         for index, onderdeel in enumerate(self._werk_onderdelen):
             self._onderdelen_container.addWidget(self._bouw_onderdeel_rij(onderdeel, index))
 
@@ -623,7 +691,7 @@ class ModelDetailPage(QWidget):
 
     def _reset_onderdeel_form(self) -> None:
         self._bewerk_onderdeel_index = None
-        self._onderdeel_form_titel.setText("Onderdeel toevoegen")
+        self._onderdeel_form_titel.setText("NIEUW ONDERDEEL")
         self._btn_onderdeel_opslaan.setText("  Onderdeel toevoegen")
         self._btn_onderdeel_annuleren.hide()
         self._of_naam.clear()
@@ -659,7 +727,7 @@ class ModelDetailPage(QWidget):
     def _bewerk_onderdeel(self, index: int) -> None:
         self._bewerk_onderdeel_index = index
         o = self._werk_onderdelen[index]
-        self._onderdeel_form_titel.setText(f"Onderdeel bewerken: {o.naam}")
+        self._onderdeel_form_titel.setText(f"ONDERDEEL BEWERKEN: {o.naam.upper()}")
         self._btn_onderdeel_opslaan.setText("  Wijzigingen opslaan")
         self._btn_onderdeel_annuleren.show()
         self._vul_onderdeel_form(o)

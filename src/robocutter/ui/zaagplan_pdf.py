@@ -406,33 +406,42 @@ def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) ->
     kop_onder = _teken_kop(ctx, regel2)
 
     # Groepeer plaatsingen per onderdeel-id (zelfde als het scherm) voor
-    # de onderdelentabel.
+    # de onderdelentabel. De "Nr"-kolom toont de échte positienummers
+    # zoals ze ook als genummerde bolletjes op de plaat staan
+    # (_teken_plaat hieronder gebruikt dezelfde enumerate-volgorde over
+    # dezelfde lijst, dus de nummers komen altijd overeen) — bij meerdere
+    # plaatsingen van hetzelfde onderdeel staan al hun nummers, met komma's
+    # gescheiden, in één rij.
     groepen: dict[str, list] = {}
+    posities: dict[str, list[int]] = {}
     volgorde: list[str] = []
-    for pl in plan.resultaat.plaatsingen:
+    for i, pl in enumerate(plan.resultaat.plaatsingen, start=1):
         if pl.onderdeel_id not in groepen:
             groepen[pl.onderdeel_id] = []
+            posities[pl.onderdeel_id] = []
             volgorde.append(pl.onderdeel_id)
         groepen[pl.onderdeel_id].append(pl)
+        posities[pl.onderdeel_id].append(i)
 
     kolommen = [
         _Kolom("", 0.05),
-        _Kolom("Nr", 0.04, mono=True),
-        _Kolom("Omschrijving", 0.23),
-        _Kolom("Aantal", 0.08, mono=True),
+        _Kolom("Nr", 0.08, mono=True),
+        _Kolom("Omschrijving", 0.20),
+        _Kolom("Aantal", 0.07, mono=True),
         _Kolom("Afmeting (mm)", 0.15, mono=True),
         _Kolom("Kantenband", 0.15),
         _Kolom("Herkomst", 0.30),
     ]
     tabel_rijen: list[list[str]] = []
-    for i, oid in enumerate(volgorde, start=1):
+    for oid in volgorde:
         plaatsingen = groepen[oid]
         info = plan.onderdeel_info.get(oid)
         naam = info.naam if info else oid
         eerste = plaatsingen[0]
         herkomst = info.herkomst if info else "—"
+        nr_tekst = ", ".join(str(n) for n in posities[oid])
         tabel_rijen.append(
-            ["[ ]", str(i), naam, str(len(plaatsingen)), f"{eerste.breedte:g} × {eerste.hoogte:g}", _kantenband_tekst(info), herkomst]
+            ["[ ]", nr_tekst, naam, str(len(plaatsingen)), f"{eerste.breedte:g} × {eerste.hoogte:g}", _kantenband_tekst(info), herkomst]
         )
 
     header_h = 6.5

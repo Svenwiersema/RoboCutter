@@ -27,9 +27,16 @@ patroon ("maak de modellen bewerken ook een apart scherm net zoals met
 projecten"): losse tabbladen (tabsleutel ``f"model:{model_id}"``,
 ``self._model_pages``) tonen ``ModelDetailPage``, bereikbaar via het
 klikken op een rij in ``modellen_page.py`` (ook daar geen apart
-potlood-icoon meer). Anders dan bij Projecten heeft Modellenbibliotheek
-geen apart Dashboard-achtig kaartoverzicht dat ook naar dit tabblad
-linkt.
+potlood-icoon meer). Anders dan bij Projecten (waar alleen bewerken een
+tabblad opent, nieuw toevoegen blijft daar het uitklappaneel in
+``projecten_page.py``) opent bij Modellen ook "nieuw model toevoegen"
+voortaan hetzelfde tabblad, met een tijdelijke sleutel ``"model:new"``
+zolang het nog niet voor het eerst is opgeslagen (zie
+``_open_tab_model``/``_model_nieuw_aangemaakt``) — op Svens expliciete
+verzoek: "ik wil ook dat met eerste instantie als je nieuw model
+toevoegd dat hij een tab opent inplaats van het oude menu dat rechts
+verschijnt". Anders dan bij Projecten heeft Modellenbibliotheek geen
+apart Dashboard-achtig kaartoverzicht dat ook naar dit tabblad linkt.
 
 Op Svens verzoek is het onderscheid tussen "Dashboard" (het KPI-/
 overzichtsscherm, tabsleutel ``"dashboard"``, inmiddels ook echt
@@ -477,6 +484,8 @@ class MainWindow(QMainWindow):
             return naam, "folder"
         if key.startswith("model:"):
             model_id = key.split(":", 1)[1]
+            if model_id == "new":
+                return "Nieuw model", "cube"
             try:
                 naam = self._modellen_page.bibliotheek.ophalen(model_id).naam
             except KeyError:
@@ -557,11 +566,14 @@ class MainWindow(QMainWindow):
         self._active_tab = key
         self._rebuild_content()
 
-    def _open_tab_model(self, model_id: str) -> None:
+    def _open_tab_model(self, model_id: str | None = None) -> None:
         # Zelfde patroon als _open_tab_project: elk model krijgt zijn eigen
         # tabsleutel, zodat meerdere modellen tegelijk een los, individueel
         # sluitbaar tabblad kunnen hebben — zie model_detail_page.py.
-        key = f"model:{model_id}"
+        # model_id=None (sleutel "model:new") is op Svens verzoek ook het
+        # pad voor een NIEUW model: dat opent voortaan hetzelfde tabblad
+        # i.p.v. het oude uitklappaneel in modellen_page.py.
+        key = f"model:{model_id}" if model_id is not None else "model:new"
         if key not in self._model_pages:
             self._model_pages[key] = ModelDetailPage(
                 model_id,
@@ -570,11 +582,29 @@ class MainWindow(QMainWindow):
                 self._theme,
                 on_gewijzigd=self._on_model_gewijzigd,
                 on_open_modellen_tab=lambda: self._open_tab("modellen"),
+                on_aangemaakt=self._model_nieuw_aangemaakt,
+                on_annuleren_nieuw=lambda: self._close_tab(key),
             )
         if key not in self._open_tabs:
             self._open_tabs.append(key)
         self._active_tab = key
         self._rebuild_content()
+
+    def _model_nieuw_aangemaakt(self, nieuw_id: str) -> None:
+        # Zodra een nieuw model voor het eerst echt opgeslagen is, hangt het
+        # tabblad "model:new" om naar het definitieve "model:<id>" — anders
+        # zou een volgende rijklik op datzelfde model in de lijst een tweede,
+        # duplicaat tabblad openen (zie MainWindow._open_tab_model).
+        oude_key = "model:new"
+        nieuwe_key = f"model:{nieuw_id}"
+        pagina = self._model_pages.pop(oude_key, None)
+        if pagina is not None:
+            self._model_pages[nieuwe_key] = pagina
+        if oude_key in self._open_tabs:
+            self._open_tabs[self._open_tabs.index(oude_key)] = nieuwe_key
+        if self._active_tab == oude_key:
+            self._active_tab = nieuwe_key
+        self._on_model_gewijzigd()
 
     def _on_model_gewijzigd(self) -> None:
         # Anders dan bijv. een thema-wissel raakt dit de modellenlijst zelf

@@ -234,7 +234,7 @@ class ModellenPage(QWidget):
 
         layout.addWidget(self._sidebar_label("Snelacties"))
         add_action = self._sidebar_item("plus", "Model toevoegen")
-        add_action.clicked.connect(lambda: self._open_drawer())
+        add_action.clicked.connect(self._nieuw_model_klik)
         layout.addWidget(add_action)
 
         layout.addStretch(1)
@@ -312,7 +312,7 @@ class ModellenPage(QWidget):
         add_btn.setProperty("role", "primary")
         add_btn.setIcon(icon("plus", "#12141B", 14))
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_btn.clicked.connect(lambda: self._open_drawer())
+        add_btn.clicked.connect(self._nieuw_model_klik)
         head.addWidget(add_btn)
         layout.addLayout(head)
 
@@ -1292,6 +1292,17 @@ class ModellenPage(QWidget):
         self._sm_aantal.setValue(1)
         self._sm_fout_label.hide()
         self._validation_banner.hide()
+
+    def _nieuw_model_klik(self) -> None:
+        # Nieuw model toevoegen opent voortaan hetzelfde losse tabblad als
+        # bewerken (MainWindow._open_tab_model, zie model_detail_page.py),
+        # zelfde onderscheid als bij de bestaande rijklik hieronder. Het
+        # uitklappaneel blijft alleen als defensieve terugval als deze
+        # pagina ooit zonder callback geconstrueerd wordt.
+        if self._on_open_model is not None:
+            self._on_open_model(None)
+        else:
+            self._open_drawer()
 
     def _open_drawer(self, model_id: str | None = None) -> None:
         self._reset_model_form()

@@ -1768,12 +1768,59 @@ eerdere aannames in `engine.py`):
   offscreen smoke-test van de volledige opslaan→nieuw-tabblad-openen→
   automatisch-herladen-cyclus op een kopie van de echte database.
 
+- **Modeldetailtabblad afgemaakt: ook "nieuw model" opent nu een
+  tabblad, en het onderdelenformulier staat voortaan naast de lijst
+  i.p.v. eronder.** De vorige sessie had `model_detail_page.py`
+  (`ModelDetailPage`) al gebouwd voor het BEWERKEN van een bestaand
+  model (zelfde losse-tabblad-patroon als `ProjectDetailPage`), maar
+  "nieuw model toevoegen" in `modellen_page.py` viel toen nog terug op
+  het oude uitklappaneel. Op Svens verzoek ("ik wil ook dat met eerste
+  instantie als je nieuw model toevoegd dat hij een tab opent inplaats
+  van het oude menu dat rechts verschijnt") is dat nu gelijkgetrokken:
+  `MainWindow._open_tab_model(model_id=None)` opent ook voor een nieuw
+  model hetzelfde tabblad, met een tijdelijke tabsleutel `"model:new"`
+  zolang er nog niet voor het eerst is opgeslagen. Zodra de eerste
+  `bibliotheek.toevoegen()` gelukt is, hangt `_model_nieuw_aangemaakt`
+  het tabblad in `MainWindow._model_pages`/`_open_tabs` om naar het
+  definitieve `f"model:{id}"` (anders zou een latere rijklik op
+  datzelfde model een tweede, duplicaat tabblad openen). Annuleren
+  vóór die eerste keer opslaan sluit het tabblad direct
+  (`on_annuleren_nieuw`) i.p.v. terug te vallen op `_laad_model` (er is
+  dan nog niets om naar terug te vallen). Dit wijkt bewust af van
+  Projecten, waar nieuw toevoegen nog wél het uitklappaneel gebruikt —
+  Sven vroeg dit specifiek voor Modellen, niet als algemene regel.
+  Daarnaast, op hetzelfde verzoek ("niet dat dat hele menu eronder
+  staat maar dat er dan een menu rechts verschijnt waar je de info kan
+  invullen" — Sven corrigeerde zijn eigen eerste "links" expliciet naar
+  "rechts"): het onderdeel-toevoeg/bewerkformulier in `ModelDetailPage`
+  stond nog inline onder de onderdelenlijst (ongewijzigd overgenomen
+  uit het oude uitklappaneel). Herbouwd als split-kaart (lijst links,
+  een vaste 300px-formulierkaart rechts, altijd zichtbaar en wisselt
+  tussen "NIEUW ONDERDEEL" en "ONDERDEEL BEWERKEN: ...") — hetzelfde
+  patroon als de Losse onderdelen-kaart op de projectdetailpagina
+  (`project_detail_page.py::_build_losse_onderdelen_kaart`), zie
+  `ModelDetailPage._build_onderdelen_kaart`. Submodellen (nesting)
+  bleven bewust het eenvoudigere inline-formulier onder de lijst — Sven
+  vroeg alleen over onderdelen, en dat formulier is klein (picker +
+  aantal) vergeleken met het onderdelenformulier. Het oude
+  uitklappaneel in `modellen_page.py` is niet verwijderd (het blijft
+  een defensieve terugval als de pagina ooit zonder
+  `on_open_model`-callback geconstrueerd wordt) maar wordt door de
+  echte app niet meer aangeroepen — beide knoppen ("Model toevoegen" in
+  de zijbalk én de hoofdknop) routeren nu via `_nieuw_model_klik` naar
+  de tab-callback. Geverifieerd met een offscreen smoke-test
+  (`ModelDetailPage` los, in-memory bibliotheken): titel toont "Nieuw
+  model", onderdeel toevoegen/bewerken via het rechterpaneel, opslaan
+  roept `toevoegen()` aan en triggert `on_aangemaakt`, annuleren vóór
+  opslaan triggert `on_annuleren_nieuw`, en een bestaand model laadt
+  nog steeds correct — plus de volledige testsuite (132 tests,
+  onveranderd, want dit is UI-werk zonder pytest-dekking per de
+  conventie in dit bestand).
+
 **Nog open, kandidaten voor een volgende stap:** vóór een echte
 (betaalde) release alsnog overstappen op Nuitka + code signing voor de
 exe/installer (zie hierboven, bewust uitgesteld voor deze eerste demo);
-of de bijgewerkte Zaagplan Generator-schérm-mockup (het scherm zelf,
-niet de PDF) alsnog laten goedkeuren door Sven; of
-revisiegeschiedenis/sandboxes voor projecten in het algemeen (module
+of revisiegeschiedenis/sandboxes voor projecten in het algemeen (module
 1/4, bewust uitgesteld bij het bouwen van de functie — zie
 `assets/mockups/projectoverzicht-concept.png` voor een eerder concept
 van de projectenlijst zelf); of mes/groef-plaatsingsregels in de motor.
