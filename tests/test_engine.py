@@ -217,6 +217,57 @@ def test_stroken_gebruikt_overal_dezelfde_vaste_strookhoogte():
 
 
 @pytest.mark.parametrize("strategie", ["rijen", "stroken"])
+def test_rijen_vult_verticale_restruimte_boven_kortere_onderdelen(strategie):
+    # Sven: "checkt dat bepaalde items ... minder [hoog] zijn dan de
+    # rijhoogte en deze dan in de rij kan plaatsen zodat je efficiëntie
+    # houdt" -- een onderdeel dat niet meer horizontaal in de rij/strook
+    # past, maar wel verticaal boven een korter onderdeel in dezelfde
+    # rij/strook, hoeft niet meer te wachten op een nieuwe rij/strook.
+    # Nerf-eisen vastgezet zodat de bekende afmetingen niet alsnog
+    # geroteerd worden (zie ook de "paneel"-toelichting hieronder).
+    mat = _standaard_materiaal(lengte=1000, breedte=1000, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="tall", breedte=100, hoogte=600, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+        Onderdeel(id="wide", breedte=896, hoogte=200, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE),
+        Onderdeel(id="vulling", breedte=500, hoogte=150, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+    assert resultaat.niet_geplaatst == []
+    wide = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "wide")
+    vulling = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "vulling")
+    assert vulling.x == pytest.approx(wide.x)
+    assert vulling.y == pytest.approx(wide.y + wide.hoogte + mat.kerf)
+    for p1, p2 in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
+    for snede in resultaat.zaagvolgorde:
+        for plaatsing in resultaat.plaatsingen:
+            assert not _snede_kruist_plaatsing(snede, plaatsing), f"{snede} kruist {plaatsing}"
+
+
+def test_rijen_vult_verticale_restruimte_ook_met_geroteerd_onderdeel():
+    # Zelfde idee als hierboven, maar nu past de vulling alleen geroteerd
+    # (breedte/hoogte omgewisseld) in het overgebleven gat -- moet net als
+    # de horizontale plaatsing (_pak_efficient/_pak_guillotine) ook hier
+    # de geroteerde oriëntatie proberen voor een vrij-roteerbaar onderdeel.
+    mat = _standaard_materiaal(lengte=1000, breedte=1000, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="tall", breedte=100, hoogte=600, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+        Onderdeel(id="wide", breedte=896, hoogte=200, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE),
+        # Vulling: 150 x 500 (ongeroteerd te hoog voor het gat van 400),
+        # maar geroteerd (500 x 150) past het net als in de vorige test.
+        Onderdeel(id="vulling", breedte=150, hoogte=500, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == []
+    vulling = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "vulling")
+    assert vulling.geroteerd is True
+    assert vulling.breedte == pytest.approx(500)
+    assert vulling.hoogte == pytest.approx(150)
+    for p1, p2 in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
+
+
+@pytest.mark.parametrize("strategie", ["rijen", "stroken"])
 def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
     # Een gestapelde groep (bv. ladefronten) naast een los onderdeel van
     # een heel andere hoogte in dezelfde rij/strook: de sneden die de
@@ -263,6 +314,94 @@ def test_geen_enkele_snede_kruist_een_plaatsing(strategie):
     for snede in resultaat.zaagvolgorde:
         for plaatsing in resultaat.plaatsingen:
             assert not _snede_kruist_plaatsing(snede, plaatsing), f"{snede} kruist {plaatsing}"
+
+
+def test_fabriekskantenband_gebruikt_meerdere_beschikbare_randen():
+    # Sven: een plaat met fabriekskantenband op zowel onder als boven
+    # moet beide randen benutten i.p.v. alleen de eerste (voorheen bleef
+    # de tweede rand ongebruikt, ook als de eerste strook vol zat).
+    mat = _standaard_materiaal(
+        lengte=1000, breedte=700, kerf=4, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        Onderdeel(id=f"fabriek{i}", breedte=300, hoogte=150, aantal=1, fabriekskantenband_vereist=True)
+        for i in range(6)
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == []
+    ys = sorted({round(p.y, 1) for p in resultaat.plaatsingen})
+    assert ys == [0.0, 550.0]  # onder-strook (y=0) én boven-strook (y=breedte-hoogte)
+    for p1, p2 in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
+
+    # Zelfde plaat/onderdelen, maar dan met maar één beschikbare rand:
+    # nu past nog maar de helft, de rest is echt niet-geplaatst.
+    mat_een_rand = _standaard_materiaal(
+        lengte=1000, breedte=700, kerf=4, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER}),
+    )
+    resultaat_een_rand = genereer_zaagplan(mat_een_rand, onderdelen, strategie="rijen")
+    assert len(resultaat_een_rand.niet_geplaatst) == 3
+
+
+def test_fabriekskantenband_respecteert_kantenband_randen_en_roteert_niet():
+    # Sven, over een dwarsbalk in een echt testproject: "de dwarsbalk
+    # geroteerd dat de korte kant de kantenband raakt maar is het niet
+    # zo dat de kantenband de lange zijde moet hebben". Kern van de bug:
+    # de motor koos alleen een willekeurige beschikbare rand en roteerde
+    # zo nodig, zonder te kijken welke kant van het onderdeel zelf
+    # (kantenband_randen) de band nodig heeft. Nu: elk onderdeel gaat
+    # alleen naar ZIJN eigen aangewezen rand, in zijn eigen
+    # (niet-geroteerde) oriëntatie.
+    mat = _standaard_materiaal(
+        lengte=1000, breedte=700, kerf=4, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        # Lange zijde (564) moet de kantenband op BOVEN raken.
+        Onderdeel(id="dwarsbalk_boven", breedte=564, hoogte=100, aantal=1,
+                  kantenband_randen=frozenset({Rand.BOVEN}), fabriekskantenband_vereist=True),
+        # Een ander onderdeel wil juist de ONDER-rand.
+        Onderdeel(id="plank_onder", breedte=400, hoogte=120, aantal=1,
+                  kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == []
+    dwarsbalk = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "dwarsbalk_boven")
+    plank = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "plank_onder")
+    # Geen van beide geroteerd: hun eigen breedte/hoogte, zoals opgegeven.
+    assert not dwarsbalk.geroteerd and (dwarsbalk.breedte, dwarsbalk.hoogte) == (564, 100)
+    assert not plank.geroteerd and (plank.breedte, plank.hoogte) == (400, 120)
+    # De dwarsbalk raakt zijn BOVEN-rand (de lange 564-zijde ligt daar plat tegenaan).
+    assert dwarsbalk.y + dwarsbalk.hoogte == pytest.approx(mat.breedte)
+    # De plank raakt zijn ONDER-rand.
+    assert plank.y == pytest.approx(0.0)
+
+
+def test_fabriekskantenband_met_nerfrichting_conflict_valt_terug_op_gewoon_onderdeel():
+    # Een onderdeel met zowel een kantenband_randen-eis als een eigen
+    # nerfrichting-eis kan door die nerf-eis alsnog gedwongen geroteerd
+    # worden (nerf gaat voor) -- wat de kantenband-rand-garantie zou
+    # doorbreken. Zo'n onderdeel mag dan niet via de fabriekskantenband-
+    # rand-matching geplaatst worden (waar juist GEEN rotatie meer mag),
+    # maar moet gewoon meedraaien met de rest van het werkgebied.
+    mat = _standaard_materiaal(
+        lengte=1000, breedte=700, kerf=4, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        Onderdeel(
+            id="conflict", breedte=564, hoogte=100, aantal=1,
+            kantenband_randen=frozenset({Rand.BOVEN}), fabriekskantenband_vereist=True,
+            nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE,
+        ),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    # Nog steeds gewoon geplaatst (via het normale werkgebied), niet
+    # stilzwijgend verloren of vast blijven zitten in de fabriek-route.
+    assert resultaat.niet_geplaatst == []
+    assert len(resultaat.plaatsingen) == 1
 
 
 def test_fabriekskantenband_strook_krijgt_eigen_scheidingssnede():

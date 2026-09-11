@@ -104,7 +104,7 @@ from PySide6.QtWidgets import (
 )
 
 from robocutter.instellingen.beheer import InstellingenBeheer
-from robocutter.projecten.models import Project, ProjectStatus
+from robocutter.projecten.models import Project
 from robocutter.projecten.zaaglijst import bouw_zaaglijst
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.projecten.zaagplannen_opslag import open_verbinding as open_zaagplannen_verbinding
@@ -364,7 +364,6 @@ class MainWindow(QMainWindow):
         elif self._active_tab in self._model_pages:
             workspace.addWidget(self._model_pages[self._active_tab], 1)
         else:  # "dashboard"
-            workspace.addWidget(self._build_sidebar())
             workspace.addWidget(self._build_main(), 1)
         return workspace
 
@@ -682,95 +681,6 @@ class MainWindow(QMainWindow):
 
     def _dashboard_alle_projecten(self) -> list[Project]:
         return self._projecten_page.bibliotheek.lijst()
-
-    # ------------------------------------------------------------------
-    # Sidebar
-    # ------------------------------------------------------------------
-
-    def _build_sidebar(self) -> QWidget:
-        sidebar = QWidget()
-        sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(216)
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(12, 16, 12, 16)
-        layout.setSpacing(4)
-
-        alle = self._dashboard_alle_projecten()
-        actief = [p for p in alle if not p.gearchiveerd]
-
-        layout.addWidget(self._sidebar_label("Dashboard"))
-        overzicht = self._sidebar_item("folder", "Overzicht", checked=True)
-        layout.addWidget(overzicht)
-        archief = self._sidebar_item("archive", "Archief", count=sum(1 for p in alle if p.gearchiveerd))
-        layout.addWidget(archief)
-        layout.addWidget(self._divider())
-
-        layout.addWidget(self._sidebar_label("Snelfilters"))
-        filters = [
-            (ProjectStatus.WERKVOORBEREIDING, self._theme.neutral_dot),
-            (ProjectStatus.IN_PRODUCTIE, self._theme.accent),
-            (ProjectStatus.INSTALLATIE, self._theme.indigo),
-            (ProjectStatus.AFGEROND, self._theme.success),
-        ]
-        for status, color in filters:
-            count = sum(1 for p in actief if p.status == status)
-            layout.addWidget(self._filter_row(status.value, color, count))
-        layout.addWidget(self._divider())
-
-        layout.addWidget(self._sidebar_label("Snelacties"))
-        layout.addWidget(self._sidebar_item("upload", "Importeren (DXF)"))
-
-        layout.addStretch(1)
-        return sidebar
-
-    def _sidebar_label(self, text: str) -> QLabel:
-        label = QLabel(text.upper())
-        label.setProperty("role", "sidebarLabel")
-        label.setContentsMargins(8, 4, 8, 4)
-        return label
-
-    def _sidebar_item(self, icon_name: str, text: str, checked: bool = False, count: int | None = None) -> QWidget:
-        button = QPushButton(f"  {text}")
-        button.setProperty("role", "sidebarItem")
-        button.setCheckable(True)
-        button.setChecked(checked)
-        button.setIcon(icon(icon_name, self._theme.text_muted, 16))
-        button.setIconSize(QSize(16, 16))
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        if count is not None:
-            wrapper = QWidget()
-            wrapper_layout = QHBoxLayout(wrapper)
-            wrapper_layout.setContentsMargins(0, 0, 0, 0)
-            wrapper_layout.addWidget(button, 1)
-            count_label = QLabel(str(count))
-            count_label.setProperty("role", "filterCount")
-            wrapper_layout.addWidget(count_label)
-            return wrapper
-        return button
-
-    def _filter_row(self, text: str, dot_color: str, count: int) -> QWidget:
-        row = QWidget()
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(8, 5, 8, 5)
-        layout.setSpacing(9)
-        dot = QLabel()
-        dot.setFixedSize(8, 8)
-        dot.setStyleSheet(f"background: {dot_color}; border-radius: 4px;")
-        layout.addWidget(dot)
-        label = QLabel(text)
-        label.setStyleSheet(f"color: {self._theme.text_muted}; font-size: 13px;")
-        layout.addWidget(label, 1)
-        count_label = QLabel(str(count))
-        count_label.setProperty("role", "filterCount")
-        layout.addWidget(count_label)
-        return row
-
-    def _divider(self) -> QFrame:
-        line = QFrame()
-        line.setObjectName("SidebarDivider")
-        line.setFixedHeight(1)
-        line.setContentsMargins(0, 8, 0, 12)
-        return line
 
     # ------------------------------------------------------------------
     # Main content

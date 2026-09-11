@@ -22,24 +22,28 @@ Materialen-/Reststukken-/Modellenpagina's) en roept bij een gewijzigd
 thema ``on_gewijzigd`` aan zodat de rest van de app (chrome, andere
 tabbladen) meteen meewisselt i.p.v. pas na een herstart.
 
-``standaard zaagstrategie`` heeft, op Svens verzoek, nu vier
-keuze-opties (``_STRATEGIE_LABEL``/``_STRATEGIE_OMSCHRIJVING``) i.p.v.
-de oorspronkelijke twee: "Efficiënt", "Rijen", "Stroken" en
-"Guillotine". Dit ging via twee correctierondes (zie OVERDRACHT.md voor
-de volledige geschiedenis) — met name: Sven corrigeerde zichzelf
-expliciet dat "efficient" en "guillotine" NIET hetzelfde zijn
-(Guillotine is een écht apart, strikter algoritme — uitsluitend
-doorlopende zaagsnedes — ook al gebruikt de huidige
-"efficient"-implementatie zelf ook al een guillotine-stijl interne
-splitsing, zie ``engine.py``), en dat "efficient" juist wél hetzelfde
-was als wat eerder apart "vrije_plaatsing"/"Nesting" heette (vrije
-plaatsing voor maximale opbrengst) — die twee zijn daarom weer
-samengevoegd tot alleen "efficient". Dit was bewust een tussenstap:
-eerst de keuze vastleggen, de motor zelf uitbreiden was voor een latere
-sessie — inmiddels gebeurd: ``robocutter.optimalisatie.engine.
-genereer_zaagplan`` voert nu alle vier de strategieën echt uit (zie de
-docstring van die module voor de precieze algoritmes), dus de
-omschrijvingen hieronder vermelden niet langer "nog niet uitgevoerd".
+``standaard zaagstrategie`` heeft, op Svens verzoek, drie
+keuze-opties (``_STRATEGIE_LABEL``/``_STRATEGIE_OMSCHRIJVING``):
+"Efficiënt", "Rijen" en "Guillotine". Dit ging via meerdere
+correctierondes (zie OVERDRACHT.md voor de volledige geschiedenis) —
+met name: Sven corrigeerde zichzelf expliciet dat "efficient" en
+"guillotine" NIET hetzelfde zijn (Guillotine is een écht apart,
+strikter algoritme — uitsluitend doorlopende zaagsnedes — ook al
+gebruikt de huidige "efficient"-implementatie zelf ook al een
+guillotine-stijl interne splitsing, zie ``engine.py``), en dat
+"efficient" juist wél hetzelfde was als wat eerder apart
+"vrije_plaatsing"/"Nesting" heette (vrije plaatsing voor maximale
+opbrengst) — die twee zijn daarom weer samengevoegd tot alleen
+"efficient". Er was ook een vierde optie, "Stroken" (net als Rijen,
+maar met overal dezelfde vaste strookhoogte), die later weer is
+geschrapt als losse keuze: Sven zag 'm in de praktijk niet gebruikt
+worden en het resultaat verschilt zelden merkbaar van "Rijen" (alleen
+bij sterk uiteenlopende onderdeelhoogtes). De onderliggende heuristiek
+bestaat nog wel en draait nog steeds intern mee binnen "Efficiënt" (zie
+``engine.py``'s module-docstring) — alleen de zichtbare optie is weg.
+Alle drie overgebleven opties worden echt uitgevoerd door
+``robocutter.optimalisatie.engine.genereer_zaagplan`` (zie de
+docstring van die module voor de precieze algoritmes).
 """
 
 from __future__ import annotations
@@ -76,16 +80,14 @@ _THEMA_LABEL = {"licht": "Licht", "donker": "Donker", "systeem": "Systeem"}
 _STRATEGIE_LABEL = {
     "efficient": "Efficiënt",
     "rijen": "Rijen",
-    "stroken": "Stroken",
     "guillotine": "Guillotine",
 }
-# Alle vier worden nu echt uitgevoerd door
+# Alle drie worden echt uitgevoerd door
 # robocutter.optimalisatie.engine.genereer_zaagplan — zie de docstring
 # van die module voor de precieze algoritmes per strategie.
 _STRATEGIE_OMSCHRIJVING = {
     "efficient": "Vrije plaatsing voor maximale materiaalopbrengst (best-fit) bij gemengde afmetingen — dit is de methode die de zaagmotor nu al uitvoert.",
     "rijen": "Lange zijdes eerst in volledige-breedte rijen; elke rij krijgt zijn eigen hoogte op basis van het grootste stuk erin — overzichtelijke zaagvolgorde.",
-    "stroken": "Net als Rijen, maar met overal dezelfde, vaste strookhoogte i.p.v. een per-rij aangepaste hoogte — eenvoudiger te herhalen op een paneelzaag, iets minder efficiënt.",
     "guillotine": "Uitsluitend doorlopende zaagsnedes van rand tot rand — de gangbare beperking van de meeste paneelzagen.",
 }
 

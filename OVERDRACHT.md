@@ -1832,6 +1832,214 @@ zoals nu al voor "efficient" gebeurt, maar breder toegepast) nog meer
 winst opleveren; bewust niet nu gedaan om de scope beheersbaar te
 houden.
 
+- **"Stroken" geschrapt als losse keuze in Opties, motor blijft 'm
+  intern gebruiken.** Sven zag "Rijen" en "Stroken" in de praktijk
+  steeds hetzelfde zaagplan opleveren en vroeg zich af of dat niet
+  hetzelfde is — klopt: het enige verschil zit in de rijhoogte
+  (per-rij aangepast bij "Rijen", overal vast bij "Stroken"), niet in
+  richting; bij ongeveer even hoge onderdelen komt dat op hetzelfde
+  neer. Op zijn bevestiging geschrapt als keuze in
+  `GELDIGE_ZAAGSTRATEGIEEN` (`instellingen/models.py`) en uit de
+  label-/omschrijving-dicts in `instellingen_page.py`/
+  `project_detail_page.py`. De motor zelf (`engine.py`) ondersteunt
+  `strategie="stroken"` nog steeds rechtstreeks (`_GELDIGE_STRATEGIEEN`
+  ongewijzigd) — "Efficiënt" gebruikt `_pak_stroken` nog steeds als een
+  van de vier interne kandidaten (`_kies_beste_pakresultaat`), en de
+  bestaande `_pak_stroken`-tests/`demo_render.py` blijven daardoor
+  ongewijzigd werken. `project_detail_page.py` kreeg een fallback
+  (`_standaard_zaagstrategie()`) voor het geval een project ooit een
+  zaagplan had opgeslagen met de inmiddels afgeschafte "stroken"-
+  strategie (bleek niet nodig in de echte database, maar voorkomt een
+  KeyError-crash mocht dat elders wel zo zijn — zelfde soort
+  verdediging als eerder al bestond voor een ongeldige
+  `standaard_zaagstrategie`-waarde).
+- **Twee motorverbeteringen op Svens verzoek: verticale rij-opvulling
+  en meerdere fabriekskantenband-randen.** Beide eerst kort
+  afgestemd (AskUserQuestion) omdat de letterlijke formulering
+  ("180 graden draaien om de kantenband onder te gebruiken") op het
+  eerste gezicht op een echte rotatie leek, terwijl het datamodel geen
+  "boven"/"onder"-kant per onderdeel voor fabriekskantenband kent
+  (`Onderdeel.fabriekskantenband_vereist` is een simpel ja/nee) — Sven
+  bevestigde dat hij bedoelde: als de plaat op meerdere randen
+  fabriekskantenband heeft, moet de motor die allemaal benutten.
+  1. **Verticale restruimte in een rij/strook wordt nu benut.** Een rij
+     werd nooit hoger gevuld dan het grootste stuk erin; de ruimte
+     boven een korter onderdeel in diezelfde rij bleef bewust leeg
+     (stond letterlijk zo als vereenvoudiging in de code). Nieuwe
+     helper `_vul_verticale_restruimte` (engine.py, gebruikt door zowel
+     `_pak_rijen` als `_pak_stroken` — gedeeld omdat ze exact dezelfde
+     rij-opbouw hebben, zelfde reden als bij `_plaats_rij`): voor elke
+     kolom in de zojuist gevulde rij die lager is dan de rijhoogte,
+     wordt het eerste nog niet geplaatste onderdeel (hoogte-aflopend
+     gesorteerd, zoals de rest van dit bestand al sorteert) dat er —
+     eventueel geroteerd als het onderdeel vrij mag roteren — nog in
+     past, er bovenop gestapeld, met een eigen horizontale
+     scheidingssnede begrensd tot die ene kolom (dus altijd
+     rand-tot-rand van zijn eigen deelgebied, net als de rest van de
+     motor garandeert). Bewuste vereenvoudiging, met opzet zo
+     gedocumenteerd in de code: dit houdt geen rekening met de
+     hoogte-groepering uit `_vul_rij`/`_groepeer_op_hoogte` (die
+     voorkomt dat identieke onderdelen zonder aanleiding over meerdere
+     RIJEN versnipperen) — deze opvulling gebeurt binnen dezelfde rij,
+     dus een andere situatie, en een los onderdeel uit een hoogte-groep
+     kan hierdoor als eerste van die groep in een kolomgat belanden
+     terwijl de rest pas in de volgende rij komt. Efficiëntie krijgt
+     hier bewust voorrang boven groepscohesie, want dat laatste is een
+     esthetische heuristiek, geen harde eis. Vult per kolom hooguit één
+     extra onderdeel (geen recursieve verdere opvulling van het gat dat
+     daarna nog overblijft).
+  2. **Meerdere fabriekskantenband-randen worden nu allemaal gebruikt.**
+     Voorheen koos `genereer_zaagplan` altijd maar één rand uit
+     `materiaal.fabriekskantenband_randen` (de eerste match in de
+     vaste volgorde links/onder/boven/rechts), ook als de plaat er
+     meerdere had — de tweede rand bleef dan altijd ongebruikt, ook als
+     de eerste strook al vol zat. Nu wordt een lus over alle
+     beschikbare randen in die volgorde gedaan: wat niet meer in de
+     eerste rand-strook past, schuift door naar de volgende beschikbare
+     rand-strook op dezelfde plaat, vóór het pas echt niet-geplaatst
+     raakt (en dus doorschuift naar een volgende, verse plaat). Elke
+     gebruikte strook krijgt zijn eigen scheidingssnede, in volgorde
+     als eerste sneden op de plaat.
+  Geverifieerd met 4 nieuwe pytest-tests in `tests/test_engine.py`
+  (verticale opvulling met en zonder rotatie, voor zowel "rijen" als
+  "stroken"; meerdere fabriekskantenband-randen vs. maar één rand) —
+  volledige testsuite 136 tests, allemaal groen — en een los
+  fuzz-script (7 seeds × 300 runs × 4 strategieën, met platen/
+  onderdelen/groepen/fabriekskantenband-combinaties, gecontroleerd op
+  overlap/buiten-de-plaat/dubbele plaatsing): 0 fouten voor "rijen"/
+  "stroken" (de twee aangepaste strategieën), zowel vóór als na de
+  wijziging.
+  **Bijvangst, apart gemeld aan Sven, NIET meegenomen in deze
+  sessie:** datzelfde fuzz-script vond een kleine, al langer bestaande
+  bug in `_pak_guillotine` (en dus soms ook in "efficient", wanneer die
+  intern de guillotine-uitkomst kiest als beste) — in een enkel
+  percent van de fuzz-combinaties plaatst die strategie een onderdeel
+  net buiten de plaat of licht overlappend met een ander onderdeel.
+  Bevestigd dat dit al bestond vóór deze sessie (gereproduceerd op de
+  ongewijzigde code via `git stash`), dus losstaand van het werk
+  hierboven — kandidaat voor een volgende sessie.
+- **Echte bug gevonden door Sven in het testproject: fabriekskantenband
+  hield geen rekening met wélke rand van het onderdeel zelf de band
+  nodig had.** Concreet gemeld: op plaat 1 van "Meubelpaneel wit 18"
+  (testproject "Keuken Jansen") stond "Dwarsbalk voor" (564×100,
+  `kantenband_randen=["boven"]` — de lange 564-zijde moet de band
+  raken) 90° geroteerd, waardoor juist de korte kant tegen de rand lag.
+  Grondoorzaak: `genereer_zaagplan` gooide alle onderdelen met
+  `fabriekskantenband_vereist=True` op één hoop en propte ze tegen
+  welke beschikbare rand er toevallig het eerst aan de beurt kwam
+  (inclusief roteren indien nodig om te passen) — de eigenlijke
+  `kantenband_randen`-eis van het onderdeel (welke van ZIJN randen de
+  band nodig heeft) werd nergens gebruikt, dus zowel de verkeerde rand
+  als een verkeerde oriëntatie waren mogelijk. Bevestigd met Sven
+  (AskUserQuestion) dat de juiste fix is: exact matchen op de
+  aangewezen rand, en nooit meer roteren voor zo'n onderdeel. Drie
+  onderdelen van de fix, allemaal in `engine.py`:
+  1. **`_Eenheid` draagt nu ook `kantenband_randen` mee** (nieuw veld,
+     gevuld in `_bouw_eenheden`; voor een groep de unie van alle leden —
+     groepen roteren toch al nooit).
+  2. **`genereer_zaagplan`'s fabriekskantenband-lus matcht nu per
+     onderdeel op de juiste rand(en)**: een onderdeel met
+     `kantenband_randen={boven}` wordt alleen aangeboden aan de
+     boven-strook, nooit aan onder/links/rechts, ook al heeft de plaat
+     die ook. Wijst het onderdeel meerdere randen aan (bv.
+     `{onder, boven}`) die de plaat allebei heeft, dan krijgt het een
+     kans bij elke van de twee (schuift door naar de volgende als de
+     eerste vol zit). Heeft het onderdeel geen enkele rand opgegeven
+     (kale, oudere data) of wijst het een rand aan die de plaat niet
+     heeft, dan valt het terug op gewoon-onderdeel-plaatsing (oude,
+     minder strikte gedrag) — de fabrieksband-route kan dan toch niets
+     garanderen.
+  3. **`_plaats_fabriek_rand` roteert nooit meer een onderdeel met een
+     specifieke `kantenband_randen`-eis**, ook niet als het anders niet
+     zou passen (dan is het gewoon niet-geplaatst op déze plaat, net als
+     wanneer het te groot is). Onderdelen zonder specifieke rand-eis
+     mogen nog wel roteren om te passen, zoals voorheen.
+  **Subtielere vervolgvondst tijdens het fuzz-testen van deze fix**: een
+  onderdeel met zowel `kantenband_randen` als een eigen
+  `nerfrichting_vereist` kan door `_kies_afmeting` alsnog GEDWONGEN
+  geroteerd worden om die nerf-eis te respecteren (nerf gaat voor) — dat
+  zou de net toegevoegde rand-garantie stiekem weer doorbreken. Nieuwe
+  helper `_kantenband_positie_gegarandeerd` sluit zo'n onderdeel daarom
+  uit van de rand-matching (valt terug op gewoon-onderdeel-plaatsing,
+  net als bij een niet-beschikbare rand hierboven) — in de praktijk
+  raakt dit zelden iets, want fabriekskantenband-materialen zijn
+  doorgaans nerfrichting "geen" (zoals ook "Meubelpaneel wit 18" hier).
+  Geverifieerd met 2 nieuwe pytest-tests (rand-matching zonder rotatie
+  met twee onderdelen die ieder een andere rand nodig hebben; het
+  nerf-conflict-scenario) — volledige testsuite 138 tests, groen — en
+  een uitgebreider fuzz-script (kantenband_randen + nerfrichting +
+  fabriekskantenband_randen willekeurig gecombineerd, met een
+  toegevoegde controle "een onderdeel met een kantenband-eis die de
+  plaat ook echt aanbiedt mag nooit geroteerd staan"): 0 schendingen van
+  die controle. Ook geverifieerd tegen de échte testproject-data
+  ("Keuken Jansen"): "Dwarsbalk voor" staat nu ongeroteerd met zijn
+  lange (564mm) zijde tegen de boven-rand, zoals bedoeld.
+- **Nog een echte bug uit hetzelfde testproject: "Rijen"/"Stroken"
+  gaven kortere onderdelen elk hun eigen kolom naast elkaar, ook als ze
+  samen (gestapeld) ruim in één kolom hadden gepast.** Sven, kijkend
+  naar "Melamine grijs 18": twee "Lade rug korf"-stukken (170mm hoog)
+  kregen allebei hun eigen kolom (506mm breed), terwijl ze — met een
+  derde, nog kortere "Lade rug bestek" (70mm) erbij — samen (170+170+70
+  + 2×kerf ≈ 419mm) ruim onder de 500mm rijhoogte van "Lade bodem"
+  pasten: "dan zouden alle ruggen toch onder elkaar kunnen en dan nog
+  in de rij passen". Bevestigd met Sven (AskUserQuestion) dat dit een
+  grotere wijziging in `_vul_rij` zelf rechtvaardigt (onderdelen eerst
+  proberen te combineren tot één gestapelde kolom, niet pas achteraf
+  opvullen) — dit vervangt meteen ook de eerdere "verticale
+  restruimte"-toevoeging van hierboven, die nu overbodig is geworden.
+  1. **`_vul_rij` en `_plaats_rij` werken nu met KOLOMMEN i.p.v. een
+     platte lijst van losse stukken.** Een kolom is een lijst van één
+     of meer op elkaar gestapelde stukken. De eerste (hoogte-bepalende)
+     hoogte-groep start nog steeds, lid voor lid, een eigen nieuwe
+     kolom (ongewijzigd). Elke latere, kortere hoogte-groep mag nog
+     steeds alleen als GEHEEL meedoen (nooit gedeeltelijk — voorkomt
+     dat identieke onderdelen zonder aanleiding over meerdere RIJEN
+     versnipperen, ongewijzigde regel), maar elk lid ervan wordt nu
+     eerst geprobeerd te stapelen bovenop een bestaande kolom (moet
+     qua resterende hoogte én breedte passen) vóórdat het, als dat
+     nergens lukt, alsnog een nieuwe kolom ernaast krijgt — dit wordt
+     eerst voor de HELE groep gesimuleerd (geen echte kolomstaat-
+     mutatie) zodat een groep die maar deels ergens past alsnog in zijn
+     geheel wordt overgeslagen, dezelfde alles-of-niets-regel als
+     voorheen. De functie `_vul_verticale_restruimte` (de eerdere
+     toevoeging) en haar losse aanroepen in `_pak_rijen`/`_pak_stroken`
+     zijn hierdoor volledig komen te vervallen — dezelfde uitkomst zit
+     nu al in `_vul_rij` zelf, en meer (meerdere stukken per kolom
+     i.p.v. hooguit één).
+  2. **Nieuwe, subtiele bug tijdens het bouwen zelf gevonden door het
+     fuzz-script** (dus vóórdat dit bij Sven terechtkwam): als de
+     allereerste (hoogte-bepalende) groep zelf geen enkel lid kwijt kon
+     (bv. te breed voor wat er nog van de rij over was), bleef
+     `rij_hoogte` op 0 staan — die wordt alleen door de eerste groep
+     bijgewerkt — terwijl latere, kortere groepen wél gewoon als nieuwe
+     kolommen werden toegevoegd. Gevolg: de aanroeper
+     (`_pak_rijen`/`_pak_stroken`) dacht dat de rij 0mm hoog was en
+     legde de volgende rij vrijwel bovenop de vorige, wat in de fuzz-
+     run tot dan toe onopgemerkte overlappende plaatsingen gaf. De
+     oorspronkelijke code voorkwam dit met een `if rij and ...`-
+     voorwaarde (een latere groep mocht alleen meedoen als de rij al
+     niet leeg was) — die voorwaarde was in de nieuwe kolom-gebaseerde
+     versie per ongeluk weggevallen; teruggezet als een expliciete
+     `if not kolommen: overig.extend(groep); continue`-check vóór een
+     latere groep wordt geprobeerd.
+  3. **"Stroken" kreeg een aparte parameter** (`beschikbare_hoogte` op
+     `_vul_rij`) omdat de vaste, plaatbrede strookhoogte vaak groter is
+     dan het hoogste stuk in één specifieke strook — zonder deze
+     parameter zou stapelen daar eerder stoppen dan waar de strook in
+     werkelijkheid nog ruimte heeft. "Rijen" laat dit leeg (de rij is
+     letterlijk zo hoog als zijn hoogste stuk, dus daar is geen verschil).
+  Geverifieerd met de bestaande testsuite (138 tests, ongewijzigd
+  gebleven — de eerdere "verticale opvulling"-tests dekken toevallig
+  ook dit iets algemenere gedrag correct af) en een breder fuzz-script
+  (nu ook met willekeurige `kantenband_randen`, zie hierboven, plus een
+  check op dubbele plaatsingen) dat de nieuwe "rij_hoogte=0"-bug ving
+  vóórdat 'ie ooit bij Sven terechtkwam, en na de fix weer terug was op
+  exact dezelfde (drie, al bekende, `_pak_guillotine`-gerelateerde)
+  fouten als vóór dit hele iteratieblok. Ook geverifieerd tegen de
+  échte testproject-data: alle drie "Lade rug"-onderdelen staan nu in
+  één gestapelde kolom i.p.v. twee aparte kolommen, voor alle van
+  "rijen" afgeleide strategieën (`rijen`, `stroken`, `efficient`).
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

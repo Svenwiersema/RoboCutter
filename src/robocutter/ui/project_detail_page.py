@@ -113,7 +113,6 @@ _DOC_ITEMS = [("labels", "tag", "Labels", True), ("zaagplannen", "document", "Za
 _STRATEGIE_LABEL = {
     "efficient": "Efficiënt",
     "rijen": "Rijen",
-    "stroken": "Stroken",
     "guillotine": "Guillotine",
 }
 
@@ -180,7 +179,14 @@ class ProjectDetailPage(QWidget):
         # verder dan dat: alleen de laatst gegenereerde stand.
         opgeslagen = self._zaagplannen_opslag.laad(self._project_id)
         if opgeslagen is not None:
-            self._zaagplannen, self._zaagplan_waarschuwingen, self._zaagplan_strategie = opgeslagen
+            self._zaagplannen, self._zaagplan_waarschuwingen, opgeslagen_strategie = opgeslagen
+            # Val terug op de standaardstrategie als een eerder opgeslagen
+            # zaagplan een inmiddels afgeschafte strategienaam heeft (zie
+            # het schrappen van "stroken" als losse keuze) — zelfde
+            # verdediging als _standaard_zaagstrategie hieronder.
+            self._zaagplan_strategie = (
+                opgeslagen_strategie if opgeslagen_strategie in GELDIGE_ZAAGSTRATEGIEEN else self._standaard_zaagstrategie()
+            )
         else:
             self._zaagplannen = None
             self._zaagplan_waarschuwingen = []

@@ -15,15 +15,19 @@ motor daadwerkelijk uitvoerde). Op Svens verzoek is de keuzelijst hier
 aangevuld met veelgebruikte zaagmethode-namen uit de paneelzaag-
 praktijk (zie ``_STRATEGIE_LABEL``/``_STRATEGIE_OMSCHRIJVING`` in
 ``robocutter.ui.instellingen_page``, en OVERDRACHT.md voor de volledige
-heen-en-weer over deze naamgeving): ``"stroken"`` (vaste, gelijke
-strookhoogte i.p.v. de per-rij aangepaste hoogte van ``"rijen"``) en
-``"guillotine"`` (uitsluitend doorlopende zaagsnedes van rand tot rand
-— een écht apart, strikter algoritme dan ``"efficient"``, ook al
-gebruikt ``"efficient"`` zelf al een guillotine-stijl interne
-splitsing, zie ``engine.py``). Bewust een tussenstap: eerst de
-keuzelijst vastleggen, de motor zelf uitbreiden volgde in een latere
-sessie — inmiddels gebeurd, alle vier de waarden hier sturen nu ook
-echt een ander plaatsingsalgoritme aan.
+heen-en-weer over deze naamgeving): ``"guillotine"`` (uitsluitend
+doorlopende zaagsnedes van rand tot rand — een écht apart, strikter
+algoritme dan ``"efficient"``, ook al gebruikt ``"efficient"`` zelf al
+een guillotine-stijl interne splitsing, zie ``engine.py``). Een vierde
+optie, ``"stroken"`` (vaste, gelijke strookhoogte i.p.v. de per-rij
+aangepaste hoogte van ``"rijen"``), is later weer geschrapt als
+zichtbare keuze — Sven zag 'm in de praktijk niet gebruikt worden en
+het resultaat verschilt zelden merkbaar van ``"rijen"`` (alleen als
+onderdelen sterk in hoogte uiteenlopen). De onderliggende heuristiek
+(``engine._pak_stroken``) bestaat nog wél en wordt nog steeds intern
+door ``"efficient"`` meegewogen (zie ``_kies_beste_pakresultaat`` in
+``engine.py``) — enkel de losse, door de gebruiker kiesbare optie is
+weg.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from dataclasses import dataclass
 __all__ = ["Instellingen", "GELDIGE_THEMAS", "GELDIGE_ZAAGSTRATEGIEEN"]
 
 GELDIGE_THEMAS = ("licht", "donker", "systeem")
-GELDIGE_ZAAGSTRATEGIEEN = ("efficient", "rijen", "stroken", "guillotine")
+GELDIGE_ZAAGSTRATEGIEEN = ("efficient", "rijen", "guillotine")
 
 
 @dataclass
