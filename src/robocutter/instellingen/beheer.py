@@ -9,7 +9,12 @@ import shutil
 import sys
 from pathlib import Path
 
-from robocutter.instellingen.models import GELDIGE_THEMAS, GELDIGE_ZAAGSTRATEGIEEN, Instellingen
+from robocutter.instellingen.models import (
+    GELDIGE_LABEL_SCANCODES,
+    GELDIGE_THEMAS,
+    GELDIGE_ZAAGSTRATEGIEEN,
+    Instellingen,
+)
 from robocutter.instellingen.opslag import laad_instellingen, sla_instellingen_op, standaard_instellingen_pad
 
 # In een PyInstaller-build (``sys.frozen``) staat de exe meestal in een
@@ -36,6 +41,11 @@ def valideer(instellingen: Instellingen) -> list[str]:
         fouten.append(
             f"Onbekende zaagstrategie: {instellingen.standaard_zaagstrategie!r} "
             f"(verwacht {', '.join(GELDIGE_ZAAGSTRATEGIEEN)})."
+        )
+    if instellingen.label_scancode not in GELDIGE_LABEL_SCANCODES:
+        fouten.append(
+            f"Onbekende labelscancode: {instellingen.label_scancode!r} "
+            f"(verwacht {', '.join(GELDIGE_LABEL_SCANCODES)})."
         )
     return fouten
 

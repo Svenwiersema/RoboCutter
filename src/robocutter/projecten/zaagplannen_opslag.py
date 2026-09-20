@@ -34,6 +34,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from robocutter.modellen.models import Nerfrichting as ModNerfrichting
 from robocutter.modellen.models import Rand as ModRand
 from robocutter.optimalisatie.models import Materiaal as OptMateriaal
 from robocutter.optimalisatie.models import Plaatsing, Rand as OptRand, Reststuk, ZaagplanResultaat, Zaagsnede
@@ -215,6 +216,7 @@ def _onderdeel_info_naar_dict(o: OnderdeelInfo) -> dict:
         "herkomst": o.herkomst,
         "kantenband_randen": sorted(r.value for r in o.kantenband_randen),
         "fabriekskantenband_vereist": o.fabriekskantenband_vereist,
+        "nerfrichting_vereist": o.nerfrichting_vereist.value,
     }
 
 
@@ -224,6 +226,9 @@ def _dict_naar_onderdeel_info(d: dict) -> OnderdeelInfo:
         herkomst=d["herkomst"],
         kantenband_randen=frozenset(ModRand(v) for v in d["kantenband_randen"]),
         fabriekskantenband_vereist=d["fabriekskantenband_vereist"],
+        # Val terug op "geen" voor een zaagplan dat vóór de labelgeneratie-
+        # stap is opgeslagen en dit veld dus nog niet heeft.
+        nerfrichting_vereist=ModNerfrichting(d.get("nerfrichting_vereist", "geen")),
     )
 
 

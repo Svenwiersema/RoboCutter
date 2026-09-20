@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
-from robocutter.modellen.models import Rand
+from robocutter.modellen.models import Nerfrichting, Rand
 from robocutter.optimalisatie.engine import genereer_zaagplannen
 from robocutter.optimalisatie.models import Materiaal as OptMateriaal
 from robocutter.optimalisatie.models import Onderdeel as OptOnderdeel
@@ -37,12 +37,19 @@ __all__ = ["OnderdeelInfo", "PlaatZaagplan", "genereer_zaagplannen_voor_project"
 class OnderdeelInfo:
     """Weergave-informatie voor één regel uit de zaaglijst, apart
     bewaard omdat de motor zelf alleen het lean ``OptOnderdeel`` (met
-    een synthetische id) ziet en niets van naam/herkomst afweet."""
+    een synthetische id) ziet en niets van naam/herkomst afweet.
+
+    ``nerfrichting_vereist`` is hier toegevoegd voor de labelgeneratie
+    (hoofdstuk 6): de optionele nerfrichting-pijl op een label leest
+    dit veld, in plaats van dat labels.py zelf opnieuw bij de
+    modellen-/projectenbibliotheek moet gaan opzoeken welk onderdeel dit
+    was."""
 
     naam: str
     herkomst: str
     kantenband_randen: frozenset[Rand]
     fabriekskantenband_vereist: bool
+    nerfrichting_vereist: Nerfrichting = Nerfrichting.GEEN
 
 
 @dataclass
@@ -128,6 +135,7 @@ def genereer_zaagplannen_voor_project(
                 herkomst=regel.herkomst,
                 kantenband_randen=regel.onderdeel.kantenband_randen,
                 fabriekskantenband_vereist=regel.onderdeel.fabriekskantenband_vereist,
+                nerfrichting_vereist=regel.onderdeel.nerfrichting_vereist,
             )
             opt_onderdelen.append(
                 OptOnderdeel(

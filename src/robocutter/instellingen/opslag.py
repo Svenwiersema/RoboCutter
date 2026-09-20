@@ -44,5 +44,8 @@ def sla_instellingen_op(instellingen: Instellingen, pad: Path | None = None) -> 
         "bedrijfslogo_pad": instellingen.bedrijfslogo_pad,
         "standaard_zaagstrategie": instellingen.standaard_zaagstrategie,
         "werkvoorbereider_naam": instellingen.werkvoorbereider_naam,
+        "label_scancode": instellingen.label_scancode,
+        "label_kantenband_indicatie": instellingen.label_kantenband_indicatie,
+        "label_nerfrichting_pijl": instellingen.label_nerfrichting_pijl,
     }
     bestand.write_text(json.dumps(data, indent=2), encoding="utf-8")

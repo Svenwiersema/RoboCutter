@@ -6,3 +6,6 @@ __pycache__/
 /dist/
 *.spec
 /installer/Output/
+/data/*_test.db
+/data/instellingen_test_data/
+/*.pdf

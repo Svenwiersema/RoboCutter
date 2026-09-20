@@ -6,7 +6,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest", "pillow"]
-ui = ["PySide6"]
+ui = ["PySide6", "qrcode", "python-barcode"]
 build = ["pyinstaller"]
 
 [tool.pytest.ini_options]

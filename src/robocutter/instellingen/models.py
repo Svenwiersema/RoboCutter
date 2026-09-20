@@ -34,10 +34,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["Instellingen", "GELDIGE_THEMAS", "GELDIGE_ZAAGSTRATEGIEEN"]
+__all__ = ["Instellingen", "GELDIGE_THEMAS", "GELDIGE_ZAAGSTRATEGIEEN", "GELDIGE_LABEL_SCANCODES"]
 
 GELDIGE_THEMAS = ("licht", "donker", "systeem")
 GELDIGE_ZAAGSTRATEGIEEN = ("efficient", "rijen", "guillotine")
+# Hoofdstuk 6: de scancode-optie (QR/barcode/geen) is "één algemene
+# instelling in het programma" — niet iets wat je telkens opnieuw kiest
+# bij het printen van een labelvel.
+GELDIGE_LABEL_SCANCODES = ("geen", "qr", "barcode")
 
 
 @dataclass
@@ -47,3 +51,8 @@ class Instellingen:
     bedrijfslogo_pad: str | None = None
     standaard_zaagstrategie: str = "efficient"
     werkvoorbereider_naam: str = ""
+    # Hoofdstuk 6 (Labels & identificatie): de optionele labelvelden zijn
+    # bewust app-brede instellingen, geen keuze per printactie.
+    label_scancode: str = "qr"
+    label_kantenband_indicatie: bool = True
+    label_nerfrichting_pijl: bool = True

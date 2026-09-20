@@ -2039,6 +2039,104 @@ houden.
   échte testproject-data: alle drie "Lade rug"-onderdelen staan nu in
   één gestapelde kolom i.p.v. twee aparte kolommen, voor alle van
   "rijen" afgeleide strategieën (`rijen`, `stroken`, `efficient`).
+- **Labels — module 6, v1 gebouwd: onderdeel-labels vanuit een
+  gegenereerd projectzaagplan, met QR-/barcode.** Op Svens verzoek
+  vóór verder motorwerk opgepakt. Hoofdstuk 6 was al volledig
+  ontworpen maar liet een paar dingen bewust open ("verder uit te
+  werken bij hoofdstuk 8" — dat hoofdstuk noemt labels/scancodes
+  echter nergens) — drie scope-keuzes eerst met Sven kortgesloten
+  (AskUserQuestion):
+  1. **Alleen onderdeel-labels in v1**, geen reststuk-labels. Een
+     reststuk-label (hoofdstuk 6: zelfde velden, zonder
+     projectnummer) is een aparte, latere stap — er bestaat ook nog
+     geen "reststukken vrijgeven vanuit een zaagplan"-koppeling (zie
+     "Nog niet gebouwd" verderop), dus reststuk-labels zouden voorlopig
+     toch alleen aan handmatig in de Reststukkenbibliotheek ingevoerde
+     reststukken kunnen hangen.
+  2. **Scancode nu al echt bouwen**, niet uitstellen. Nieuwe
+     dependencies: `qrcode` (voor de QR-optie — `get_matrix()` geeft
+     een boolean-rooster, vereist geen Pillow) en `python-barcode`
+     (voor de barcode-optie — `Code128(...).build()` geeft een
+     "1010..."-string op module-resolutie; Code128 i.p.v. Code39 omdat
+     het gewoon alle ASCII aankan, dus geen sanitizen van de
+     scancode-waarde nodig). Beide alleen als rechthoekjes getekend
+     met dezelfde `QPainter`-aanpak als de rest van de PDF-export —
+     geen afbeeldingsbestand, geen Pillow-afhankelijkheid. De
+     scancode-inhoud is bewust alléén een uniek record-ID (bv.
+     `RC:onderdeel:<project_id>:<materiaal_id>:<onderdeel_id>:<instantie>`),
+     geen URL/online schema — logisch voor een offline, single-user app
+     zoals RoboCutter nu is; er is ook nog geen "scan om record te
+     openen"-functie, dit is puur het label zelf.
+  3. **PDF-vel voor een gewone A4-printer**, net als de zaagplan-PDF
+     van de grond af opgebouwd met `QPainter` — géén specifiek
+     labelprinter-formaat (hoofdstuk 6 noemt dat expliciet als open
+     vraag, later te bepalen met een echte printer erbij).
+  Gebouwd, backend-eerst zoals gebruikelijk:
+  - `src/robocutter/projecten/labels.py` (nieuw): `OnderdeelLabel` +
+    `genereer_labels_voor_project(project, plannen)` — één label per
+    `Plaatsing` in de `PlaatZaagplan`-lijst van `zaagplannen.py` (dus
+    ook meerdere labels voor meerdere exemplaren van hetzelfde
+    onderdeel; niet-geplaatste onderdelen krijgen terecht geen label).
+    Puur data, geen QR/barcode-afhankelijkheid hier — dat zit alleen in
+    de renderer, zodat dit bestand net als `zaaglijst.py`/
+    `zaagplannen.py` zonder UI-dependencies test-baar blijft.
+  - `zaagplannen.py`'s `OnderdeelInfo` kreeg er een veld
+    `nerfrichting_vereist` bij (voorheen ontbrak dat — de
+    nerfrichting-pijl op een label heeft dit nodig). `zaagplannen_opslag.py`
+    is meegewerkt met een `.get(..., "geen")`-fallback bij het
+    terugladen, zodat een vóór deze stap opgeslagen zaagplan (zonder
+    dit veld) niet crasht.
+  - `src/robocutter/instellingen/models.py`: drie nieuwe velden —
+    `label_scancode` (`GELDIGE_LABEL_SCANCODES` = "geen"/"qr"/"barcode",
+    default "qr"), `label_kantenband_indicatie` en
+    `label_nerfrichting_pijl` (beide default `True`) — "één algemene
+    instelling", niet iets wat je telkens opnieuw kiest bij het
+    printen, exact zoals hoofdstuk 6 voorschrijft. `beheer.py`/`opslag.py`
+    bijgewerkt (validatie resp. JSON-serialisatie); een nieuwe kaart
+    "LABELS" in `instellingen_page.py` (segmented control voor de
+    scancode, twee checkboxes) tussen de bestaande "Algemeen"- en
+    "Opslaglocatie"-kaarten, met een eigen Opslaan-knop/banner (zelfde
+    patroon als de andere kaarten daar).
+  - `src/robocutter/ui/label_pdf.py` (nieuw): `schrijf_labels_pdf` —
+    een rooster van labels (64×38mm, ruim voldoende leesbaar formaat
+    zonder aan een specifiek printermerk vast te zitten) over zoveel
+    A4-pagina's als nodig. Elk label toont onderdeelnaam, materiaal,
+    afmeting (mono, groot) en projectnummer altijd; kantenband-indicatie
+    en de nerfrichting-pijl (een klein zelfgetekend pijl-icoontje —
+    horizontaal voor "lange zijde", verticaal voor "korte zijde", geen
+    pijl bij "geen") alleen als de bijbehorende instelling aan staat;
+    scancode rechtsboven (QR, vierkant) of als volle-breedte strook
+    onderaan (barcode) als die instelling niet op "geen" staat.
+  - `project_detail_page.py`: de "Labels"-tab in het projectdetailscherm
+    was tot nu toe een "binnenkort"-placeholder — vervangen door een
+    echt paneel, opgezet als zusje van het Zaagplannen-paneel ernaast
+    (zelfde `_labels_content`/`_ververs_labels_paneel()`-patroon): zolang
+    er nog geen zaagplan is, dezelfde placeholder-stijl met een
+    doorverwijzing naar Zaagplannen; zodra er wel een zaagplan is, een
+    tabel (Onderdeel/Materiaal/Afmeting/Kantenband/Nerfrichting) plus een
+    "Labels als PDF"-knop. Labels worden **niet** los opgeslagen — ze
+    worden, net als het zaagplan zelf, telkens opnieuw afgeleid
+    (`genereer_labels_voor_project`) van het laatst opgeslagen/
+    gegenereerde zaagplan, en het paneel ververst zichzelf meteen mee
+    zodra er een (nieuw) zaagplan gegenereerd wordt.
+  Gedekt door `tests/test_labels.py` (4 nieuwe tests: één label per
+  geplaatst exemplaar, kantenband/nerfrichting-overname, geen label
+  voor niet-geplaatste onderdelen, leeg project geeft lege lijst) en een
+  uitgebreide `test_instellingen.py` (nieuwe labelvelden in de
+  opslaan/laden-roundtrip, plus een validatie-test voor een onbekende
+  scancode-waarde) — volledige testsuite 143 tests, allemaal groen.
+  Los geverifieerd met een offscreen smoke-test: labelgeneratie en
+  PDF-export voor alle drie scancode-standen (geen/qr/barcode), het
+  Labels-paneel in `ProjectDetailPage` (navigeren, zaagplan genereren,
+  thema-wissel) en de nieuwe LABELS-kaart in `InstellingenPage`
+  (waarden wijzigen, opslaan, thema-wissel) — telkens op een tijdelijke
+  in-memory/tmp-opzet, nooit op `data/robocutter.db` zelf.
+  **Bewust nog niet gedaan**: reststuk-labels (zie boven), een
+  "niet gecontroleerd"-detectie zodra de onderliggende data wijzigt na
+  het genereren (hoofdstuk 6 noemt dit, maar dat mechanisme bestaat ook
+  voor zaagplannen zelf nog niet — zie `zaagplannen_opslag.py`), en
+  ondersteuning voor een specifiek labelprinter-formaat (alleen het
+  A4-vel).
 
 ## Werkwijze die Sven prettig vindt
 

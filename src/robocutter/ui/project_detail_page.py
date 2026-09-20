@@ -9,12 +9,16 @@ in leven te blijven (zie ``main_window.py``).
 
 Zijbalk (216px, zelfde opzet als ``materialen_page.py``/
 ``projecten_page.py``) met vijf secties: Overzicht/Samenstelling/
-Zaaglijst, en onder een "Documenten"-scheiding Labels/Zaagplannen
-(allebei nu een "binnenkort"-placeholder — ze hangen vast aan
-hoofdstuk 6 resp. echte zaagplan-generatie vanuit een project, allebei
-nog niet gebouwd). De vijf panelen zitten in een ``QStackedWidget``
-onder een gedeelde projectkop (breadcrumb, titel + statuschip,
-klant-/opdracht-/opleverdatum, archiveerknop).
+Zaaglijst, en onder een "Documenten"-scheiding Labels/Zaagplannen. Beide
+zijn inmiddels echt (geen placeholder meer): Zaagplannen genereert en
+bewaart een zaagplan per project (``genereer_zaagplannen_voor_project``/
+``ZaagplannenOpslag``), en Labels (hoofdstuk 6) leidt daar op zijn beurt
+één label per fysiek geplaatst onderdeel-exemplaar uit af
+(``robocutter.projecten.labels.genereer_labels_voor_project``) — dus
+altijd "genereer eerst een zaagplan" zolang er nog geen is. De vijf
+panelen zitten in een ``QStackedWidget`` onder een gedeelde projectkop
+(breadcrumb, titel + statuschip, klant-/opdracht-/opleverdatum,
+archiveerknop).
 
 Twee dingen die Sven tijdens het goedkeuren van de mockup liet
 rechtzetten (verwerkt in het bewaarde mockup-bestand, en dus ook hier):
@@ -68,6 +72,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QTableWidget,
+    QTableWidgetItem,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -85,11 +90,13 @@ from robocutter.projecten.bibliotheek import (
     ProjectenBibliotheek,
     valideer,
 )
+from robocutter.projecten.labels import OnderdeelLabel, genereer_labels_voor_project
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
 from robocutter.projecten.zaagplannen import PlaatZaagplan, genereer_zaagplannen_voor_project
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.ui.icons import icon, icon_pixmap
+from robocutter.ui.label_pdf import schrijf_labels_pdf
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.stat_tile import StatTile
 from robocutter.ui.widgets.zaagplaat_widget import ZaagplaatWidget
@@ -106,14 +113,19 @@ _SORTEER_LABEL = {
     "hoogte": "Hoogte", "aantal": "Aantal", "herkomst": "Herkomst",
 }
 _PANEEL_ITEMS = [("overzicht", "user", "Overzicht"), ("samenstelling", "layers", "Samenstelling"), ("zaaglijst", "list", "Zaaglijst")]
-# "Labels" hangt nog vast aan hoofdstuk 6 (niet gebouwd) en blijft dus
-# een "binnenkort"-placeholder; "Zaagplannen" is dat sinds deze stap
-# niet meer, zie _build_zaagplannen_paneel.
-_DOC_ITEMS = [("labels", "tag", "Labels", True), ("zaagplannen", "document", "Zaagplannen", False)]
+# Beide "Documenten"-items zijn inmiddels echt: Zaagplannen sinds de
+# vorige stap, Labels sinds deze stap (zie _build_labels_paneel) — allebei
+# leunen op een gegenereerd zaagplan van dit project.
+_DOC_ITEMS = [("labels", "tag", "Labels", False), ("zaagplannen", "document", "Zaagplannen", False)]
 _STRATEGIE_LABEL = {
     "efficient": "Efficiënt",
     "rijen": "Rijen",
     "guillotine": "Guillotine",
+}
+_NERFRICHTING_LABEL = {
+    Nerfrichting.LANGE_ZIJDE: "Lange zijde",
+    Nerfrichting.KORTE_ZIJDE: "Korte zijde",
+    Nerfrichting.GEEN: "—",
 }
 
 
@@ -1406,17 +1418,124 @@ class ProjectDetailPage(QWidget):
     # Panelen: Labels / Zaagplannen (placeholders)
     # ------------------------------------------------------------------
     def _build_labels_paneel(self) -> QWidget:
-        return self._build_placeholder_paneel(
-            icon_naam="tag",
-            tag_tekst="Hoofdstuk 6",
-            titel="Labels zijn nog niet beschikbaar",
-            tekst=(
-                "Labels worden straks automatisch gegenereerd zodra het zaagplan voor dit "
-                "project klaar is — met materiaal, projectnummer en afmeting per onderdeel, "
-                "optioneel aangevuld met een QR-/barcode. Dat vereist eerst echte "
-                "zaagplan-generatie vanuit een project, wat nog gebouwd moet worden."
-            ),
-        )
+        panel = QWidget()
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(16)
+        self._labels_content = QVBoxLayout()
+        self._labels_content.setSpacing(16)
+        outer.addLayout(self._labels_content)
+        return panel
+
+    def _ververs_labels_paneel(self) -> None:
+        _clear_layout(self._labels_content)
+        if not self._zaagplannen:
+            self._labels_content.addWidget(
+                self._build_placeholder_paneel(
+                    icon_naam="tag",
+                    tag_tekst="Hoofdstuk 6",
+                    titel="Nog geen labels beschikbaar",
+                    tekst=(
+                        "Labels worden automatisch afgeleid van het gegenereerde zaagplan van "
+                        "dit project — met materiaal, projectnummer en afmeting per onderdeel, "
+                        "optioneel aangevuld met een QR-/barcode, kantenband-indicatie en "
+                        "nerfrichting-pijl (in te stellen bij Opties). Genereer eerst een "
+                        "zaagplan bij Zaagplannen."
+                    ),
+                )
+            )
+        else:
+            self._labels_content.addWidget(self._bouw_labels_resultaat())
+
+    def _bouw_labels_resultaat(self) -> QWidget:
+        labels = genereer_labels_voor_project(self._project(), self._zaagplannen)
+
+        wrapper = QWidget()
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(10)
+        titel_kolom = QVBoxLayout()
+        titel_kolom.setSpacing(2)
+        titel = QLabel("Labels")
+        titel.setProperty("role", "matName")
+        titel_kolom.addWidget(titel)
+        aantal = len(labels)
+        sub = QLabel(f"{aantal} {'label' if aantal == 1 else 'labels'} · één per gezaagd onderdeel-exemplaar")
+        sub.setProperty("role", "matMeta")
+        titel_kolom.addWidget(sub)
+        toolbar.addLayout(titel_kolom)
+        toolbar.addStretch(1)
+        pdf_btn = QPushButton("  Labels als PDF")
+        pdf_btn.setProperty("role", "primary")
+        pdf_btn.setIcon(icon("download", "#12141B", 13))
+        pdf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pdf_btn.setEnabled(aantal > 0)
+        pdf_btn.clicked.connect(lambda: self._exporteer_labels_pdf(labels))
+        toolbar.addWidget(pdf_btn)
+        layout.addLayout(toolbar)
+
+        if not labels:
+            waarschuwing = QLabel(
+                "Geen enkel onderdeel kon op het huidige zaagplan geplaatst worden — er zijn dus "
+                "nog geen labels om te genereren."
+            )
+            waarschuwing.setProperty("role", "warningText")
+            waarschuwing.setWordWrap(True)
+            layout.addWidget(waarschuwing)
+        else:
+            kaart = QFrame()
+            kaart.setObjectName("TableCard")
+            kaart_layout = QVBoxLayout(kaart)
+            kaart_layout.setContentsMargins(0, 0, 0, 0)
+            kaart_layout.addWidget(self._bouw_labels_tabel(labels))
+            layout.addWidget(kaart)
+
+        return wrapper
+
+    def _bouw_labels_tabel(self, labels: list[OnderdeelLabel]) -> QTableWidget:
+        tabel = QTableWidget(len(labels), 5)
+        tabel.setObjectName("LibraryTable")
+        tabel.setHorizontalHeaderLabels(["Onderdeel", "Materiaal", "Afmeting", "Kantenband", "Nerfrichting"])
+        tabel.verticalHeader().setVisible(False)
+        tabel.setShowGrid(False)
+        tabel.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        tabel.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        tabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tabel.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tabel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = tabel.horizontalHeader()
+        header.setStretchLastSection(True)
+        for col, breedte in enumerate([260, 220, 140, 160]):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            tabel.setColumnWidth(col, breedte)
+
+        rij_hoogte = 40
+        for row, label in enumerate(labels):
+            tabel.setRowHeight(row, rij_hoogte)
+            if label.fabriekskantenband_vereist:
+                kantenband_tekst = "Fabrieksrand"
+            elif label.kantenband_randen:
+                kantenband_tekst = ", ".join(sorted(r.value for r in label.kantenband_randen))
+            else:
+                kantenband_tekst = "—"
+            tabel.setItem(row, 0, QTableWidgetItem(label.onderdeel_naam))
+            tabel.setItem(row, 1, QTableWidgetItem(label.materiaal_naam))
+            tabel.setItem(row, 2, QTableWidgetItem(label.afmeting_tekst))
+            tabel.setItem(row, 3, QTableWidgetItem(kantenband_tekst))
+            tabel.setItem(row, 4, QTableWidgetItem(_NERFRICHTING_LABEL[label.nerfrichting_vereist]))
+        return tabel
+
+    def _exporteer_labels_pdf(self, labels: list[OnderdeelLabel]) -> None:
+        if not labels:
+            return
+        standaard_naam = f"Labels {self._project().naam}.pdf"
+        pad, _ = QFileDialog.getSaveFileName(self, "Labels opslaan als PDF", standaard_naam, "PDF-bestanden (*.pdf)")
+        if not pad:
+            return
+        schrijf_labels_pdf(pad, project=self._project(), labels=labels, instellingen=InstellingenBeheer().huidige)
 
     # ------------------------------------------------------------------
     # Paneel: Zaagplannen
@@ -1456,6 +1575,7 @@ class ProjectDetailPage(QWidget):
         # genereren" overschrijft gewoon de eerder opgeslagen stand.
         self._zaagplannen_opslag.opslaan(self._project_id, plannen, waarschuwingen, self._zaagplan_strategie)
         self._ververs_zaagplannen_paneel()
+        self._ververs_labels_paneel()
 
     def _ververs_zaagplannen_paneel(self) -> None:
         _clear_layout(self._zaagplannen_content)
@@ -1820,3 +1940,4 @@ class ProjectDetailPage(QWidget):
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()
         self._ververs_zaagplannen_paneel()
+        self._ververs_labels_paneel()

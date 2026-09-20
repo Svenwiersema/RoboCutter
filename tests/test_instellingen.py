@@ -46,6 +46,9 @@ def test_opslaan_en_laden_roundtrip(tmp_path):
         bedrijfslogo_pad=str(tmp_path / "logo.png"),
         standaard_zaagstrategie="rijen",
         werkvoorbereider_naam="Sven",
+        label_scancode="barcode",
+        label_kantenband_indicatie=False,
+        label_nerfrichting_pijl=False,
     )
     sla_instellingen_op(origineel, pad)
     herladen = laad_instellingen(pad)
@@ -56,6 +59,11 @@ def test_valideer_signaleert_onbekend_thema_en_strategie():
     fouten = valideer(Instellingen(thema="paars", standaard_zaagstrategie="willekeurig"))
     assert any("thema" in f.lower() for f in fouten)
     assert any("zaagstrategie" in f.lower() for f in fouten)
+
+
+def test_valideer_signaleert_onbekende_labelscancode():
+    fouten = valideer(Instellingen(label_scancode="hologram"))
+    assert any("labelscancode" in f.lower() for f in fouten)
 
 
 def test_valideer_geldige_instellingen_geeft_geen_fouten():

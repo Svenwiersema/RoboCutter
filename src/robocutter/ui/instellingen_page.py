@@ -54,6 +54,7 @@ from typing import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -66,10 +67,11 @@ from PySide6.QtWidgets import (
 )
 
 from robocutter.instellingen.beheer import InstellingenBeheer, OpslagVerplaatsenError
-from robocutter.instellingen.models import GELDIGE_THEMAS, GELDIGE_ZAAGSTRATEGIEEN
+from robocutter.instellingen.models import GELDIGE_LABEL_SCANCODES, GELDIGE_THEMAS, GELDIGE_ZAAGSTRATEGIEEN
 from robocutter.ui.theme import Theme
 
 _THEMA_LABEL = {"licht": "Licht", "donker": "Donker", "systeem": "Systeem"}
+_LABEL_SCANCODE_LABEL = {"geen": "Geen", "qr": "QR-code", "barcode": "Barcode"}
 # Sven corrigeerde zichzelf hier expliciet: "efficient" en "guillotine" zijn
 # NIET hetzelfde (ook al gebruikt de huidige "efficient"-implementatie zelf
 # ook al een guillotine-stijl interne splitsing, zie engine.py) — Guillotine
@@ -151,6 +153,7 @@ class InstellingenPage(QWidget):
         layout.addWidget(sub)
 
         layout.addWidget(self._build_algemeen_kaart())
+        layout.addWidget(self._build_labels_kaart())
         layout.addWidget(self._build_opslag_kaart())
         layout.addStretch(1)
 
@@ -282,6 +285,55 @@ class InstellingenPage(QWidget):
 
         return kaart
 
+    def _build_labels_kaart(self) -> QFrame:
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(12)
+
+        sectie_label = QLabel("LABELS")
+        sectie_label.setProperty("role", "fieldSectionLabel")
+        layout.addWidget(sectie_label)
+
+        instellingen = self._beheer.huidige
+
+        layout.addWidget(self._field_label("Scancode op label"))
+        scancode_widget, self._scancode_group = self._segmented(
+            [(waarde, _LABEL_SCANCODE_LABEL[waarde]) for waarde in GELDIGE_LABEL_SCANCODES],
+            instellingen.label_scancode,
+        )
+        layout.addWidget(scancode_widget)
+        hint = QLabel(
+            "Onderdeel-ID, materiaal, projectnummer en afmeting staan altijd op het label — "
+            "dit bepaalt alleen of, en welke, scanbare code erbij komt."
+        )
+        hint.setProperty("role", "fieldHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._chk_kantenband = QCheckBox("Kantenband-indicatie tonen")
+        self._chk_kantenband.setChecked(instellingen.label_kantenband_indicatie)
+        layout.addWidget(self._chk_kantenband)
+
+        self._chk_nerf = QCheckBox("Nerfrichting-pijl tonen")
+        self._chk_nerf.setChecked(instellingen.label_nerfrichting_pijl)
+        layout.addWidget(self._chk_nerf)
+
+        self._labels_banner, self._labels_banner_label = self._build_banner()
+        layout.addWidget(self._labels_banner)
+
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        opslaan = QPushButton("Opslaan")
+        opslaan.setProperty("role", "primary")
+        opslaan.setCursor(Qt.CursorShape.PointingHandCursor)
+        opslaan.clicked.connect(self._opslaan_labels)
+        footer.addWidget(opslaan)
+        layout.addLayout(footer)
+
+        return kaart
+
     def _build_opslag_kaart(self) -> QFrame:
         kaart = QFrame()
         kaart.setObjectName("TableCard")
@@ -371,6 +423,18 @@ class InstellingenPage(QWidget):
             self._toon_banner(self._algemeen_banner, self._algemeen_banner_label, str(exc), fout=True)
             return
         self._toon_banner(self._algemeen_banner, self._algemeen_banner_label, "Instellingen opgeslagen.", fout=False)
+
+    def _opslaan_labels(self) -> None:
+        try:
+            self._beheer.bijwerken(
+                label_scancode=self._scancode_group.checkedButton().property("waarde"),
+                label_kantenband_indicatie=self._chk_kantenband.isChecked(),
+                label_nerfrichting_pijl=self._chk_nerf.isChecked(),
+            )
+        except ValueError as exc:
+            self._toon_banner(self._labels_banner, self._labels_banner_label, str(exc), fout=True)
+            return
+        self._toon_banner(self._labels_banner, self._labels_banner_label, "Instellingen opgeslagen.", fout=False)
 
     def _wijzig_opslaglocatie(self) -> None:
         nieuwe_map = self._in_map.text().strip()
