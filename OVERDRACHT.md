@@ -2255,6 +2255,13 @@ houden.
   van de echte UI-flow (`ProjectDetailPage._genereer_zaagplannen` met
   een tijdelijke database): bezig-kaart, generatie, opslaan, geen
   crash.
+  **Status na het zelf uitproberen: Sven is nog niet helemaal tevreden**
+  met het resultaat van de zaagmotor — geen concreet gemelde bug dit
+  keer, meer een algemeen gevoel dat het nog beter kan. Bewust
+  gepauzeerd ("dit pakken we een andere keer weer op") in plaats van
+  blind door te itereren zonder concrete richting; wacht op verdere
+  feedback/een concreet voorbeeld van Sven voordat hier verder aan
+  gewerkt wordt.
 
 ## Werkwijze die Sven prettig vindt
 
