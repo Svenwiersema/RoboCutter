@@ -654,3 +654,112 @@ def test_krappe_restmarge_kleiner_dan_de_kerf_geeft_geen_plaatsing_buiten_de_pla
         assert p.y + p.hoogte <= mat.breedte + 1e-6
     for a, b in itertools.combinations(resultaat.plaatsingen, 2):
         assert not _rechthoeken_overlappen(a, b)
+
+
+def test_zoek_tijdsbudget_zonder_budget_geeft_ongewijzigd_deterministisch_resultaat():
+    # zoek_tijdsbudget=0 (de standaardwaarde) moet exact hetzelfde resultaat
+    # geven als vóórdat deze parameter bestond -- geen enkel bestaand
+    # aanroeppunt (of test) mag hierdoor iets anders terugkrijgen.
+    mat = _standaard_materiaal()
+    onderdelen = [
+        Onderdeel(id="a", breedte=900, hoogte=600, aantal=2),
+        Onderdeel(id="b", breedte=500, hoogte=400, aantal=3),
+    ]
+    zonder_param = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    met_expliciete_nul = genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=0.0)
+    assert zonder_param.plaatsingen == met_expliciete_nul.plaatsingen
+    assert zonder_param.zaagvolgorde == met_expliciete_nul.zaagvolgorde
+
+
+def _scenario_efficient():
+    mat = Materiaal(naam="T", lengte=1588, breedte=1376, kerf=4.0)
+    onderdelen = [
+        Onderdeel(id="o0", breedte=141, hoogte=365, aantal=3),
+        Onderdeel(id="o1", breedte=597, hoogte=514, aantal=2),
+        Onderdeel(id="o2", breedte=588, hoogte=466, aantal=3),
+        Onderdeel(id="o3", breedte=323, hoogte=616, aantal=1),
+        Onderdeel(id="o4", breedte=388, hoogte=243, aantal=1),
+        Onderdeel(id="o5", breedte=733, hoogte=356, aantal=3),
+        Onderdeel(id="o6", breedte=822, hoogte=716, aantal=1),
+        Onderdeel(id="o7", breedte=417, hoogte=201, aantal=3),
+        Onderdeel(id="o8", breedte=175, hoogte=800, aantal=2),
+        Onderdeel(id="o9", breedte=583, hoogte=673, aantal=1),
+        Onderdeel(id="o10", breedte=462, hoogte=544, aantal=2),
+        Onderdeel(id="o11", breedte=725, hoogte=755, aantal=1),
+        Onderdeel(id="o12", breedte=665, hoogte=588, aantal=2),
+        Onderdeel(id="o13", breedte=633, hoogte=366, aantal=1),
+        Onderdeel(id="o14", breedte=661, hoogte=114, aantal=1),
+        Onderdeel(id="o15", breedte=836, hoogte=508, aantal=3),
+        Onderdeel(id="o16", breedte=784, hoogte=740, aantal=1),
+        Onderdeel(id="o17", breedte=726, hoogte=605, aantal=2),
+        Onderdeel(id="o18", breedte=349, hoogte=847, aantal=2),
+        Onderdeel(id="o19", breedte=820, hoogte=164, aantal=1),
+        Onderdeel(id="o20", breedte=681, hoogte=327, aantal=1),
+    ]
+    return mat, onderdelen
+
+
+def _scenario_rijen():
+    mat = Materiaal(naam="T", lengte=1283, breedte=910, kerf=4.0)
+    onderdelen = [
+        Onderdeel(id="o0", breedte=838, hoogte=505, aantal=2),
+        Onderdeel(id="o1", breedte=258, hoogte=192, aantal=1),
+        Onderdeel(id="o2", breedte=120, hoogte=511, aantal=3),
+        Onderdeel(id="o3", breedte=396, hoogte=883, aantal=1),
+        Onderdeel(id="o4", breedte=327, hoogte=632, aantal=3),
+        Onderdeel(id="o5", breedte=468, hoogte=383, aantal=1),
+        Onderdeel(id="o6", breedte=208, hoogte=368, aantal=1),
+        Onderdeel(id="o7", breedte=126, hoogte=756, aantal=2),
+        Onderdeel(id="o8", breedte=378, hoogte=298, aantal=1),
+        Onderdeel(id="o9", breedte=417, hoogte=396, aantal=3),
+        Onderdeel(id="o10", breedte=849, hoogte=481, aantal=1),
+    ]
+    return mat, onderdelen
+
+
+def _scenario_guillotine():
+    mat = Materiaal(naam="T", lengte=1075, breedte=1182, kerf=4.0)
+    onderdelen = [
+        Onderdeel(id="o0", breedte=361, hoogte=220, aantal=2),
+        Onderdeel(id="o1", breedte=879, hoogte=560, aantal=2),
+        Onderdeel(id="o2", breedte=767, hoogte=488, aantal=1),
+        Onderdeel(id="o3", breedte=196, hoogte=599, aantal=1),
+        Onderdeel(id="o4", breedte=499, hoogte=543, aantal=3),
+        Onderdeel(id="o5", breedte=880, hoogte=885, aantal=1),
+        Onderdeel(id="o6", breedte=812, hoogte=556, aantal=2),
+        Onderdeel(id="o7", breedte=838, hoogte=334, aantal=3),
+        Onderdeel(id="o8", breedte=204, hoogte=425, aantal=1),
+        Onderdeel(id="o9", breedte=122, hoogte=126, aantal=3),
+    ]
+    return mat, onderdelen
+
+
+@pytest.mark.parametrize(
+    "strategie, scenario",
+    [
+        ("efficient", _scenario_efficient),
+        ("rijen", _scenario_rijen),
+        ("guillotine", _scenario_guillotine),
+    ],
+)
+def test_zoek_tijdsbudget_vindt_aantoonbaar_betere_plaatsing(strategie, scenario):
+    # Op Svens verzoek ("dat je dan even moet wachten op het resultaat
+    # zodat ie goed kijkt waar alle items kunnen ... rekening houdend met
+    # de zaagstrategie"): met een zoekbudget probeert de motor meerdere
+    # verwerkingsvolgordes (zie _ruis_sleutel/_sorteer_op_hoogte_met_ruis)
+    # en houdt de beste. Elk van deze drie scenario's (teruggevonden met
+    # een vaste seed via fuzz-zoeken, één per strategie omdat niet elk
+    # scenario voor elke strategie evenveel ruimte voor verbetering laat
+    # zien) is met de standaard, deterministische volgorde aantoonbaar
+    # niet optimaal: met budget plaatst de motor meer onderdelen op
+    # dezelfde ene plaat.
+    mat, onderdelen = scenario()
+    zonder_budget = genereer_zaagplan(mat, onderdelen, strategie=strategie, zoek_tijdsbudget=0.0)
+    met_budget = genereer_zaagplan(mat, onderdelen, strategie=strategie, zoek_tijdsbudget=2.0)
+
+    assert len(met_budget.niet_geplaatst) < len(zonder_budget.niet_geplaatst)
+    for p in met_budget.plaatsingen:
+        assert p.x + p.breedte <= mat.lengte + 1e-6
+        assert p.y + p.hoogte <= mat.breedte + 1e-6
+    for a, b in itertools.combinations(met_budget.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(a, b)

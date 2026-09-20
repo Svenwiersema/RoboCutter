@@ -99,7 +99,10 @@ def _naar_optimalisatie_materiaal(materiaal_id: str, materialen: MaterialenBibli
 
 
 def genereer_zaagplannen_voor_project(
-    project: Project, materialen: MaterialenBibliotheek, strategie: str = "efficient"
+    project: Project,
+    materialen: MaterialenBibliotheek,
+    strategie: str = "efficient",
+    zoek_tijdsbudget: float = 0.0,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -108,7 +111,12 @@ def genereer_zaagplannen_voor_project(
     Nederlandse waarschuwingen voor materialen die niet meer bestaan
     (bv. inmiddels verwijderd uit de bibliotheek) — diezelfde
     onderdelen worden dan overgeslagen in plaats van de hele generatie
-    te laten crashen."""
+    te laten crashen.
+
+    :param zoek_tijdsbudget: zie ``engine.genereer_zaagplan`` — geldt
+        hier PER MATERIAAL (elk materiaal in de zaaglijst is een eigen,
+        onafhankelijk pak-probleem en krijgt dus zijn eigen budget, niet
+        een gedeeld totaal over alle materialen samen)."""
 
     per_materiaal: dict[str, list[ZaaglijstRegel]] = {}
     for regel in bouw_zaaglijst(project):
@@ -151,7 +159,9 @@ def genereer_zaagplannen_voor_project(
                 )
             )
 
-        resultaten = genereer_zaagplannen(opt_materiaal, opt_onderdelen, strategie=strategie)
+        resultaten = genereer_zaagplannen(
+            opt_materiaal, opt_onderdelen, strategie=strategie, zoek_tijdsbudget=zoek_tijdsbudget
+        )
         for i, resultaat in enumerate(resultaten, start=1):
             plannen.append(
                 PlaatZaagplan(

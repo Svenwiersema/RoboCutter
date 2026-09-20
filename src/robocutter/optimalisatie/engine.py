@@ -90,6 +90,8 @@ hand van de gegenereerde voorbeelden — zie ``demo.py``):
 
 from __future__ import annotations
 
+import random
+import time
 from dataclasses import dataclass, replace
 
 from .models import (
@@ -104,6 +106,16 @@ from .models import (
 )
 
 _RANDVOLGORDE = (Rand.LINKS, Rand.ONDER, Rand.BOVEN, Rand.RECHTS)
+
+
+def _ruis_sleutel(waarde: float, rng: random.Random | None) -> float:
+    """Vermenigvuldigt een sorteersleutel met een kleine willekeurige
+    factor als ``rng`` gegeven is — gebruikt om de vier pak-heuristieken
+    andere verwerkingsvolgordes te laten proberen dan hun standaard
+    grootste/hoogste-eerst-sortering (zie ``genereer_zaagplan``'s
+    ``zoek_tijdsbudget``). Zonder ``rng`` (het standaardgedrag) blijft
+    de sortering exact zoals voorheen."""
+    return waarde if rng is None else waarde * rng.uniform(0.7, 1.3)
 
 
 @dataclass
@@ -313,7 +325,10 @@ def _splits_vrije_rechthoek(
 
 
 def _pak_efficient(
-    eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
+    eenheden: list[_Eenheid],
+    werkgebied: tuple[float, float, float, float],
+    kerf: float,
+    rng: random.Random | None = None,
 ) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Guillotine free-rectangle packing, best-area-fit, voor de
     strategie 'meest efficiënte plaatsing'. Bouwt de zaagvolgorde
@@ -331,7 +346,7 @@ def _pak_efficient(
     zaagvolgorde: list[Zaagsnede] = []
 
     # Grootste eerst plaatsen (best-area-fit werkt beter met grote stukken eerst).
-    volgorde = sorted(eenheden, key=lambda e: e.breedte * e.hoogte, reverse=True)
+    volgorde = sorted(eenheden, key=lambda e: _ruis_sleutel(e.breedte * e.hoogte, rng), reverse=True)
 
     for eenheid in volgorde:
         breedte, hoogte, geroteerd = _kies_afmeting(eenheid, None)
@@ -429,6 +444,37 @@ def _groepeer_op_hoogte(
         else:
             groepen.append([item])
     return groepen
+
+
+def _sorteer_op_hoogte_met_ruis(
+    genormaliseerd: list[tuple[_Eenheid, float, float, bool]], rng: random.Random | None
+) -> list[tuple[_Eenheid, float, float, bool]]:
+    """Sorteert op hoogte aflopend (ongewijzigd t.o.v. het
+    standaardgedrag) en husselt daarna, als ``rng`` gegeven is, alleen
+    de volgorde BINNEN elke (bijna) gelijke-hoogte-groep (zie
+    ``_groepeer_op_hoogte``) door elkaar — nooit tússen groepen. Anders
+    dan bij ``_pak_efficient``/``_pak_guillotine`` (waar ``_ruis_sleutel``
+    de sorteersleutel zelf mag vervuilen) is de aflopende-hoogte-volgorde
+    hier een STRUCTURELE aanname waar ``_vul_rij``/``_vind_plaatsbare_rij``
+    op leunen: een latere groep wordt verondersteld nooit hoger te zijn
+    dan een eerdere. Ruis op de sorteersleutel zelf bleek tijdens het
+    testen van deze zoekfunctie die aanname te kunnen breken (een kort
+    onderdeel dat door ruis toevallig vóór een lang onderdeel kwam),
+    waardoor een rij hoger uitpakte dan de resterende plaathoogte
+    toestond. Husselen binnen een groep is wel altijd veilig: de leden
+    verschillen per definitie minder dan ``_HOOGTE_TOLERANTIE`` in
+    hoogte, dus de daadwerkelijk geplaatste rijhoogte (het maximum van
+    de leden die ook echt in de rij komen) verandert daar niet wezenlijk
+    door."""
+    genormaliseerd = sorted(genormaliseerd, key=lambda t: t[2], reverse=True)
+    if rng is None:
+        return genormaliseerd
+    resultaat: list[tuple[_Eenheid, float, float, bool]] = []
+    for groep in _groepeer_op_hoogte(genormaliseerd):
+        groep = list(groep)
+        rng.shuffle(groep)
+        resultaat.extend(groep)
+    return resultaat
 
 
 def _vul_rij(
@@ -718,7 +764,10 @@ def _vind_plaatsbare_rij(
 
 
 def _pak_rijen(
-    eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
+    eenheden: list[_Eenheid],
+    werkgebied: tuple[float, float, float, float],
+    kerf: float,
+    rng: random.Random | None = None,
 ) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Rij-gebaseerde packing voor de strategie 'lange zijdes eerst':
     volledige-breedte rijen, binnen een rij van links naar rechts."""
@@ -736,7 +785,7 @@ def _pak_rijen(
         genormaliseerd.append((eenheid, b, h, rot))
 
     # Grootste hoogte eerst (rijen met de langste/breedste stukken onderaan/bovenaan eerst).
-    genormaliseerd.sort(key=lambda t: t[2], reverse=True)
+    genormaliseerd = _sorteer_op_hoogte_met_ruis(genormaliseerd, rng)
 
     plaatsingen: list[Plaatsing] = []
     niet_geplaatst: list[str] = []
@@ -781,7 +830,10 @@ def _pak_rijen(
 
 
 def _pak_stroken(
-    eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
+    eenheden: list[_Eenheid],
+    werkgebied: tuple[float, float, float, float],
+    kerf: float,
+    rng: random.Random | None = None,
 ) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Rij-gebaseerde packing voor de strategie 'Stroken': zoals
     ``_pak_rijen``, maar met overal dezelfde vaste strookhoogte i.p.v.
@@ -807,7 +859,7 @@ def _pak_stroken(
         b, h, rot = _kies_afmeting(eenheid, None)
         b, h, rot = _landschap_indien_vrij(eenheid, b, h, rot, breedte_plaat)
         genormaliseerd.append((eenheid, b, h, rot))
-    genormaliseerd.sort(key=lambda t: t[2], reverse=True)
+    genormaliseerd = _sorteer_op_hoogte_met_ruis(genormaliseerd, rng)
 
     strook_hoogte = max((h for (_, _, h, _) in genormaliseerd), default=0.0)
 
@@ -861,7 +913,10 @@ def _pak_stroken(
 
 
 def _pak_guillotine(
-    eenheden: list[_Eenheid], werkgebied: tuple[float, float, float, float], kerf: float
+    eenheden: list[_Eenheid],
+    werkgebied: tuple[float, float, float, float],
+    kerf: float,
+    rng: random.Random | None = None,
 ) -> tuple[list[Plaatsing], list[tuple[float, float, float, float]], list[str], list[Zaagsnede]]:
     """Recursieve rand-tot-rand guillotine-plaatsing voor de strategie
     'Guillotine' — zie de module-docstring voor het verschil met
@@ -876,7 +931,7 @@ def _pak_guillotine(
     op dat moment behandelde deelgebied is."""
 
     x0, y0, x1, y1 = werkgebied
-    resterend = sorted(eenheden, key=lambda e: e.breedte * e.hoogte, reverse=True)
+    resterend = sorted(eenheden, key=lambda e: _ruis_sleutel(e.breedte * e.hoogte, rng), reverse=True)
 
     plaatsingen: list[Plaatsing] = []
     vrije_rechten: list[tuple[float, float, float, float]] = []
@@ -1047,8 +1102,14 @@ def _kies_beste_pakresultaat(kandidaten: list[_PakResultaat], materiaal: Materia
 _GELDIGE_STRATEGIEEN = ("efficient", "rijen", "stroken", "guillotine")
 
 
+_MAX_POGINGEN_ZONDER_VERBETERING = 300  # zie genereer_zaagplan's zoek_tijdsbudget
+
+
 def genereer_zaagplan(
-    materiaal: Materiaal, onderdelen: list[Onderdeel], strategie: str = "efficient"
+    materiaal: Materiaal,
+    onderdelen: list[Onderdeel],
+    strategie: str = "efficient",
+    zoek_tijdsbudget: float = 0.0,
 ) -> ZaagplanResultaat:
     """Genereer een zaagplan voor één plaat van ``materiaal`` met de
     gegeven ``onderdelen``.
@@ -1063,7 +1124,25 @@ def genereer_zaagplan(
         module-docstring hierboven) — de motor zelf ondersteunt 'm hier
         nog wel rechtstreeks, o.a. omdat "efficient" 'm intern nog als
         kandidaat gebruikt.
-    """
+    :param zoek_tijdsbudget: aantal seconden dat de motor, bovenop de
+        standaard (deterministische) plaatsing, extra verwerkings-
+        volgordes van dezelfde onderdelen mag proberen om een betere
+        uitkomst te vinden (minder niet-geplaatste onderdelen, of bij
+        een gelijke stand minder afval) — zie ``_ruis_sleutel``. ``0``
+        (standaard) slaat deze extra zoektocht over en levert precies
+        de oude, deterministische uitkomst op, ongewijzigd t.o.v. vóór
+        deze parameter bestond. Op Svens verzoek ("dat je dan even moet
+        wachten op het resultaat zodat ie goed kijkt waar alle items
+        kunnen") geldt dit voor alle drie gebruikerskeuzes (efficient/
+        rijen/guillotine) — elke strategie blijft zijn eigen aanpak
+        gebruiken, maar probeert die met meerdere verwerkingsvolgordes.
+        Een nieuwe poging vervangt de tot dan toe beste uitkomst alleen
+        bij een STRIKTE verbetering (nooit bij gelijke stand — zo blijft
+        de uitkomst bij een klein/eenvoudig zaagplan waar geen betere
+        volgorde bestaat identiek aan zonder zoekbudget). Stopt vanzelf
+        eerder dan het budget als ``_MAX_POGINGEN_ZONDER_VERBETERING``
+        pogingen op rij niets beters meer opleveren — geen zin om door
+        te zoeken op een zaagplan dat al (vrijwel) optimaal is."""
 
     if strategie not in _GELDIGE_STRATEGIEEN:
         raise ValueError(
@@ -1160,38 +1239,57 @@ def genereer_zaagplan(
     else:
         overige_eenheden = eenheden
 
-    if strategie == "efficient":
-        # De greedy best-area-fit-heuristiek van _pak_efficient (steeds het
-        # vrije rechthoekje met de minste restruimte kiezen voor het
-        # huidige stuk) kan in de praktijk soms slechter uitpakken dan een
-        # van de andere drie heuristieken -- een bekende zwakte van greedy
-        # bin-packing: de lokaal beste keuze voor het huidige stuk is niet
-        # altijd de beste keuze op de lange termijn (fuzz-getest: elk van
-        # "guillotine"/"rijen"/"stroken" plaatst in zo'n 10% van de
-        # gevallen aantoonbaar meer stukken op dezelfde plaat dan
-        # "efficient" zelf). "efficient" probeert daarom alle vier en
-        # gebruikt gewoon de beste van de vier uitkomsten (zie
-        # _kies_beste_pakresultaat) i.p.v. blind op één heuristiek te
-        # vertrouwen -- "efficient" betekent hier dus letterlijk "het
-        # beste resultaat van alle beschikbare aanpakken", niet "altijd
-        # dezelfde ene slimme aanpak".
-        kandidaten = [
-            _pak_efficient(overige_eenheden, werkgebied, kerf),
-            _pak_guillotine(overige_eenheden, werkgebied, kerf),
-            _pak_rijen(overige_eenheden, werkgebied, kerf),
-            _pak_stroken(overige_eenheden, werkgebied, kerf),
-        ]
-        p2, vrije, np2, zaagvolgorde = _kies_beste_pakresultaat(kandidaten, materiaal)
-        alle_plaatsingen = plaatsingen + p2
-    elif strategie == "rijen":
-        p2, vrije, np2, zaagvolgorde = _pak_rijen(overige_eenheden, werkgebied, kerf)
-        alle_plaatsingen = plaatsingen + p2
-    elif strategie == "stroken":
-        p2, vrije, np2, zaagvolgorde = _pak_stroken(overige_eenheden, werkgebied, kerf)
-        alle_plaatsingen = plaatsingen + p2
-    else:  # "guillotine"
-        p2, vrije, np2, zaagvolgorde = _pak_guillotine(overige_eenheden, werkgebied, kerf)
-        alle_plaatsingen = plaatsingen + p2
+    def _kandidaten_voor(rng: random.Random | None) -> list[_PakResultaat]:
+        if strategie == "efficient":
+            # De greedy best-area-fit-heuristiek van _pak_efficient (steeds
+            # het vrije rechthoekje met de minste restruimte kiezen voor het
+            # huidige stuk) kan in de praktijk soms slechter uitpakken dan
+            # een van de andere drie heuristieken -- een bekende zwakte van
+            # greedy bin-packing: de lokaal beste keuze voor het huidige
+            # stuk is niet altijd de beste keuze op de lange termijn
+            # (fuzz-getest: elk van "guillotine"/"rijen"/"stroken" plaatst
+            # in zo'n 10% van de gevallen aantoonbaar meer stukken op
+            # dezelfde plaat dan "efficient" zelf). "efficient" probeert
+            # daarom alle vier en gebruikt gewoon de beste van de vier
+            # uitkomsten (zie _kies_beste_pakresultaat) i.p.v. blind op één
+            # heuristiek te vertrouwen -- "efficient" betekent hier dus
+            # letterlijk "het beste resultaat van alle beschikbare
+            # aanpakken", niet "altijd dezelfde ene slimme aanpak".
+            return [
+                _pak_efficient(overige_eenheden, werkgebied, kerf, rng=rng),
+                _pak_guillotine(overige_eenheden, werkgebied, kerf, rng=rng),
+                _pak_rijen(overige_eenheden, werkgebied, kerf, rng=rng),
+                _pak_stroken(overige_eenheden, werkgebied, kerf, rng=rng),
+            ]
+        if strategie == "rijen":
+            return [_pak_rijen(overige_eenheden, werkgebied, kerf, rng=rng)]
+        if strategie == "stroken":
+            return [_pak_stroken(overige_eenheden, werkgebied, kerf, rng=rng)]
+        return [_pak_guillotine(overige_eenheden, werkgebied, kerf, rng=rng)]  # "guillotine"
+
+    beste = _kies_beste_pakresultaat(_kandidaten_voor(None), materiaal)
+
+    if zoek_tijdsbudget > 0 and overige_eenheden:
+        deadline = time.monotonic() + zoek_tijdsbudget
+        pogingen_zonder_verbetering = 0
+        iteratie = 0
+        while (
+            time.monotonic() < deadline
+            and pogingen_zonder_verbetering < _MAX_POGINGEN_ZONDER_VERBETERING
+        ):
+            iteratie += 1
+            variant = _kies_beste_pakresultaat(
+                _kandidaten_voor(random.Random(iteratie)), materiaal
+            )
+            nieuwe_beste = _kies_beste_pakresultaat([beste, variant], materiaal)
+            if nieuwe_beste is not beste:
+                beste = nieuwe_beste
+                pogingen_zonder_verbetering = 0
+            else:
+                pogingen_zonder_verbetering += 1
+
+    p2, vrije, np2, zaagvolgorde = beste
+    alle_plaatsingen = plaatsingen + p2
 
     if fabriek_snedes:
         # De fabriekskantenband-scheidingssneden komen altijd het eerst
@@ -1245,7 +1343,10 @@ def _onderdelen_voor_niet_geplaatst(
 
 
 def genereer_zaagplannen(
-    materiaal: Materiaal, onderdelen: list[Onderdeel], strategie: str = "efficient"
+    materiaal: Materiaal,
+    onderdelen: list[Onderdeel],
+    strategie: str = "efficient",
+    zoek_tijdsbudget: float = 0.0,
 ) -> list[ZaagplanResultaat]:
     """Genereert zoveel platen van ``materiaal`` als nodig zijn om alle
     ``onderdelen`` te plaatsen (onbeperkte voorraad aangenomen — dit is
@@ -1254,14 +1355,22 @@ def genereer_zaagplannen(
     enzovoort, tot alles geplaatst is. Onderdelen die zelfs op een
     volledig lege plaat niet passen (te groot voor het materiaal) komen
     terecht in ``niet_geplaatst`` van de laatste gegenereerde plaat i.p.v.
-    tot in het oneindige nieuwe, even lege platen op te leveren."""
+    tot in het oneindige nieuwe, even lege platen op te leveren.
+
+    :param zoek_tijdsbudget: zie ``genereer_zaagplan`` — geldt hier als
+        TOTAAL budget over alle platen van deze aanroep samen (niet per
+        plaat): elke volgende plaat krijgt wat er van het budget nog
+        over is, zodat een project met meerdere platen nooit veel langer
+        dan dit ene budget hoeft te wachten."""
 
     resterend = list(onderdelen)
     resultaten: list[ZaagplanResultaat] = []
+    deadline = time.monotonic() + zoek_tijdsbudget if zoek_tijdsbudget > 0 else None
     for _ in range(_MAX_PLATEN):
         if not resterend:
             break
-        resultaat = genereer_zaagplan(materiaal, resterend, strategie=strategie)
+        plaat_budget = max(0.0, deadline - time.monotonic()) if deadline is not None else 0.0
+        resultaat = genereer_zaagplan(materiaal, resterend, strategie=strategie, zoek_tijdsbudget=plaat_budget)
 
         if not resultaat.plaatsingen:
             # Geen enkel onderdeel van wat nog over was kon zelfs op een

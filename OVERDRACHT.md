@@ -2182,6 +2182,80 @@ houden.
   een bredere efficiëntie-iteratie (bv. meer/betere heuristieken
   proberen) is een vervolgstap.
 
+- **Zaagmotor: optioneel "zoekbudget" toegevoegd, op Svens verzoek**
+  ("ik heb liever dat je het zo aanpakt dat ie het goed doet en dat je
+  dan even moet wachten op het resultaat zodat ie goed kijkt waar alle
+  items kunnen en wat het beste is rekening houdend met de
+  zaagstrategie" — scope bevestigd via AskUserQuestion: alle drie
+  gebruikerskeuzes (Efficiënt/Rijen/Guillotine), max ongeveer een
+  minuut).
+  1. **`genereer_zaagplan`/`genereer_zaagplannen` (`engine.py`) kregen
+     een nieuwe, optionele parameter `zoek_tijdsbudget`** (seconden,
+     standaard `0.0` = uitgeschakeld, exact het oude gedrag). Met een
+     budget > 0 blijft de motor, ná de bestaande deterministische
+     plaatsing, extra verwerkingsvolgordes proberen (nieuwe helper
+     `_ruis_sleutel` voor "efficient"/"guillotine": vermenigvuldigt de
+     grootte-sorteersleutel met een kleine willekeurige factor) en houdt
+     steeds de beste uitkomst (`_kies_beste_pakresultaat`, ongewijzigd)
+     — een nieuwe poging vervangt de tot dan toe beste alleen bij een
+     STRIKTE verbetering, nooit bij een gelijke stand, zodat een
+     triviaal zaagplan zonder betere volgorde exact hetzelfde resultaat
+     oplevert als zonder budget. Stopt vanzelf eerder dan het budget
+     zodra `_MAX_POGINGEN_ZONDER_VERBETERING` (300) pogingen op rij
+     niets beters meer opleveren. `genereer_zaagplannen` (meerdere
+     platen) behandelt het budget als TOTAAL over alle platen van die
+     aanroep samen (aftellend per plaat), niet per plaat afzonderlijk —
+     anders zou een project met meerdere platen een veelvoud van het
+     ingestelde budget kunnen gaan duren.
+  2. **Belangrijke bug gevonden tijdens het testen van deze feature
+     zelf** (dus vóórdat dit bij Sven terechtkwam): dezelfde
+     `_ruis_sleutel`-aanpak toegepast op "Rijen"/"Stroken" bleek
+     rijen te kunnen opleveren die HOGER waren dan de resterende
+     plaathoogte toestond (dus buiten de plaat, of overlappend met de
+     volgende rij) — grondoorzaak: `_pak_rijen`/`_pak_stroken` (en de
+     helpers `_vul_rij`/`_vind_plaatsbare_rij` eronder) gaan er
+     STRUCTUREEL van uit dat de sortering op hoogte strikt aflopend is
+     (een latere hoogte-groep is nooit hoger dan een eerdere) — ruis op
+     de sorteersleutel zelf kan die aanname breken (een kort onderdeel
+     dat door ruis toevallig vóór een lang onderdeel komt). Fix: nieuwe,
+     veiligere helper `_sorteer_op_hoogte_met_ruis` sorteert eerst
+     gewoon exact op hoogte (ongewijzigd), en husselt daarna alleen de
+     volgorde BINNEN elke (bijna) gelijke-hoogte-groep (``_HOOGTE_TOLERANTIE``)
+     door elkaar — dat is altijd veilig, want de leden van zo'n groep
+     verschillen per definitie nauwelijks in hoogte. "efficient" en
+     "guillotine" gebruiken nog steeds de vrijere `_ruis_sleutel` op hun
+     eigen (structureel ongevoelige) grootte-sortering.
+  3. **UI (`project_detail_page.py`)**: "Zaagplan genereren"/"Opnieuw
+     genereren" roepen `genereer_zaagplannen_voor_project` nu aan met
+     `zoek_tijdsbudget=60.0` (nieuwe module-constante
+     `_ZOEK_TIJDSBUDGET_SECONDEN`). Omdat dit de UI tot een minuut kan
+     laten "hangen" zonder feedback, toont `_genereer_zaagplannen` eerst
+     meteen een "Bezig met zoeken naar het beste zaagplan…"-kaart
+     (`_bouw_zaagplan_bezig`, zelfde kaart-stijl als de bestaande
+     "Nog geen zaagplan"-placeholder) en zet een wachtcursor
+     (`QApplication.setOverrideCursor`) voor de duur van de berekening.
+     Geen aparte achtergrond-thread — een bewuste vereenvoudiging, dus
+     de rest van de UI is écht bevroren tijdens het zoeken (acceptabel
+     voor v1, gegeven dat Sven expliciet aangaf te willen wachten op het
+     resultaat); een achtergrond-thread met voortgang is een kandidaat
+     voor een latere iteratie als dit in de praktijk hinderlijk blijkt.
+  Geverifieerd: volledige testsuite nu 149 tests (4 nieuwe: budget=0
+  geeft bewijsbaar exact hetzelfde resultaat als voorheen; drie
+  scenario's — één per strategie, teruggevonden via fuzz-zoeken — waar
+  een budget aantoonbaar minder niet-geplaatste onderdelen oplevert dan
+  zonder budget), plus een brede geometrie-fuzzrun (450 runs, gevarieerde
+  materiaal-/onderdeel-parameters incl. fabriekskantenband/nerfrichting,
+  mét budget ingeschakeld): **0 fouten**. Een losse verbeter-zoekscript
+  liet op willekeurige scenario's concrete winst zien binnen de
+  stagnatie-grens (bijv. 33→27 en 13→11 niet-geplaatste stuks op
+  dezelfde plaat), typisch binnen een fractie van een seconde tot een
+  paar tellen — het volle budget wordt dus alleen echt volledig benut
+  bij grotere/lastigere zaagplannen waar steeds weer een betere volgorde
+  te vinden is. Ook geverifieerd met een end-to-end offscreen smoke-test
+  van de echte UI-flow (`ProjectDetailPage._genereer_zaagplannen` met
+  een tijdelijke database): bezig-kaart, generatie, opslaan, geen
+  crash.
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

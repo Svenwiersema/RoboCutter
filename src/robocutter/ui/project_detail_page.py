@@ -55,6 +55,7 @@ from typing import Callable
 from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
+    QApplication,
     QButtonGroup,
     QComboBox,
     QCompleter,
@@ -122,6 +123,13 @@ _STRATEGIE_LABEL = {
     "rijen": "Rijen",
     "guillotine": "Guillotine",
 }
+# Op Svens verzoek ("dat je dan even moet wachten op het resultaat zodat
+# ie goed kijkt waar alle items kunnen ... rekening houdend met de
+# zaagstrategie"): de motor mag tot een minuut extra verwerkingsvolgordes
+# proberen per materiaal (zie engine.genereer_zaagplan's zoek_tijdsbudget)
+# in ruil voor een mogelijk beter zaagplan. Stopt vanzelf eerder zodra
+# geen enkele poging meer verbetert (zie _MAX_POGINGEN_ZONDER_VERBETERING).
+_ZOEK_TIJDSBUDGET_SECONDEN = 60.0
 _NERFRICHTING_LABEL = {
     Nerfrichting.LANGE_ZIJDE: "Lange zijde",
     Nerfrichting.KORTE_ZIJDE: "Korte zijde",
@@ -1565,9 +1573,23 @@ class ProjectDetailPage(QWidget):
         self._zaagplan_strategie = waarde
 
     def _genereer_zaagplannen(self) -> None:
-        plannen, waarschuwingen = genereer_zaagplannen_voor_project(
-            self._project(), self._materialen, strategie=self._zaagplan_strategie
-        )
+        # Het grondiger zoeken (zoek_tijdsbudget) kan tot een minuut
+        # duren per materiaal — laat dat expliciet zien i.p.v. de UI
+        # zonder feedback te laten "hangen" (op Svens verzoek: "dat je
+        # dan even moet wachten op het resultaat zodat ie goed kijkt").
+        _clear_layout(self._zaagplannen_content)
+        self._zaagplannen_content.addWidget(self._bouw_zaagplan_bezig())
+        QApplication.processEvents()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            plannen, waarschuwingen = genereer_zaagplannen_voor_project(
+                self._project(),
+                self._materialen,
+                strategie=self._zaagplan_strategie,
+                zoek_tijdsbudget=_ZOEK_TIJDSBUDGET_SECONDEN,
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
         self._zaagplannen = plannen
         self._zaagplan_waarschuwingen = waarschuwingen
         # Meteen opslaan zodat dit zaagplan overleeft als je het project
@@ -1576,6 +1598,31 @@ class ProjectDetailPage(QWidget):
         self._zaagplannen_opslag.opslaan(self._project_id, plannen, waarschuwingen, self._zaagplan_strategie)
         self._ververs_zaagplannen_paneel()
         self._ververs_labels_paneel()
+
+    def _bouw_zaagplan_bezig(self) -> QWidget:
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(30, 56, 30, 56)
+        layout.setSpacing(14)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        titel = QLabel("Bezig met zoeken naar het beste zaagplan…")
+        titel.setProperty("role", "placeholderTitle")
+        titel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(titel)
+
+        tekst = QLabel(
+            "RoboCutter probeert meerdere verwerkingsvolgordes en houdt de "
+            "beste — dit kan tot ongeveer een minuut duren."
+        )
+        tekst.setProperty("role", "placeholderText")
+        tekst.setWordWrap(True)
+        tekst.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tekst.setMaximumWidth(420)
+        layout.addWidget(tekst, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        return kaart
 
     def _ververs_zaagplannen_paneel(self) -> None:
         _clear_layout(self._zaagplannen_content)
