@@ -2138,6 +2138,50 @@ houden.
   ondersteuning voor een specifiek labelprinter-formaat (alleen het
   A4-vel).
 
+- **Echte zaagmotor-bug gevonden en gefixt via fuzz-testen, op Svens
+  verzoek** ("alle platen geven nog veel bugs en zijn niet efficiënt
+  genoeg"). Een uitgebreid fuzz-script (20 seeds × 1000 runs × 4
+  strategieën, incl. willekeurige randafzaag/min-reststukgrootte/
+  fabriekskantenband/nerfrichting-combinaties — zie de aanpak in
+  eerdere iteraties hierboven) liet zien dat "efficient" en
+  "guillotine" in ongeveer 0,05% van de gevallen een onderdeel net
+  buiten de plaatrand plaatsten. **Grondoorzaak, in zowel
+  `_pak_efficient` als `_pak_guillotine` (`engine.py`)**: na een
+  plaatsing werd bepaald of er nog een kerf verrekend moest worden
+  door te toetsen aan de rand van de HELE plaat (`x1`/`y1`) in plaats
+  van aan de rand van het op dat moment behandelde vrije rechthoek zelf
+  (`fw`/`fh`) — bij een intern vrij rechthoek dat al eerder ophoudt dan
+  de plaatrand is dat verschil onschuldig, maar zodra de resterende
+  marge kleiner was dan de kerf zelf (bv. nog maar 1mm over terwijl de
+  kerf 4mm is) werd er alsnog een volle kerf afgetrokken, zonder dat
+  `genomen_b`/`genomen_h` afgetopt werden op `fw`/`fh` — het
+  resulterende "vrije" rechthoek ernaast/eronder werd daardoor een fractie
+  te BREED/HOOG berekend, waardoor een net iets te groot onderdeel er
+  alsnog in "paste" en over de plaatrand heen kwam te staan. Fix: de
+  kerf-toets gebruikt nu `fw`/`fh` i.p.v. `x1`/`y1`, en `genomen_b`/
+  `genomen_h` worden expliciet afgetopt op `fw`/`fh` (`min(b + kerf_r,
+  fw)`). Nieuwe regressietest `test_krappe_restmarge_kleiner_dan_de_kerf_geeft_geen_plaatsing_buiten_de_plaat`
+  (`tests/test_engine.py`, geparametriseerd over "efficient"/
+  "guillotine") gebruikt het exacte, met fuzz-testen teruggevonden
+  scenario (materiaal 2620×1552mm, kerf 4mm, 10 onderdeeltypes) —
+  bevestigd dat deze test faalt op de ongewijzigde code (`git stash`)
+  en slaagt na de fix. Volledige testsuite nu 145 tests, allemaal
+  groen. Een vervolg-fuzzrun van 20 seeds × 1000 runs × 4 strategieën
+  (80.000 runs totaal) na de fix: **0 fouten** (was voorheen enkele
+  tientallen over eenzelfde schaal, geconcentreerd in "efficient"/
+  "guillotine" — "rijen" en "stroken" hadden deze bug niet, want die
+  gebruiken een andere kolom-gebaseerde plaatsingsroute).
+  **Efficiëntie, ter info (nog niet aangepakt)**: gemiddelde benutting
+  over dezelfde fuzzrun was efficient 73%, guillotine 76%, rijen 71%,
+  stroken 33% (stroken's vaste, plaatbrede strookhoogte is hier
+  duidelijk de boosdoener bij ongelijk hoge onderdelen — geen bug, wel
+  een reëel efficiëntieverschil, en "stroken" is toch al geen
+  gebruikerskeuze meer, alleen nog een interne kandidaat voor
+  "efficient"). Sven wil de zaagmotor nog verder onder de loep nemen op
+  efficiëntie — dit is de eerste, geverifieerde bugfix-stap daarvan;
+  een bredere efficiëntie-iteratie (bv. meer/betere heuristieken
+  proberen) is een vervolgstap.
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

@@ -356,11 +356,19 @@ def _pak_efficient(
         plaatsingen.extend(eenheid.expand(fx, fy, b, h, rot))
 
         # Ruimte die door de kerf verloren gaat (alleen als er nog een
-        # snede nodig is, d.w.z. niet aan de plaatrand).
-        kerf_r = kerf if (fx + b) < x1 - 1e-9 else 0.0
-        kerf_o = kerf if (fy + h) < y1 - 1e-9 else 0.0
-        genomen_b = b + kerf_r
-        genomen_h = h + kerf_o
+        # snede nodig is, d.w.z. niet aan de rand van DIT vrije
+        # rechthoek — niet de rand van de hele plaat: een intern vrij
+        # rechthoek kan al eerder ophouden dan de plaatrand, en dan is
+        # er lokaal geen ruimte meer voor nog een kerf).
+        kerf_r = kerf if b < fw - 1e-9 else 0.0
+        kerf_o = kerf if h < fh - 1e-9 else 0.0
+        # Afgetopt op fw/fh: als de resterende marge kleiner is dan de
+        # kerf zelf (bv. nog maar 1mm over terwijl de kerf 4mm is) past
+        # de kerf daar fysiek niet meer — dat randje is dan gewoon afval
+        # i.p.v. een (negatief-brede, dus buiten de plaat stekende)
+        # nieuw vrij rechthoek op te leveren.
+        genomen_b = min(b + kerf_r, fw)
+        genomen_h = min(h + kerf_o, fh)
 
         nieuwe_rechten, sneden = _splits_vrije_rechthoek(
             fx, fy, fw, fh, genomen_b, genomen_h, len(zaagvolgorde) + 1
@@ -901,10 +909,15 @@ def _pak_guillotine(
         eenheid = resterend.pop(i)
         plaatsingen.extend(eenheid.expand(fx, fy, b, h, rot))
 
-        kerf_r = kerf if (fx + b) < x1 - 1e-9 else 0.0
-        kerf_o = kerf if (fy + h) < y1 - 1e-9 else 0.0
-        genomen_b = b + kerf_r
-        genomen_h = h + kerf_o
+        # Zelfde correctie als in `_pak_efficient`: toetsen aan de rand
+        # van DIT vrije rechthoek (fw/fh), niet aan de rand van de hele
+        # plaat, en aftoppen zodat een marge kleiner dan de kerf geen
+        # negatief-brede (buiten de plaat stekende) nieuwe vrije
+        # rechthoek kan opleveren.
+        kerf_r = kerf if b < fw - 1e-9 else 0.0
+        kerf_o = kerf if h < fh - 1e-9 else 0.0
+        genomen_b = min(b + kerf_r, fw)
+        genomen_h = min(h + kerf_o, fh)
 
         nieuwe_rechten, sneden = _splits_vrije_rechthoek(
             fx, fy, fw, fh, genomen_b, genomen_h, len(zaagvolgorde) + 1

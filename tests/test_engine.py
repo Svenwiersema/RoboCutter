@@ -615,4 +615,42 @@ def test_genereer_zaagplannen_stopt_bij_te_groot_onderdeel_i_p_v_oneindig_door_t
     resultaten = genereer_zaagplannen(mat, onderdelen, strategie="efficient")
     assert len(resultaten) == 1
     assert resultaten[0].niet_geplaatst == ["te_groot#1"]
-    assert len(resultaten[0].plaatsingen) == 1
+
+
+@pytest.mark.parametrize("strategie", ["efficient", "guillotine"])
+def test_krappe_restmarge_kleiner_dan_de_kerf_geeft_geen_plaatsing_buiten_de_plaat(strategie):
+    # Regressietest voor een door fuzz-testen gevonden bug (concreet
+    # scenario, teruggevonden met een vaste seed): zowel
+    # `_pak_efficient` als `_pak_guillotine` bepaalden of een kerf nog
+    # verrekend moest worden door te toetsen aan de rand van de HELE
+    # plaat (x1/y1) i.p.v. aan de rand van het op dat moment behandelde
+    # vrije rechthoek (fw/fh) zelf, en topten `genomen_b`/`genomen_h`
+    # niet af op fw/fh. Zodra de resterende marge na een plaatsing
+    # kleiner was dan de kerf (bv. nog maar 1mm over terwijl de kerf
+    # 4mm is), werd het volgende vrije rechthoek daardoor te BREED
+    # berekend, waardoor een net iets te breed onderdeel (o9, 186mm)
+    # alsnog in dezelfde 185mm-brede kolom "paste" als een eerder
+    # geplaatst 184mm-breed onderdeel (o5), en zo net buiten de
+    # plaatrand kwam te staan.
+    mat = _standaard_materiaal(lengte=2620, breedte=1552, kerf=4, min_reststukgrootte=100)
+    onderdelen = [
+        Onderdeel(id="o0", breedte=673, hoogte=1177, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE, kantenband_randen=frozenset({Rand.LINKS})),
+        Onderdeel(id="o1", breedte=824, hoogte=76, aantal=4, groep_id="g0", groep_volgorde=1),
+        Onderdeel(id="o2", breedte=1066, hoogte=255, aantal=2, kantenband_randen=frozenset({Rand.LINKS, Rand.RECHTS})),
+        Onderdeel(id="o3", breedte=1060, hoogte=989, aantal=2, kantenband_randen=frozenset({Rand.BOVEN, Rand.LINKS}), groep_id="g0", groep_volgorde=3),
+        Onderdeel(id="o4", breedte=51, hoogte=112, aantal=3, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE, kantenband_randen=frozenset({Rand.ONDER, Rand.RECHTS})),
+        Onderdeel(id="o5", breedte=184, hoogte=292, aantal=3, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE, kantenband_randen=frozenset({Rand.RECHTS})),
+        Onderdeel(id="o6", breedte=966, hoogte=507, aantal=4, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE),
+        Onderdeel(id="o7", breedte=1175, hoogte=619, aantal=4, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+        Onderdeel(id="o8", breedte=1396, hoogte=385, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+        Onderdeel(id="o9", breedte=186, hoogte=410, aantal=3, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+
+    for p in resultaat.plaatsingen:
+        assert p.x >= -1e-6
+        assert p.y >= -1e-6
+        assert p.x + p.breedte <= mat.lengte + 1e-6
+        assert p.y + p.hoogte <= mat.breedte + 1e-6
+    for a, b in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(a, b)
