@@ -105,6 +105,11 @@ _ICONS: dict[str, str] = {
         <path d="M14.5 3.5V8h4M8.5 13h7M8.5 16.5h7" {stroke}/>
     '''.replace("{stroke}", _STROKE),
     "list": '<path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
+    "loader": '<path d="M12 3.5a8.5 8.5 0 108.5 8.5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>',
+    "swap": '''
+        <path d="M4 8h13M14 4l3 4-3 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20 16H7M10 20l-3-4 3-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    ''',
 }
 
 

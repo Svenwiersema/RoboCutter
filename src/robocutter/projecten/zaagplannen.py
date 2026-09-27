@@ -79,6 +79,14 @@ class PlaatZaagplan:
             return f"Groep {basis_id.removeprefix('groep:')}"
         return onderdeel_of_unit_id
 
+    def reden_voor(self, niet_geplaatst_unit_id: str) -> str:
+        """Leesbare uitleg waarom deze ``niet_geplaatst``-unit-id niet op
+        deze plaat geplaatst kon worden, zie
+        ``ZaagplanResultaat.niet_geplaatst_redenen``. Lege string als er
+        (onverwacht) geen reden voor bekend is."""
+
+        return self.resultaat.niet_geplaatst_redenen.get(niet_geplaatst_unit_id, "")
+
 
 def _naar_optimalisatie_materiaal(materiaal_id: str, materialen: MaterialenBibliotheek) -> OptMateriaal | None:
     try:
@@ -103,6 +111,7 @@ def genereer_zaagplannen_voor_project(
     materialen: MaterialenBibliotheek,
     strategie: str = "efficient",
     zoek_tijdsbudget: float = 0.0,
+    min_zoek_tijdsbudget: float = 0.0,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -116,7 +125,9 @@ def genereer_zaagplannen_voor_project(
     :param zoek_tijdsbudget: zie ``engine.genereer_zaagplan`` — geldt
         hier PER MATERIAAL (elk materiaal in de zaaglijst is een eigen,
         onafhankelijk pak-probleem en krijgt dus zijn eigen budget, niet
-        een gedeeld totaal over alle materialen samen)."""
+        een gedeeld totaal over alle materialen samen).
+    :param min_zoek_tijdsbudget: zie ``engine.genereer_zaagplannen`` —
+        wordt hier ook per materiaal/plaat toegepast."""
 
     per_materiaal: dict[str, list[ZaaglijstRegel]] = {}
     for regel in bouw_zaaglijst(project):
@@ -160,7 +171,11 @@ def genereer_zaagplannen_voor_project(
             )
 
         resultaten = genereer_zaagplannen(
-            opt_materiaal, opt_onderdelen, strategie=strategie, zoek_tijdsbudget=zoek_tijdsbudget
+            opt_materiaal,
+            opt_onderdelen,
+            strategie=strategie,
+            zoek_tijdsbudget=zoek_tijdsbudget,
+            min_zoek_tijdsbudget=min_zoek_tijdsbudget,
         )
         for i, resultaat in enumerate(resultaten, start=1):
             plannen.append(

@@ -71,6 +71,7 @@ from robocutter.modellen.bibliotheek import ModellenBibliotheek, valideer
 from robocutter.modellen.models import Model, ModelOnderdeel, Nerfrichting, Rand, SubModelVerwijzing
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.randen_diagram import RandenDiagram
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
@@ -381,21 +382,6 @@ class ModelDetailPage(QWidget):
         group.buttons()[0].setChecked(True)
         return container, group
 
-    def _rand_chip_rij(self, section: QVBoxLayout) -> dict[Rand, QPushButton]:
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        buttons: dict[Rand, QPushButton] = {}
-        for rand in Rand:
-            btn = QPushButton(_RAND_LABEL[rand])
-            btn.setProperty("role", "chipToggle")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            row.addWidget(btn)
-            buttons[rand] = btn
-        row.addStretch(1)
-        section.addLayout(row)
-        return buttons
-
     # ------------------------------------------------------------------
     # Secties
     # ------------------------------------------------------------------
@@ -499,12 +485,23 @@ class ModelDetailPage(QWidget):
         breedte_wrap, self._of_breedte = self._field_spin()
         breedte_col.addWidget(breedte_wrap)
         afmeting_rij.addLayout(breedte_col)
+
+        of_wissel_btn = QToolButton()
+        of_wissel_btn.setIcon(icon("swap", self._theme.text_muted, 15))
+        of_wissel_btn.setAutoRaise(True)
+        of_wissel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        of_wissel_btn.setToolTip("Breedte en hoogte omwisselen (bv. per ongeluk verwisseld ingevoerd)")
+        of_wissel_btn.clicked.connect(self._of_wissel_breedte_hoogte)
+        afmeting_rij.addWidget(of_wissel_btn, 0, Qt.AlignmentFlag.AlignBottom)
+
         hoogte_col = QVBoxLayout()
         hoogte_col.addWidget(self._field_label("Hoogte mm"))
         hoogte_wrap, self._of_hoogte = self._field_spin()
         hoogte_col.addWidget(hoogte_wrap)
         afmeting_rij.addLayout(hoogte_col)
         rechts_layout.addLayout(afmeting_rij)
+        self._of_breedte.valueChanged.connect(self._of_ververs_rand_diagram)
+        self._of_hoogte.valueChanged.connect(self._of_ververs_rand_diagram)
 
         rechts_layout.addWidget(self._field_label("Aantal"))
         aantal_wrap, self._of_aantal = self._field_spin_int(minimum=1, maximum=1000)
@@ -517,7 +514,8 @@ class ModelDetailPage(QWidget):
         rechts_layout.addWidget(nerf_widget)
 
         rechts_layout.addWidget(self._field_label("Kantenband op"))
-        self._of_rand_buttons = self._rand_chip_rij(rechts_layout)
+        self._of_rand_diagram = RandenDiagram(self._theme)
+        rechts_layout.addWidget(self._of_rand_diagram)
 
         self._of_fabriek = QCheckBox("Fabriekskantenband vereist")
         rechts_layout.addWidget(self._of_fabriek)
@@ -689,6 +687,16 @@ class ModelDetailPage(QWidget):
 
         return row
 
+    def _of_wissel_breedte_hoogte(self) -> None:
+        # Op Svens verzoek: snel breedte/hoogte omdraaien als je ze per
+        # ongeluk verwisseld hebt ingevoerd.
+        breedte, hoogte = self._of_breedte.value(), self._of_hoogte.value()
+        self._of_breedte.setValue(hoogte)
+        self._of_hoogte.setValue(breedte)
+
+    def _of_ververs_rand_diagram(self) -> None:
+        self._of_rand_diagram.set_afmetingen(self._of_breedte.value(), self._of_hoogte.value())
+
     def _reset_onderdeel_form(self) -> None:
         self._bewerk_onderdeel_index = None
         self._onderdeel_form_titel.setText("NIEUW ONDERDEEL")
@@ -701,8 +709,8 @@ class ModelDetailPage(QWidget):
         self._of_hoogte.setValue(0)
         self._of_aantal.setValue(1)
         self._of_nerf_group.buttons()[0].setChecked(True)
-        for btn in self._of_rand_buttons.values():
-            btn.setChecked(False)
+        self._of_rand_diagram.set_geselecteerde_randen(frozenset())
+        self._of_ververs_rand_diagram()
         self._of_fabriek.setChecked(False)
         self._of_groep_naam.clear()
         self._of_groep_volgorde.setValue(0)
@@ -718,8 +726,7 @@ class ModelDetailPage(QWidget):
         self._of_aantal.setValue(o.aantal)
         for btn in self._of_nerf_group.buttons():
             btn.setChecked(btn.property("waarde") == o.nerfrichting_vereist)
-        for rand, btn in self._of_rand_buttons.items():
-            btn.setChecked(rand in o.kantenband_randen)
+        self._of_rand_diagram.set_geselecteerde_randen(o.kantenband_randen)
         self._of_fabriek.setChecked(o.fabriekskantenband_vereist)
         self._of_groep_naam.setText(o.groep_id or "")
         self._of_groep_volgorde.setValue(o.groep_volgorde or 0)
@@ -752,7 +759,7 @@ class ModelDetailPage(QWidget):
             hoogte=self._of_hoogte.value(),
             aantal=self._of_aantal.value(),
             nerfrichting_vereist=nerf_waarde,
-            kantenband_randen=frozenset(r for r, b in self._of_rand_buttons.items() if b.isChecked()),
+            kantenband_randen=self._of_rand_diagram.geselecteerde_randen(),
             fabriekskantenband_vereist=self._of_fabriek.isChecked(),
             groep_id=groep_naam,
             groep_volgorde=(self._of_groep_volgorde.value() if groep_naam else None),

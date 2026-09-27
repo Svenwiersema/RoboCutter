@@ -119,6 +119,7 @@ class ZaagplanResultaat:
     afval_oppervlak: float = 0.0
     zaagvolgorde: list[Zaagsnede] = field(default_factory=list)
     niet_geplaatst: list[str] = field(default_factory=list)
+    niet_geplaatst_redenen: dict[str, str] = field(default_factory=dict)
 
     @property
     def benuttingspercentage(self) -> float:

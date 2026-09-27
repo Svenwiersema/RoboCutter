@@ -125,3 +125,22 @@ def test_naam_voor_zoekt_zowel_losse_als_groep_units_op():
     # niet-geplaatste groep heeft de vorm "groep:<id>", geen "#instantie".
     assert plan.naam_voor("r0#1") == "Ladefront"
     assert plan.naam_voor("groep:g1").startswith("Groep")
+
+
+def test_reden_voor_geeft_uitleg_voor_een_te_groot_onderdeel():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal(lengte=1000, breedte=1000))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(hout.id, naam="Te groot paneel", breedte=5000, hoogte=5000, aantal=1),
+            ],
+        )
+    )
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen)
+    plan = plannen[0]
+    assert plan.resultaat.niet_geplaatst == ["r0#1"]
+    assert "te groot" in plan.reden_voor("r0#1")
+    assert plan.reden_voor("onbestaande#1") == ""

@@ -152,6 +152,73 @@ class _Eenheid:
     _kerf: float = 0.0
 
 
+def _reden_niet_geplaatst(eenheid: _Eenheid, materiaal: Materiaal) -> str:
+    """Legt in gewone-mensen-taal uit waarom ``eenheid`` zelfs op een
+    volledig lege plaat van ``materiaal`` niet geplaatst kon worden —
+    getoond in de zaagplan-UI (op Svens verzoek: "ik wil ook een
+    functie als hij niks plaatst dat ie aangeeft ... waarom hij deze
+    item niet heeft geplaatst"). Puur een afmeting-toets tegen het
+    bruikbare werkgebied (na randafzaag-marge) — losstaand van de
+    pak-heuristieken zelf, dus dit kan nooit een geldige plaatsing
+    alsnog blokkeren of het pakresultaat beinvloeden.
+
+    Houdt ook rekening met de fabriekskantenband-regel uit
+    ``_plaats_fabriek_rand``: een onderdeel met een ``kantenband_randen``-
+    eis die een rand van ``materiaal`` raakt die zelf al fabrieks-
+    kantenband heeft, roteert daar NOOIT (op Svens eerdere, expliciete
+    verzoek — anders komt de kantenband aan de verkeerde kant) — dus voor
+    zo'n onderdeel telt hier ook alleen de ONGEROTEERDE afmeting. Zonder
+    deze uitzondering zou de generieke "probeer het opnieuw"-reden
+    misleidend zijn: geen zoekbudget of groepering kan dit ooit oplossen,
+    ook niet op een extra plaat — de plaat zelf is voor déze combinatie
+    van kantenband-eis en afmeting structureel te smal/kort."""
+
+    x0, y0, x1, y1 = _werkgebied(materiaal)
+    breedte_beschikbaar = x1 - x0
+    hoogte_beschikbaar = y1 - y0
+    b, h = eenheid.breedte, eenheid.hoogte
+    is_groep = len(eenheid.leden) > 1
+    omschrijving = (
+        f"deze groep ({len(eenheid.leden)} onderdelen, samen {b:.0f}×{h:.0f}mm gestapeld)"
+        if is_groep
+        else f"dit onderdeel ({b:.0f}×{h:.0f}mm)"
+    )
+
+    fabriek_randen_geraakt = eenheid.kantenband_randen & materiaal.fabriekskantenband_randen
+    mag_roteren_hier = eenheid.mag_roteren and not fabriek_randen_geraakt
+
+    past_normaal = b <= breedte_beschikbaar and h <= hoogte_beschikbaar
+    past_geroteerd = h <= breedte_beschikbaar and b <= hoogte_beschikbaar
+
+    if past_normaal or (mag_roteren_hier and past_geroteerd):
+        return (
+            f"Past qua afmeting wel op een lege plaat van {materiaal.naam} "
+            f"({breedte_beschikbaar:.0f}×{hoogte_beschikbaar:.0f}mm bruikbaar), maar kreeg toch geen "
+            "plek toegewezen door de plaatsingsstrategie — probeer het zaagplan "
+            "opnieuw te genereren, eventueel met een groter zoekbudget."
+        )
+    if fabriek_randen_geraakt and not past_normaal:
+        rand_namen = ", ".join(sorted(r.value for r in fabriek_randen_geraakt))
+        knelpunten = []
+        if b > breedte_beschikbaar + 1e-9:
+            knelpunten.append(f"breedte {b:.0f}mm > beschikbare {breedte_beschikbaar:.0f}mm")
+        if h > hoogte_beschikbaar + 1e-9:
+            knelpunten.append(f"hoogte {h:.0f}mm > beschikbare {hoogte_beschikbaar:.0f}mm")
+        return (
+            f"{omschrijving.capitalize()} heeft een fabriekskantenband-eis op rand \"{rand_namen}\" van "
+            f"{materiaal.naam} en mag daardoor NOOIT roteren bij het plaatsen (anders komt de kantenband "
+            f"aan de verkeerde kant) — in die vaste oriëntatie past het niet ({'; '.join(knelpunten)}). "
+            "Dit lost een extra plaat niet op: elke plaat van dit materiaal heeft dezelfde afmeting."
+        )
+    if not eenheid.mag_roteren and past_geroteerd:
+        reden_roteren = "een groep wordt nooit geroteerd" if is_groep else "de vereiste nerfrichting staat roteren niet toe"
+        return f"{omschrijving.capitalize()} past alleen geroteerd op de plaat, maar {reden_roteren}."
+    return (
+        f"{omschrijving.capitalize()} is te groot voor {materiaal.naam} "
+        f"({breedte_beschikbaar:.0f}×{hoogte_beschikbaar:.0f}mm bruikbaar), ook na roteren."
+    )
+
+
 def _bouw_eenheden(onderdelen: list[Onderdeel], kerf: float) -> tuple[list[_Eenheid], list[str]]:
     """Zet de onderdelenlijst (met aantallen en groepen) om in een
     lijst van plaatsbare eenheden. Retourneert ook eventuele
@@ -483,34 +550,61 @@ def _vul_rij(
     x1: float,
     kerf: float,
     beschikbare_hoogte: float | None = None,
-) -> tuple[list[list[tuple[_Eenheid, float, float, bool]]], list[tuple[_Eenheid, float, float, bool]], float]:
+) -> tuple[list[list[list[tuple[_Eenheid, float, float, bool]]]], list[tuple[_Eenheid, float, float, bool]], float]:
     """Vult één rij vanaf ``x0`` tot ``x1`` met KOLOMMEN — elke kolom is
-    een lijst van één of meer op elkaar gestapelde stukken (onderin tot
-    bovenin), zodat een korter onderdeel niet per se een eigen, nieuwe
-    kolom naast de rest hoeft te krijgen als het net zo goed boven een
-    al bestaande, minder hoge kolom past. Toegevoegd op Svens verzoek,
-    na een concreet voorbeeld waar twee losse "ruggen" (van dezelfde
-    hoogte-groep) allebei hun eigen kolom kregen terwijl ze samen — en
-    met een derde, nog kortere "rug" erbij — ruim in één kolom hadden
-    gepast: "dan zouden alle ruggen toch onder elkaar kunnen en dan nog
-    in de rij passen".
+    een lijst van één of meer op elkaar gestapelde BANDEN (onderin tot
+    bovenin), en elke band is zelf weer een lijst van één of meer
+    onderdelen die side-by-side dezelfde band delen. Zonder dit zou een
+    korter onderdeel per se een eigen, nieuwe kolom naast de rest moeten
+    krijgen als het net zo goed boven een al bestaande, minder hoge kolom
+    past (het "meerdere stukken per kolom"-idee), én zou de OVERGEBLEVEN
+    BREEDTE naast zo'n stukje binnen die kolom altijd blijven liggen —
+    ook als er nog een paar smallere onderdelen van (bijna) dezelfde
+    hoogte zijn die daar samen wél naast elkaar in zouden passen.
+    Toegevoegd/uitgebreid op Svens verzoek, in twee stappen:
+    1. Losse "ruggen" (van dezelfde hoogte-groep) die allebei hun eigen
+       kolom kregen terwijl ze samen — en met een derde, nog kortere
+       "rug" erbij — ruim in één kolom hadden gepast: "dan zouden alle
+       ruggen toch onder elkaar kunnen en dan nog in de rij passen".
+    2. Concreet voorbeeld met een "bodem" van (in zijn kolom) 500mm
+       vrije breedte, waar 4 "dwarsbalken" samen in diezelfde band van
+       ~100mm hoog naast elkaar hadden gepast i.p.v. dat er maar ÉÉN
+       dwarsbalk per band gebruikt werd en de rest van die 500mm breedte
+       braak bleef liggen: "dan passen daar ook 4 dwarsbalken binnen in
+       die strook van 100mm".
+    3. Concreet voorbeeld met twee identieke "lade rug korf"-stukken:
+       geen van beiden past nog op de (al volledig hoge) kolommen van de
+       vorige groep ("lade bodem"), dus allebei zouden ze — net als
+       vóór deze stap — ieder hun eigen nieuwe kolom krijgen, terwijl de
+       tweede prima op de kolom van de EERSTE had gepast: "die 2e lade
+       rug korf past makkelijk nog onder de andere 2 lade ruggen" (een
+       derde, nog kortere "lade rug bestek" stapelt daar in de praktijk
+       ook nog bovenop). Zie punt 3 in de simulatie-uitleg hieronder.
 
     De eerste (hoogte-bepalende) hoogte-groep in ``resterend`` mag
     gedeeltelijk in de rij komen (de rest wacht op een volgende rij,
     normaal gedrag als er simpelweg meer stukken van die hoogte zijn dan
-    in één rij passen); elk lid daarvan start zijn eigen, nieuwe kolom.
-    Elke latere, kortere hoogte-groep mag alleen als GEHEEL meedoen —
-    nooit gedeeltelijk, want dat zou (bijna) identieke onderdelen zonder
-    aanleiding over meerdere RIJEN verspreiden (zie ``_pak_rijen``'s
-    docstring / OVERDRACHT.md) — maar elk lid ervan wordt nu eerst
-    geprobeerd te stapelen bovenop een bestaande kolom (moet er qua
-    resterende hoogte en breedte in passen) vóórdat het, als dat nergens
-    lukt, alsnog een nieuwe kolom ernaast krijgt. Dit wordt eerst
-    gesimuleerd voor de hele groep tegelijk — lukt ook maar één lid
-    nergens (geen bestaande kolom met genoeg ruimte, en ook geen plek
-    meer voor een nieuwe kolom), dan wordt de HELE groep alsnog in zijn
-    geheel overgeslagen (dezelfde alles-of-niets-regel als voorheen),
-    zodat een net-niet-passende groep niet alsnog gedeeltelijk
+    in één rij passen); elk lid daarvan start zijn eigen, nieuwe kolom
+    (met daarin één band van één stuk). Elke latere, kortere hoogte-groep
+    mag alleen als GEHEEL meedoen — nooit gedeeltelijk, want dat zou
+    (bijna) identieke onderdelen zonder aanleiding over meerdere RIJEN
+    verspreiden (zie ``_pak_rijen``'s docstring / OVERDRACHT.md) — maar
+    voor elke bestaande kolom (in volgorde) wordt eerst zoveel mogelijk
+    van de groep als een nieuwe, gedeelde band boven op die kolom
+    gestapeld (zolang de resterende hoogte-ruimte en de kolombreedte het
+    toelaten — meerdere leden naast elkaar in diezelfde band, net als een
+    mini-rij); is een kolom's hoogte-ruimte op, dan gaat de rest van de
+    groep naar de volgende bestaande kolom, enzovoort. Wat dan nog
+    overblijft krijgt elk zijn eigen nieuwe kolom ernaast — maar (punt 3
+    hierboven) daarna wordt de HELE kolom-ronde opnieuw geprobeerd, dus
+    ook tegen die zojuist aangemaakte kolom(men): zo kan een later lid
+    van dezelfde groep alsnog op de nieuwe kolom van een eerder lid
+    stapelen, in plaats van dat elk lid domweg zijn eigen, aparte kolom
+    houdt. Dit wordt eerst gesimuleerd voor de hele groep tegelijk —
+    lukt ook maar één lid nergens (geen kolom met genoeg ruimte, en ook
+    geen plek meer voor een nieuwe kolom), dan wordt de HELE groep alsnog
+    in zijn geheel overgeslagen (dezelfde alles-of-niets-regel als
+    voorheen), zodat een net-niet-passende groep niet alsnog gedeeltelijk
     versnippert.
 
     ``beschikbare_hoogte`` overschrijft, alleen voor de stapel-ruimte-
@@ -522,7 +616,7 @@ def _vul_rij(
     letterlijk zo hoog als zijn hoogste stuk), dus daar blijft dit
     ``None`` en wordt de intern bepaalde hoogte gebruikt."""
 
-    kolommen: list[list[tuple[_Eenheid, float, float, bool]]] = []
+    kolommen: list[list[list[tuple[_Eenheid, float, float, bool]]]] = []
     kolom_breedtes: list[float] = []
     kolom_hoogtes: list[float] = []
     overig: list[tuple[_Eenheid, float, float, bool]] = []
@@ -536,7 +630,7 @@ def _vul_rij(
     genomen = 0
     for (eenheid, b, h, rot) in groepen[0]:
         if (cursor_x + b) <= x1 + 1e-9:
-            kolommen.append([(eenheid, b, h, rot)])
+            kolommen.append([[(eenheid, b, h, rot)]])
             kolom_breedtes.append(b)
             kolom_hoogtes.append(h)
             rij_hoogte = max(rij_hoogte, h)
@@ -566,24 +660,60 @@ def _vul_rij(
         sim_hoogtes = list(kolom_hoogtes)
         sim_breedtes = list(kolom_breedtes)
         sim_cursor_x = cursor_x
-        toewijzingen: list[tuple[int | None, _Eenheid, float, float, bool]] = []
-        haalbaar = True
+        # Elke toewijzing is (kolom_idx | None, band) — een band is een
+        # lijst van één of meer leden van DEZE groep die samen, side-by-
+        # side, één nieuwe horizontale laag boven op kolom_idx vormen (of,
+        # bij kolom_idx=None, een gloednieuwe kolom naast de rest).
+        toewijzingen: list[tuple[int | None, list[tuple[_Eenheid, float, float, bool]]]] = []
         stapel_limiet = beschikbare_hoogte if beschikbare_hoogte is not None else rij_hoogte
-        for (eenheid, b, h, rot) in groep:
-            bestaande_kolom = None
+        pool = list(groep)
+
+        # Herhaal "probeer alle kolommen te vullen" tot de pool leeg is of
+        # geen enkele kolom nog iets kwijt kan — dan krijgt het eerste
+        # resterende lid een gloednieuwe kolom, en wordt de HELE
+        # kolom-ronde opnieuw geprobeerd (dus ook tegen die zojuist
+        # aangemaakte kolom). Zonder die herhaling zou een groep met
+        # meerdere leden die geen van allen op een bestaande (oudere)
+        # kolom passen, maar wél samen in één nieuwe kolom hadden
+        # gepast, ieder een eigen, aparte kolom krijgen i.p.v. samen te
+        # stapelen — precies het concrete geval waarbij een tweede "lade
+        # rug korf" zijn eigen kolom kreeg terwijl hij prima op de kolom
+        # van de eerste had gepast (beide leden van dezelfde groep, dus
+        # geen van beiden kan op de bodem-kolommen van de vorige, hogere
+        # groep stapelen — die zijn al vol).
+        haalbaar = True
+        while pool:
+            voortgang = False
             for idx in range(len(sim_hoogtes)):
                 gat = stapel_limiet - sim_hoogtes[idx]
-                if h + kerf <= gat + 1e-9 and b <= sim_breedtes[idx] + 1e-9:
-                    bestaande_kolom = idx
+                resterende_breedte = sim_breedtes[idx]
+                band: list[tuple[_Eenheid, float, float, bool]] = []
+                band_hoogte = 0.0
+                overgebleven: list[tuple[_Eenheid, float, float, bool]] = []
+                for (eenheid, b, h, rot) in pool:
+                    if h + kerf <= gat + 1e-9 and b <= resterende_breedte + 1e-9:
+                        band.append((eenheid, b, h, rot))
+                        resterende_breedte -= b + kerf
+                        band_hoogte = max(band_hoogte, h)
+                    else:
+                        overgebleven.append((eenheid, b, h, rot))
+                if band:
+                    sim_hoogtes[idx] += band_hoogte + kerf
+                    toewijzingen.append((idx, band))
+                    pool = overgebleven
+                    voortgang = True
+                if not pool:
                     break
-            if bestaande_kolom is not None:
-                sim_hoogtes[bestaande_kolom] += h + kerf
-                toewijzingen.append((bestaande_kolom, eenheid, b, h, rot))
-            elif sim_cursor_x + b <= x1 + 1e-9:
+            if not pool or voortgang:
+                continue
+
+            eenheid, b, h, rot = pool[0]
+            if sim_cursor_x + b <= x1 + 1e-9:
                 sim_hoogtes.append(h)
                 sim_breedtes.append(b)
                 sim_cursor_x += b + kerf
-                toewijzingen.append((None, eenheid, b, h, rot))
+                toewijzingen.append((None, [(eenheid, b, h, rot)]))
+                pool = pool[1:]
             else:
                 haalbaar = False
                 break
@@ -592,38 +722,42 @@ def _vul_rij(
             overig.extend(groep)
             continue
 
-        for (kolom_idx, eenheid, b, h, rot) in toewijzingen:
+        for (kolom_idx, band) in toewijzingen:
+            band_hoogte = max(h for (_, _, h, _) in band)
             if kolom_idx is not None:
-                kolommen[kolom_idx].append((eenheid, b, h, rot))
-                kolom_hoogtes[kolom_idx] += h + kerf
+                kolommen[kolom_idx].append(band)
+                kolom_hoogtes[kolom_idx] += band_hoogte + kerf
             else:
-                kolommen.append([(eenheid, b, h, rot)])
-                kolom_breedtes.append(b)
-                kolom_hoogtes.append(h)
-                cursor_x += b + kerf
+                kolommen.append([band])
+                kolom_breedtes.append(band[0][1])
+                kolom_hoogtes.append(band_hoogte)
+                cursor_x += band[0][1] + kerf
 
     return kolommen, overig, rij_hoogte
 
 
 def _plaats_rij(
-    kolommen: list[list[tuple[_Eenheid, float, float, bool]]], x0: float, cursor_y: float, kerf: float
+    kolommen: list[list[list[tuple[_Eenheid, float, float, bool]]]], x0: float, cursor_y: float, kerf: float
 ) -> tuple[list[Plaatsing], list[Zaagsnede], list[float], float]:
     """Plaatst de kolommen van één rij/strook (van links naar rechts,
     startend op ``x0``); elke kolom kan één of meer op elkaar gestapelde
-    stukken bevatten (zie ``_vul_rij``) — onderin het eerste lid, dan
-    omhoog. Bouwt de interne scheidingssneden tussen gestapelde stukken
-    binnen een kolom op (nog met voorlopig volgnummer 0, zie
-    ``_bouw_zaagvolgorde_uit_rijen``), begrensd tot de breedte van díe
-    kolom zelf (het breedste lid erin) — nooit de volle plaatbreedte,
-    anders zou zo'n snede dwars door een ander onderdeel in dezelfde rij
-    heen lopen. Dit geldt zowel voor de sneden tussen twee losse,
-    gestapelde onderdelen (``_vul_rij``'s nieuwe kolom-stapeling) als
-    voor de sneden binnen een gestapelde groep (hoofdstuk 5) — beide
-    zijn voor deze functie hetzelfde soort interne kolom-naad. Retourneert
-    ook de kolomranden (x-posities tussen kolommen) en de eind-x-positie;
-    de sneden TUSSEN kolommen zelf worden hier bewust NOG NIET gebouwd —
-    dat kan pas nadat de aanroeper de rij heeft afgerond en de ECHTE
-    bovengrens van de rij kent (zie de bugfix-toelichting bij
+    BANDEN bevatten (zie ``_vul_rij``) — onderin de eerste band, dan
+    omhoog — en elke band kan zelf weer één of meer leden side-by-side
+    bevatten (het "meerdere dwarsbalken naast elkaar in dezelfde band"-
+    geval). Bouwt de interne scheidingssneden op (nog met voorlopig
+    volgnummer 0, zie ``_bouw_zaagvolgorde_uit_rijen``): horizontale
+    naden tussen twee banden in dezelfde kolom (begrensd tot de breedte
+    van díe kolom zelf — het breedste lid erin), en verticale naden
+    tussen leden binnen dezelfde band (begrensd tot de hoogte van díe
+    band zelf) — nooit de volle plaatbreedte/-hoogte, anders zou zo'n
+    snede dwars door een ander onderdeel in dezelfde rij heen lopen. Dit
+    geldt ook voor de sneden binnen een gestapelde groep (hoofdstuk 5),
+    begrensd tot de breedte van het groepslid zelf (niet de hele band) —
+    alle drie zijn voor deze functie hetzelfde soort interne naad.
+    Retourneert ook de kolomranden (x-posities tussen kolommen) en de
+    eind-x-positie; de sneden TUSSEN kolommen zelf worden hier bewust NOG
+    NIET gebouwd — dat kan pas nadat de aanroeper de rij heeft afgerond en
+    de ECHTE bovengrens van de rij kent (zie de bugfix-toelichting bij
     ``_bouw_zaagvolgorde_uit_rijen``). Losgetrokken uit
     ``_pak_rijen``/``_pak_stroken`` omdat beide exact dezelfde
     rij-opbouw hebben."""
@@ -633,24 +767,36 @@ def _plaats_rij(
     kolom_randen: list[float] = []
     x = x0
     for kolom in kolommen:
-        kolom_breedte = max(b for (_, b, _, _) in kolom)
+        kolom_breedte = max(b for band in kolom for (_, b, _, _) in band)
         y = cursor_y
-        eerste_lid = True
-        for (eenheid, b, h, rot) in kolom:
-            nieuwe = eenheid.expand(x, y, b, h, rot)
-            plaatsingen.extend(nieuwe)
-            if len(nieuwe) > 1:
-                # Gestapelde groep (hoofdstuk 5): interne sneden tussen
-                # de leden, begrensd tot deze kolom.
-                for lid in sorted(nieuwe, key=lambda p: p.y)[:-1]:
-                    grens_y = round(lid.y + lid.hoogte, 6)
-                    groep_sneden.append(Zaagsnede(0, "horizontaal", grens_y, x, x + kolom_breedte))
-            if not eerste_lid:
-                # Naad tussen dit gestapelde onderdeel en het vorige in
-                # dezelfde kolom (zie _vul_rij).
+        eerste_band = True
+        for band in kolom:
+            band_hoogte = max(h for (_, _, h, _) in band)
+            x_in_band = x
+            for (eenheid, b, h, rot) in band:
+                nieuwe = eenheid.expand(x_in_band, y, b, h, rot)
+                plaatsingen.extend(nieuwe)
+                if len(nieuwe) > 1:
+                    # Gestapelde groep (hoofdstuk 5): interne sneden tussen
+                    # de leden, begrensd tot dit groepslid zelf.
+                    for lid in sorted(nieuwe, key=lambda p: p.y)[:-1]:
+                        grens_y = round(lid.y + lid.hoogte, 6)
+                        groep_sneden.append(Zaagsnede(0, "horizontaal", grens_y, x_in_band, x_in_band + b))
+                x_in_band += b + kerf
+            if len(band) > 1:
+                # Verticale naden tussen leden die side-by-side dezelfde
+                # band delen, begrensd tot de hoogte van díe band zelf.
+                grens_x = x
+                for (_, b, _, _) in band[:-1]:
+                    grens_x += b
+                    groep_sneden.append(Zaagsnede(0, "verticaal", round(grens_x, 6), y, y + band_hoogte))
+                    grens_x += kerf
+            if not eerste_band:
+                # Naad tussen deze band en de vorige in dezelfde kolom
+                # (zie _vul_rij), begrensd tot de kolombreedte zelf.
                 groep_sneden.append(Zaagsnede(0, "horizontaal", round(y, 6), x, x + kolom_breedte))
-            eerste_lid = False
-            y += h + kerf
+            eerste_band = False
+            y += band_hoogte + kerf
         kolom_randen.append(round(x + kolom_breedte, 6))
         x += kolom_breedte + kerf
 
@@ -1110,6 +1256,7 @@ def genereer_zaagplan(
     onderdelen: list[Onderdeel],
     strategie: str = "efficient",
     zoek_tijdsbudget: float = 0.0,
+    min_zoek_tijdsbudget: float = 0.0,
 ) -> ZaagplanResultaat:
     """Genereer een zaagplan voor één plaat van ``materiaal`` met de
     gegeven ``onderdelen``.
@@ -1142,7 +1289,15 @@ def genereer_zaagplan(
         volgorde bestaat identiek aan zonder zoekbudget). Stopt vanzelf
         eerder dan het budget als ``_MAX_POGINGEN_ZONDER_VERBETERING``
         pogingen op rij niets beters meer opleveren — geen zin om door
-        te zoeken op een zaagplan dat al (vrijwel) optimaal is."""
+        te zoeken op een zaagplan dat al (vrijwel) optimaal is.
+    :param min_zoek_tijdsbudget: minimum aantal seconden dat de zoektocht
+        altijd doorgaat, ook als ``_MAX_POGINGEN_ZONDER_VERBETERING`` al
+        eerder gehaald is — op Svens verzoek ("een minimale denktijd van
+        10 seconden ofzo"), zodat een eenvoudig zaagplan niet meteen
+        (schijnbaar zonder iets te proberen) teruggegeven wordt en de
+        UI's laad-animatie ook echt iets te doen heeft. Heeft geen effect
+        als ``zoek_tijdsbudget`` zelf 0 is (dan is zoeken al uitgeschakeld)
+        en wordt nooit hoger dan ``zoek_tijdsbudget`` zelf toegepast."""
 
     if strategie not in _GELDIGE_STRATEGIEEN:
         raise ValueError(
@@ -1270,12 +1425,14 @@ def genereer_zaagplan(
     beste = _kies_beste_pakresultaat(_kandidaten_voor(None), materiaal)
 
     if zoek_tijdsbudget > 0 and overige_eenheden:
-        deadline = time.monotonic() + zoek_tijdsbudget
+        start = time.monotonic()
+        deadline = start + zoek_tijdsbudget
+        min_deadline = start + min(min_zoek_tijdsbudget, zoek_tijdsbudget)
         pogingen_zonder_verbetering = 0
         iteratie = 0
-        while (
-            time.monotonic() < deadline
-            and pogingen_zonder_verbetering < _MAX_POGINGEN_ZONDER_VERBETERING
+        while time.monotonic() < deadline and (
+            time.monotonic() < min_deadline
+            or pogingen_zonder_verbetering < _MAX_POGINGEN_ZONDER_VERBETERING
         ):
             iteratie += 1
             variant = _kies_beste_pakresultaat(
@@ -1303,6 +1460,13 @@ def genereer_zaagplan(
     niet_geplaatst.extend(np2)
     reststukken, afval = _classificeer_restruimte(vrije, materiaal)
 
+    eenheden_per_id = {e.unit_id: e for e in eenheden}
+    niet_geplaatst_redenen = {
+        uid: _reden_niet_geplaatst(eenheden_per_id[uid], materiaal)
+        for uid in niet_geplaatst
+        if uid in eenheden_per_id
+    }
+
     return ZaagplanResultaat(
         materiaal=materiaal,
         strategie=strategie,
@@ -1311,6 +1475,7 @@ def genereer_zaagplan(
         afval_oppervlak=afval,
         zaagvolgorde=zaagvolgorde,
         niet_geplaatst=niet_geplaatst,
+        niet_geplaatst_redenen=niet_geplaatst_redenen,
     )
 
 
@@ -1347,6 +1512,7 @@ def genereer_zaagplannen(
     onderdelen: list[Onderdeel],
     strategie: str = "efficient",
     zoek_tijdsbudget: float = 0.0,
+    min_zoek_tijdsbudget: float = 0.0,
 ) -> list[ZaagplanResultaat]:
     """Genereert zoveel platen van ``materiaal`` als nodig zijn om alle
     ``onderdelen`` te plaatsen (onbeperkte voorraad aangenomen — dit is
@@ -1361,7 +1527,15 @@ def genereer_zaagplannen(
         TOTAAL budget over alle platen van deze aanroep samen (niet per
         plaat): elke volgende plaat krijgt wat er van het budget nog
         over is, zodat een project met meerdere platen nooit veel langer
-        dan dit ene budget hoeft te wachten."""
+        dan dit ene budget hoeft te wachten.
+    :param min_zoek_tijdsbudget: zie ``genereer_zaagplan`` — wordt hier,
+        anders dan ``zoek_tijdsbudget``, op elke plaat opnieuw toegepast
+        (niet gedeeld over alle platen samen), zodat ook een project met
+        meerdere platen elke plaat afzonderlijk zichtbaar laat
+        "nadenken". Blijft wel begrensd door wat er op dat moment nog
+        over is van het gedeelde ``zoek_tijdsbudget`` — bij een héél
+        strak totaalbudget kan een latere plaat dus een kortere
+        denktijd krijgen dan gevraagd."""
 
     resterend = list(onderdelen)
     resultaten: list[ZaagplanResultaat] = []
@@ -1370,7 +1544,13 @@ def genereer_zaagplannen(
         if not resterend:
             break
         plaat_budget = max(0.0, deadline - time.monotonic()) if deadline is not None else 0.0
-        resultaat = genereer_zaagplan(materiaal, resterend, strategie=strategie, zoek_tijdsbudget=plaat_budget)
+        resultaat = genereer_zaagplan(
+            materiaal,
+            resterend,
+            strategie=strategie,
+            zoek_tijdsbudget=plaat_budget,
+            min_zoek_tijdsbudget=min_zoek_tijdsbudget,
+        )
 
         if not resultaat.plaatsingen:
             # Geen enkel onderdeel van wat nog over was kon zelfs op een
@@ -1381,7 +1561,11 @@ def genereer_zaagplannen(
             # niet_geplaatst-lijst bijwerken naar deze definitieve stand
             # — tenzij dit al de allereerste plaat was.
             if resultaten:
-                resultaten[-1] = replace(resultaten[-1], niet_geplaatst=resultaat.niet_geplaatst)
+                resultaten[-1] = replace(
+                    resultaten[-1],
+                    niet_geplaatst=resultaat.niet_geplaatst,
+                    niet_geplaatst_redenen=resultaat.niet_geplaatst_redenen,
+                )
             else:
                 resultaten.append(resultaat)
             break
@@ -1398,5 +1582,5 @@ def genereer_zaagplannen(
         # geplaatst tonen, dus deze tussenliggende plaat krijgt een lege
         # niet_geplaatst-lijst.
         resterend = _onderdelen_voor_niet_geplaatst(resterend, resultaat.niet_geplaatst)
-        resultaten.append(replace(resultaat, niet_geplaatst=[]))
+        resultaten.append(replace(resultaat, niet_geplaatst=[], niet_geplaatst_redenen={}))
     return resultaten

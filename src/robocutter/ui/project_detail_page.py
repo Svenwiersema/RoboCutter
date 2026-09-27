@@ -52,10 +52,10 @@ from dataclasses import replace
 from datetime import date
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
+from PySide6.QtCore import QSize, Qt, QStringListModel, QThread, QTimer, Signal
+from PySide6.QtGui import QTransform
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
-    QApplication,
     QButtonGroup,
     QComboBox,
     QCompleter,
@@ -84,7 +84,7 @@ from robocutter.instellingen.models import GELDIGE_ZAAGSTRATEGIEEN
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.materialen.models import MateriaalStatus
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
-from robocutter.modellen.models import ModelOnderdeel, Nerfrichting, Rand
+from robocutter.modellen.models import ModelOnderdeel, Nerfrichting
 from robocutter.projecten.bibliotheek import (
     OnbekendModelError,
     OngeldigeStatusOvergangError,
@@ -99,6 +99,7 @@ from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.label_pdf import schrijf_labels_pdf
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.randen_diagram import RandenDiagram
 from robocutter.ui.widgets.stat_tile import StatTile
 from robocutter.ui.widgets.zaagplaat_widget import ZaagplaatWidget
 from robocutter.ui.zaagplan_pdf import schrijf_zaagplannen_pdf
@@ -130,6 +131,11 @@ _STRATEGIE_LABEL = {
 # in ruil voor een mogelijk beter zaagplan. Stopt vanzelf eerder zodra
 # geen enkele poging meer verbetert (zie _MAX_POGINGEN_ZONDER_VERBETERING).
 _ZOEK_TIJDSBUDGET_SECONDEN = 60.0
+# Op Svens verzoek ("een minimale denktijd van 10 seconden ofzo"): ook een
+# eenvoudig zaagplan dat meteen (schijnbaar zonder iets te proberen) klaar
+# zou zijn, blijft altijd nog even doorzoeken naar een betere volgorde —
+# zie engine.genereer_zaagplan's min_zoek_tijdsbudget.
+_MIN_ZOEK_TIJDSBUDGET_SECONDEN = 10.0
 _NERFRICHTING_LABEL = {
     Nerfrichting.LANGE_ZIJDE: "Lange zijde",
     Nerfrichting.KORTE_ZIJDE: "Korte zijde",
@@ -162,6 +168,61 @@ class _ZoekVeld(QLineEdit):
         if self.completer() is not None:
             self.completer().setCompletionPrefix(self.text())
             self.completer().complete()
+
+
+class _ZaagplanWorker(QThread):
+    """Genereert de zaagplannen van een project op een eigen thread i.p.v.
+    de UI te blokkeren (op Svens verzoek: een echte laad-animatie tijdens
+    het genereren) — voorheen liep dit synchroon op de UI-thread (zie
+    OVERDRACHT.md, "geen aparte achtergrond-thread ... kandidaat voor een
+    latere iteratie als dit hinderlijk blijkt"). Krijgt een losstaande
+    kopie van het project/de materialenbibliotheek mee en raakt zelf geen
+    Qt-widgets aan; het resultaat komt terug via het ``klaar``-signaal,
+    door Qt automatisch op de UI-thread afgeleverd."""
+
+    klaar = Signal(list, list)
+
+    def __init__(self, project: Project, materialen: MaterialenBibliotheek, strategie: str, parent=None) -> None:
+        super().__init__(parent)
+        self._project = project
+        self._materialen = materialen
+        self._strategie = strategie
+
+    def run(self) -> None:
+        plannen, waarschuwingen = genereer_zaagplannen_voor_project(
+            self._project,
+            self._materialen,
+            strategie=self._strategie,
+            zoek_tijdsbudget=_ZOEK_TIJDSBUDGET_SECONDEN,
+            min_zoek_tijdsbudget=_MIN_ZOEK_TIJDSBUDGET_SECONDEN,
+        )
+        self.klaar.emit(plannen, waarschuwingen)
+
+
+class _ZaagplanSpinner(QLabel):
+    """Draaiend laad-icoontje tijdens het genereren van een zaagplan (op
+    Svens verzoek: "ik wil ook dat hij tijdens het laden een animatie
+    laat zien") — een QTimer draait de basis-pixmap elke tik een stukje
+    verder, i.p.v. een statische "Bezig..."-tekst die niets laat zien."""
+
+    def __init__(self, kleur: str, grootte: int = 40, parent=None) -> None:
+        super().__init__(parent)
+        self._basis = icon_pixmap("loader", kleur, grootte)
+        self.setFixedSize(grootte, grootte)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("background: transparent;")
+        self._hoek = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(30)
+        self._tick()
+
+    def _tick(self) -> None:
+        self._hoek = (self._hoek + 8) % 360
+        getransformeerd = self._basis.transformed(
+            QTransform().rotate(self._hoek), Qt.TransformationMode.SmoothTransformation
+        )
+        self.setPixmap(getransformeerd)
 
 
 class ProjectDetailPage(QWidget):
@@ -211,6 +272,7 @@ class ProjectDetailPage(QWidget):
             self._zaagplannen = None
             self._zaagplan_waarschuwingen = []
             self._zaagplan_strategie = self._standaard_zaagstrategie()
+        self._zaagplan_worker: _ZaagplanWorker | None = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -564,21 +626,6 @@ class ProjectDetailPage(QWidget):
             layout.addWidget(btn, 1)
         group.buttons()[0].setChecked(True)
         return container, group
-
-    def _rand_chip_rij(self, section: QVBoxLayout) -> dict[Rand, QPushButton]:
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        buttons: dict[Rand, QPushButton] = {}
-        for rand in Rand:
-            btn = QPushButton(rand.value.capitalize())
-            btn.setProperty("role", "chipToggle")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            row.addWidget(btn)
-            buttons[rand] = btn
-        row.addStretch(1)
-        section.addLayout(row)
-        return buttons
 
     def _cel_tekst(self, tekst: str) -> QWidget:
         cell = QWidget()
@@ -1060,12 +1107,23 @@ class ProjectDetailPage(QWidget):
         breedte_wrap, self._lo_breedte = self._field_spin()
         breedte_col.addWidget(breedte_wrap)
         afmeting_rij.addLayout(breedte_col)
+
+        lo_wissel_btn = QToolButton()
+        lo_wissel_btn.setIcon(icon("swap", self._theme.text_muted, 15))
+        lo_wissel_btn.setAutoRaise(True)
+        lo_wissel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        lo_wissel_btn.setToolTip("Breedte en hoogte omwisselen (bv. per ongeluk verwisseld ingevoerd)")
+        lo_wissel_btn.clicked.connect(self._lo_wissel_breedte_hoogte)
+        afmeting_rij.addWidget(lo_wissel_btn, 0, Qt.AlignmentFlag.AlignBottom)
+
         hoogte_col = QVBoxLayout()
         hoogte_col.addWidget(self._field_label("Hoogte mm"))
         hoogte_wrap, self._lo_hoogte = self._field_spin()
         hoogte_col.addWidget(hoogte_wrap)
         afmeting_rij.addLayout(hoogte_col)
         rechts_layout.addLayout(afmeting_rij)
+        self._lo_breedte.valueChanged.connect(self._lo_ververs_rand_diagram)
+        self._lo_hoogte.valueChanged.connect(self._lo_ververs_rand_diagram)
 
         rechts_layout.addWidget(self._field_label("Aantal"))
         aantal_wrap, self._lo_aantal = self._field_spin_int(minimum=1, maximum=1000)
@@ -1078,7 +1136,8 @@ class ProjectDetailPage(QWidget):
         rechts_layout.addWidget(nerf_widget)
 
         rechts_layout.addWidget(self._field_label("Kantenband"))
-        self._lo_rand_buttons = self._rand_chip_rij(rechts_layout)
+        self._lo_rand_diagram = RandenDiagram(self._theme)
+        rechts_layout.addWidget(self._lo_rand_diagram)
 
         self._onderdeel_toevoegen_fout = QLabel("")
         self._onderdeel_toevoegen_fout.setProperty("role", "validationText")
@@ -1195,9 +1254,19 @@ class ProjectDetailPage(QWidget):
         self._lo_hoogte.setValue(0)
         self._lo_aantal.setValue(1)
         self._lo_nerf_group.buttons()[0].setChecked(True)
-        for btn in self._lo_rand_buttons.values():
-            btn.setChecked(False)
+        self._lo_rand_diagram.set_geselecteerde_randen(frozenset())
+        self._lo_ververs_rand_diagram()
         self._onderdeel_toevoegen_fout.hide()
+
+    def _lo_wissel_breedte_hoogte(self) -> None:
+        # Op Svens verzoek: snel breedte/hoogte omdraaien als je ze per
+        # ongeluk verwisseld hebt ingevoerd.
+        breedte, hoogte = self._lo_breedte.value(), self._lo_hoogte.value()
+        self._lo_breedte.setValue(hoogte)
+        self._lo_hoogte.setValue(breedte)
+
+    def _lo_ververs_rand_diagram(self) -> None:
+        self._lo_rand_diagram.set_afmetingen(self._lo_breedte.value(), self._lo_hoogte.value())
 
     def _bewerk_los_onderdeel(self, onderdeel_id: str) -> None:
         onderdeel = next((o for o in self._project().losse_onderdelen if o.id == onderdeel_id), None)
@@ -1216,8 +1285,7 @@ class ProjectDetailPage(QWidget):
         self._lo_aantal.setValue(onderdeel.aantal)
         for btn in self._lo_nerf_group.buttons():
             btn.setChecked(btn.property("waarde") == onderdeel.nerfrichting_vereist)
-        for rand, btn in self._lo_rand_buttons.items():
-            btn.setChecked(rand in onderdeel.kantenband_randen)
+        self._lo_rand_diagram.set_geselecteerde_randen(onderdeel.kantenband_randen)
         self._onderdeel_toevoegen_fout.hide()
 
     def _los_onderdeel_opslaan(self) -> None:
@@ -1230,7 +1298,7 @@ class ProjectDetailPage(QWidget):
             hoogte=self._lo_hoogte.value(),
             aantal=self._lo_aantal.value(),
             nerfrichting_vereist=nerf_waarde,
-            kantenband_randen=frozenset(r for r, b in self._lo_rand_buttons.items() if b.isChecked()),
+            kantenband_randen=self._lo_rand_diagram.geselecteerde_randen(),
         )
         try:
             if self._bewerk_los_onderdeel_id:
@@ -1573,23 +1641,23 @@ class ProjectDetailPage(QWidget):
         self._zaagplan_strategie = waarde
 
     def _genereer_zaagplannen(self) -> None:
-        # Het grondiger zoeken (zoek_tijdsbudget) kan tot een minuut
-        # duren per materiaal — laat dat expliciet zien i.p.v. de UI
-        # zonder feedback te laten "hangen" (op Svens verzoek: "dat je
-        # dan even moet wachten op het resultaat zodat ie goed kijkt").
+        # Het grondiger zoeken (zoek_tijdsbudget, met een minimale
+        # denktijd van _MIN_ZOEK_TIJDSBUDGET_SECONDEN) kan een tijdje
+        # duren per materiaal — draait daarom op een eigen thread
+        # (_ZaagplanWorker) i.p.v. de UI te blokkeren, met een echte
+        # draaiende laad-animatie (op Svens verzoek: "ik wil ook dat hij
+        # tijdens het laden een animatie laat zien"). Voorheen liep dit
+        # synchroon op de UI-thread met alleen een statische
+        # "Bezig..."-tekst (zie OVERDRACHT.md) — bewust een latere
+        # iteratie zodra dit hinderlijk zou blijken, wat nu het geval is.
         _clear_layout(self._zaagplannen_content)
         self._zaagplannen_content.addWidget(self._bouw_zaagplan_bezig())
-        QApplication.processEvents()
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            plannen, waarschuwingen = genereer_zaagplannen_voor_project(
-                self._project(),
-                self._materialen,
-                strategie=self._zaagplan_strategie,
-                zoek_tijdsbudget=_ZOEK_TIJDSBUDGET_SECONDEN,
-            )
-        finally:
-            QApplication.restoreOverrideCursor()
+        self._zaagplan_worker = _ZaagplanWorker(self._project(), self._materialen, self._zaagplan_strategie, self)
+        self._zaagplan_worker.klaar.connect(self._op_zaagplannen_klaar)
+        self._zaagplan_worker.start()
+
+    def _op_zaagplannen_klaar(self, plannen: list[PlaatZaagplan], waarschuwingen: list[str]) -> None:
+        self._zaagplan_worker = None
         self._zaagplannen = plannen
         self._zaagplan_waarschuwingen = waarschuwingen
         # Meteen opslaan zodat dit zaagplan overleeft als je het project
@@ -1607,6 +1675,8 @@ class ProjectDetailPage(QWidget):
         layout.setSpacing(14)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        layout.addWidget(_ZaagplanSpinner(self._theme.accent_text), 0, Qt.AlignmentFlag.AlignHCenter)
+
         titel = QLabel("Bezig met zoeken naar het beste zaagplan…")
         titel.setProperty("role", "placeholderTitle")
         titel.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1614,7 +1684,8 @@ class ProjectDetailPage(QWidget):
 
         tekst = QLabel(
             "RoboCutter probeert meerdere verwerkingsvolgordes en houdt de "
-            "beste — dit kan tot ongeveer een minuut duren."
+            "beste — dit duurt minstens een paar seconden, ook als dat "
+            "voor dit zaagplan niet strikt nodig zou zijn."
         )
         tekst.setProperty("role", "placeholderText")
         tekst.setWordWrap(True)
@@ -1821,17 +1892,71 @@ class ProjectDetailPage(QWidget):
         layout.addWidget(plate_wrap)
 
         if plan.resultaat.niet_geplaatst:
-            namen = ", ".join(sorted({plan.naam_voor(uid) for uid in plan.resultaat.niet_geplaatst}))
-            waarschuwing = QLabel(f"⚠ Niet geplaatst: {namen}")
-            waarschuwing.setProperty("role", "warningText")
-            waarschuwing.setContentsMargins(16, 0, 16, 10)
-            waarschuwing.setWordWrap(True)
-            layout.addWidget(waarschuwing)
+            layout.addWidget(self._bouw_niet_geplaatst_banner(plan))
 
         layout.addWidget(self._bouw_onderdelen_tabel(plan))
         layout.addWidget(self._bouw_zaagplan_footer(plan))
 
         return kaart
+
+    def _bouw_niet_geplaatst_banner(self, plan: PlaatZaagplan) -> QWidget:
+        """Nette, kaart-achtige weergave van de niet-geplaatste onderdelen
+        op deze plaat (i.p.v. een kale meerregelige ⚠-tekst): een
+        kop-regel met het totaal, en per item de naam + de reden waarom
+        de motor het niet kwijt kon (zie ``ZaagplanResultaat.
+        niet_geplaatst_redenen``)."""
+
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(16, 0, 16, 10)
+
+        banner = QFrame()
+        banner.setObjectName("NietGeplaatstBanner")
+        layout = QVBoxLayout(banner)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        wrapper_layout.addWidget(banner)
+
+        tellingen: dict[tuple[str, str], int] = {}
+        for uid in plan.resultaat.niet_geplaatst:
+            sleutel = (plan.naam_voor(uid), plan.reden_voor(uid))
+            tellingen[sleutel] = tellingen.get(sleutel, 0) + 1
+        totaal = sum(tellingen.values())
+
+        kop = QHBoxLayout()
+        kop.setSpacing(8)
+        kop_icoon = QLabel()
+        kop_icoon.setPixmap(icon_pixmap("warning", self._theme.warning_ink, 14))
+        kop_icoon.setStyleSheet("background: transparent;")
+        kop.addWidget(kop_icoon)
+        kop_tekst = QLabel(f"{totaal} {'onderdeel' if totaal == 1 else 'onderdelen'} niet geplaatst op deze plaat")
+        kop_tekst.setProperty("role", "warningHeading")
+        kop.addWidget(kop_tekst)
+        kop.addStretch(1)
+        layout.addLayout(kop)
+
+        for (naam, reden), aantal in sorted(tellingen.items()):
+            rij = QHBoxLayout()
+            rij.setSpacing(8)
+            bullet = QLabel("•")
+            bullet.setProperty("role", "warningItemBullet")
+            bullet.setFixedWidth(10)
+            rij.addWidget(bullet)
+
+            tekst_col = QVBoxLayout()
+            tekst_col.setSpacing(1)
+            naam_tekst = naam + (f"  ×{aantal}" if aantal > 1 else "")
+            naam_label = QLabel(naam_tekst)
+            naam_label.setProperty("role", "warningItemName")
+            tekst_col.addWidget(naam_label)
+            reden_label = QLabel(reden or "Niet geplaatst.")
+            reden_label.setProperty("role", "warningItemReden")
+            reden_label.setWordWrap(True)
+            tekst_col.addWidget(reden_label)
+            rij.addLayout(tekst_col, 1)
+            layout.addLayout(rij)
+
+        return wrapper
 
     def _bouw_onderdelen_tabel(self, plan: PlaatZaagplan) -> QTableWidget:
         # De "Nr"-kolom toont dezelfde positienummers als de genummerde

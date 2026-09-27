@@ -2263,6 +2263,121 @@ houden.
   feedback/een concreet voorbeeld van Sven voordat hier verder aan
   gewerkt wordt.
 
+- **Zaagmotor-vervolg: "waarom niet geplaatst"-redenen, laad-animatie
+  met minimale denktijd, en twee echte "Rijen"-bugs gevonden via Svens
+  eigen testproject.** Vervolg op de pauze hierboven — dit keer wél met
+  concrete voorbeelden.
+  1. **`ZaagplanResultaat` kreeg een nieuw veld `niet_geplaatst_redenen`**
+     (`dict[unit_id, Nederlandse uitleg]`, `engine.py`'s nieuwe
+     `_reden_niet_geplaatst`) — op Svens verzoek ("ik wil ook een functie
+     als hij niks plaatst dat ie aangeeft ... waarom hij deze item niet
+     heeft geplaatst"). Drie categorieën: (a) te groot voor de plaat, ook
+     na roteren; (b) past alleen geroteerd maar nerf/groep verbiedt dat;
+     (c) past qua afmeting wel maar kreeg toch geen plek (wijst op een
+     zwakte in de plaatsingsstrategie, geen afmetingsprobleem). Later
+     uitgebreid met een vierde: (d) een onderdeel met een
+     `kantenband_randen`-eis op een rand die het materiaal al als
+     fabriekskantenband heeft roteert daar NOOIT (bestaande regel, zie
+     `_plaats_fabriek_rand`) — past het dan niet, dan is (c)'s "probeer
+     opnieuw"-advies misleidend, want geen zoekbudget of extra plaat
+     helpt hier ooit. `PlaatZaagplan.reden_voor()` (zaagplannen.py) en
+     `zaagplannen_opslag.py` (serialisatie, met `.get(...,{})`-terugval
+     voor oudere opgeslagen plannen) sluiten hierop aan.
+  2. **UI**: de kale "⚠ Niet geplaatst: naam, naam"-tekst in
+     `project_detail_page.py`'s Zaagplannen-paneel is vervangen door een
+     getinte waarschuwings-kaart (`_bouw_niet_geplaatst_banner`, nieuwe
+     `NietGeplaatstBanner`-stijlregels in `theme.py`) met per item de
+     naam (×aantal) én de reden op een eigen regel — op Svens verzoek
+     ("de foutmelding mag wel wat netter en cleaner geshowt worden").
+  3. **Laad-animatie + minimale denktijd**: het zoekbudget draaide tot nu
+     toe synchroon op de UI-thread (bewuste vereenvoudiging, zie hoger in
+     dit document) — Sven vroeg nu expliciet om een echte laad-animatie
+     tijdens het genereren én een minimale denktijd van "10 seconden
+     ofzo", ook als het zaagplan feitelijk al meteen klaar zou zijn.
+     Beide zijn nu gebouwd: `engine.genereer_zaagplan`/`genereer_zaagplannen`
+     kregen een nieuwe parameter `min_zoek_tijdsbudget` — de zoeklus stopt
+     niet meer vanwege `_MAX_POGINGEN_ZONDER_VERBETERING`-stagnatie vóórdat
+     die minimumtijd verstreken is (begrensd door het totale
+     `zoek_tijdsbudget` zelf). `project_detail_page.py`'s
+     "(Opnieuw) genereren" draait nu op een eigen thread
+     (`_ZaagplanWorker(QThread)`, nieuwe module-constante
+     `_MIN_ZOEK_TIJDSBUDGET_SECONDEN = 10.0`) i.p.v. de UI te blokkeren —
+     de eerder gedocumenteerde "geen achtergrond-thread"-vereenvoudiging
+     is dus nu ingehaald. Een nieuw draaiend laad-icoontje
+     (`_ZaagplanSpinner`, nieuw "loader"-icoon in `icons.py`, geroteerd via
+     een `QTimer`) toont daadwerkelijk beweging tijdens het wachten i.p.v.
+     de eerdere statische "Bezig..."-tekst.
+  4. **Bug 1 (band-batching regressie)**: bij het uitbreiden van
+     `_vul_rij`/`_plaats_rij` om meerdere onderdelen side-by-side in één
+     kolom-"band" te laten passen (Svens concrete "bodem 500mm + 4
+     dwarsbalken in een strook van 100mm"-voorbeeld — nu een kolom bevat
+     een lijst van banden, en een band zelf een lijst van side-by-side
+     leden), bleek een TWEEDE lid van dezelfde (kortere) hoogte-groep dat
+     nergens op een bestaande kolom paste altijd zijn eigen, nieuwe kolom
+     te krijgen — ook als hij prima op de kolom van het EERSTE lid van
+     diezelfde groep had gepast (Svens eigen "melamine grijs"-voorbeeld:
+     een tweede "lade rug korf" die niet stapelde op de kolom van de
+     eerste, terwijl dat wél had gepast — een regressie t.o.v. het
+     eerdere, sequentiële per-item-kolomzoeken). Fix: de kolomronde wordt
+     nu herhaald ("fixed point"-lus) na elke nieuw aangemaakte kolom, dus
+     ook latere leden van dezelfde groep krijgen een kans op die kolom te
+     stapelen.
+  5. **Bug 2 (geen bug, een datafoutje)**: Svens andere gemelde geval
+     ("plaat 5/8 van Meubelpaneel wit 18, stijlen passen makkelijk achter
+     het passtuk") bleek bij nader onderzoek (op een kopie van
+     `data/robocutter.db`, alleen-lezend, project "Keuken Jansen") geen
+     algoritme-bug: het materiaal is 600mm breed met fabriekskantenband op
+     onder/boven, en twee onderdelen ("Bodem"/"Dwarsbalk vooraan") eisen
+     kantenband op "Onder" terwijl ze ongeroteerd 864mm diep zijn — meer
+     dan de plaat breed is, op ELKE plaat van dat materiaal. Sven
+     bevestigde dit zelf ("oke dus de fout ligt bij de gebruiker").
+  6. **Verificatie**: volledige testsuite (161 tests, waarvan 9 nieuw op
+     deze twee stappen: reden-categorieën, `min_zoek_tijdsbudget`-gedrag,
+     en Svens twee exacte scenario's als regressietests) en een ad-hoc
+     fuzz-script (25 seeds × 400 random scenario's × 4 strategieën =
+     40.000 runs, overlap/rand/snede-checks) vóór en na de band-batching-
+     wijziging: **0 fouten**, geen regressie t.o.v. de bestaande code.
+
+- **Kantenband-/randafzaag-randen als klikbare tekening (n.a.v. het
+  datafoutje hierboven).** Svens datafoutje (kantenband op de verkeerde
+  rand voor de opgegeven afmetingen) bracht 'm op een UX-idee om dit soort
+  fouten te voorkomen: i.p.v. vier losse "Links/Rechts/Onder/Boven"-
+  knoppen zonder enig verband met de vorm, een rechthoek-tekening met de
+  echte afmetingen als maatlijn, waarbij je de rand rechtstreeks op de
+  tekening zelf aanklikt. Eerst een HTML/Artifact-mockup gebouwd en door
+  Sven goedgekeurd (twee voorbeelden met zijn eigen "Keuken Jansen"-data:
+  het "Bodem"-onderdeel en materiaal "Meubelpaneel wit 18", inclusief een
+  live waarschuwing die precies het net gevonden datafoutje laat zien).
+  Daarna uitgewerkt in PySide6:
+  - Nieuw, herbruikbaar widget `src/robocutter/ui/widgets/randen_diagram.py`
+    (`RandenDiagram`, met QPainter voor de rechthoek/maatlijnen en vier
+    absoluut-gepositioneerde `QToolButton`s als klikbare randzones) —
+    bewust in `widgets/` i.p.v. per-bestand gedupliceerd zoals de oude
+    `_rand_chip_rij` (zie de "Shared helpers"-conventie): dit is een
+    complete, custom-getekende widget, geen klein one-linertje, dus hier
+    is hergebruik de betere afweging.
+  - Vervangt `_rand_chip_rij` op alle drie de plekken waar dat nog echt
+    gebruikt werd: `materialen_page.py` (`randafzaag_randen` én
+    `fabriekskantenband_randen`, rechthoek = lengte×breedte),
+    `model_detail_page.py` (`kantenband_randen` per onderdeel, rechthoek =
+    breedte×hoogte — dit is het échte, actieve modeldetail-tabblad;
+    `modellen_page.py`'s eigen kopie is een niet meer aangeroepen
+    defensieve terugval en is bewust ongemoeid gelaten) en
+    `project_detail_page.py` (losse onderdelen, zelfde patroon). Elk
+    scherm verversd de getoonde afmetingen live zodra de bijbehorende
+    lengte/breedte- of breedte/hoogte-velden wijzigen.
+  - **Ook, op Svens verzoek** ("een knop bij lengte en breedte waar je
+    makkelijk lengte en breedte kan omdraaien als je het per ongeluk net
+    andersom hebt ingevuld"): een omwissel-knop (nieuw "swap"-icoon in
+    `icons.py`) naast elk lengte/breedte- resp. breedte/hoogte-veldpaar in
+    diezelfde drie schermen, die de twee waarden in één klik verwisselt —
+    precies de fix voor het soort datafoutje dat tot dit alles leidde.
+  Geverifieerd met offscreen smoke-tests per scherm (widget opbouwen,
+  afmetingen live bijwerken, rand aan-/uitklikken, omwisselen, opslaan/
+  teruglezen, thema-wissel) op tijdelijke databases; volledige testsuite
+  ongewijzigd 161 tests groen (dit is UI-werk zonder pytest-dekking, zie
+  Architectuur-sectie).
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

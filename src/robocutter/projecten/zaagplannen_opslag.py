@@ -195,6 +195,7 @@ def _resultaat_naar_dict(r: ZaagplanResultaat) -> dict:
         "afval_oppervlak": r.afval_oppervlak,
         "zaagvolgorde": [_zaagsnede_naar_dict(s) for s in r.zaagvolgorde],
         "niet_geplaatst": list(r.niet_geplaatst),
+        "niet_geplaatst_redenen": dict(r.niet_geplaatst_redenen),
     }
 
 
@@ -207,6 +208,7 @@ def _dict_naar_resultaat(d: dict) -> ZaagplanResultaat:
         afval_oppervlak=d["afval_oppervlak"],
         zaagvolgorde=[_dict_naar_zaagsnede(s) for s in d["zaagvolgorde"]],
         niet_geplaatst=list(d["niet_geplaatst"]),
+        niet_geplaatst_redenen=dict(d.get("niet_geplaatst_redenen", {})),
     )
 
 

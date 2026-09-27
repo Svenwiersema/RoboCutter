@@ -505,6 +505,13 @@ def build_stylesheet(t: Theme) -> str:
         background: {t.critical_soft}; border: 1px solid {t.critical}; border-radius: 9px;
     }}
     QLabel[role="validationText"] {{ color: {t.critical}; font-size: 12.5px; }}
+    QFrame#NietGeplaatstBanner {{
+        background: {t.warning_soft}; border: 1px solid {t.warning}; border-radius: 9px;
+    }}
+    QLabel[role="warningHeading"] {{ color: {t.warning_ink}; font-size: 12.5px; font-weight: 700; }}
+    QLabel[role="warningItemBullet"] {{ color: {t.warning}; font-size: 13px; font-weight: 700; }}
+    QLabel[role="warningItemName"] {{ color: {t.text}; font-size: 12.5px; font-weight: 600; }}
+    QLabel[role="warningItemReden"] {{ color: {t.text_muted}; font-size: 11.5px; }}
 
     /* ---------- Projectdetail-tabblad ---------- */
     QPushButton[role="breadcrumbLink"] {{

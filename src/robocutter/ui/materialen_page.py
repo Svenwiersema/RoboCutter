@@ -37,18 +37,18 @@ from robocutter.materialen.bibliotheek import (
     OngeldigeStatusOvergangError,
     valideer,
 )
-from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType, Nerfrichting, Rand
+from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType, Nerfrichting
 from robocutter.materialen.opslag import open_verbinding
 from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.randen_diagram import RandenDiagram
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
     Nerfrichting.LANGE_ZIJDE: "Lange zijde",
     Nerfrichting.KORTE_ZIJDE: "Korte zijde",
 }
-_RAND_LABEL = {Rand.BOVEN: "Boven", Rand.ONDER: "Onder", Rand.LINKS: "Links", Rand.RECHTS: "Rechts"}
 _KOLOMBREEDTES = [230, 80, 150, 110, 140, 100, 110]
 _SORT_OPTIES = [("naam", "Sorteren op naam"), ("type", "Sorteren op type"), ("status", "Sorteren op status")]
 _DRAWER_BREEDTE = 420
@@ -934,6 +934,15 @@ class MaterialenPage(QWidget):
         lengte_wrap, self._in_lengte = self._field_spin()
         kol1.addWidget(lengte_wrap)
         rij.addLayout(kol1)
+
+        wissel_btn = QToolButton()
+        wissel_btn.setIcon(icon("swap", self._theme.text_muted, 15))
+        wissel_btn.setAutoRaise(True)
+        wissel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        wissel_btn.setToolTip("Lengte en breedte omwisselen (bv. per ongeluk verwisseld ingevoerd)")
+        wissel_btn.clicked.connect(self._wissel_lengte_breedte)
+        rij.addWidget(wissel_btn, 0, Qt.AlignmentFlag.AlignBottom)
+
         kol2 = QVBoxLayout()
         kol2.addWidget(self._field_label("Breedte (mm)"))
         breedte_wrap, self._in_breedte = self._field_spin()
@@ -946,7 +955,24 @@ class MaterialenPage(QWidget):
         kol3.addWidget(derde_wrap)
         rij.addLayout(kol3)
         section.addLayout(rij)
+
+        self._in_lengte.valueChanged.connect(self._ververs_rand_diagrammen)
+        self._in_breedte.valueChanged.connect(self._ververs_rand_diagrammen)
         return section
+
+    def _wissel_lengte_breedte(self) -> None:
+        # Op Svens verzoek: een snelle manier om lengte/breedte om te
+        # draaien als je ze per ongeluk verwisseld hebt ingevoerd — precies
+        # het datafoutje dat leidde tot een onderdeel dat nooit op de
+        # plaat kon passen (zie OVERDRACHT.md, de kantenband-tekening).
+        lengte, breedte = self._in_lengte.value(), self._in_breedte.value()
+        self._in_lengte.setValue(breedte)
+        self._in_breedte.setValue(lengte)
+
+    def _ververs_rand_diagrammen(self) -> None:
+        breedte, hoogte = self._in_lengte.value(), self._in_breedte.value()
+        self._marge_rand_diagram.set_afmetingen(breedte, hoogte)
+        self._kanten_rand_diagram.set_afmetingen(breedte, hoogte)
 
     def _build_zaagplan_sectie(self) -> QVBoxLayout:
         section = QVBoxLayout()
@@ -980,10 +1006,12 @@ class MaterialenPage(QWidget):
         section.addWidget(marge_wrap)
 
         section.addWidget(self._field_label("Randafzaag op"))
-        self._marge_rand_buttons = self._rand_chip_rij(section)
+        self._marge_rand_diagram = RandenDiagram(self._theme)
+        section.addWidget(self._marge_rand_diagram)
 
         section.addWidget(self._field_label("Fabriekskantenband op"))
-        self._kanten_rand_buttons = self._rand_chip_rij(section)
+        self._kanten_rand_diagram = RandenDiagram(self._theme)
+        section.addWidget(self._kanten_rand_diagram)
 
         section.addWidget(self._field_label("Mes/groef-notitie"))
         self._in_mesgroef = self._field_input()
@@ -991,21 +1019,6 @@ class MaterialenPage(QWidget):
         section.addWidget(self._in_mesgroef)
 
         return section
-
-    def _rand_chip_rij(self, section: QVBoxLayout) -> dict[Rand, QPushButton]:
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        buttons: dict[Rand, QPushButton] = {}
-        for rand in Rand:
-            btn = QPushButton(_RAND_LABEL[rand])
-            btn.setProperty("role", "chipToggle")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            row.addWidget(btn)
-            buttons[rand] = btn
-        row.addStretch(1)
-        section.addLayout(row)
-        return buttons
 
     def _update_derde_label(self) -> None:
         type_waarde = MateriaalType(self._type_group.checkedButton().property("waarde"))
@@ -1020,8 +1033,9 @@ class MaterialenPage(QWidget):
         self._in_marge.setValue(0)
         self._type_group.buttons()[0].setChecked(True)
         self._nerf_group.buttons()[0].setChecked(True)
-        for btn in {**self._marge_rand_buttons, **self._kanten_rand_buttons}.values():
-            btn.setChecked(False)
+        self._marge_rand_diagram.set_geselecteerde_randen(frozenset())
+        self._kanten_rand_diagram.set_geselecteerde_randen(frozenset())
+        self._ververs_rand_diagrammen()
         self._update_derde_label()
         self._validation_banner.hide()
         namen = sorted({m.familie for m in self.bibliotheek.lijst() if m.familie})
@@ -1051,10 +1065,8 @@ class MaterialenPage(QWidget):
                 btn.setChecked(btn.property("waarde") == m.type)
             for btn in self._nerf_group.buttons():
                 btn.setChecked(btn.property("waarde") == m.nerfrichting)
-            for rand, btn in self._marge_rand_buttons.items():
-                btn.setChecked(rand in m.randafzaag_randen)
-            for rand, btn in self._kanten_rand_buttons.items():
-                btn.setChecked(rand in m.fabriekskantenband_randen)
+            self._marge_rand_diagram.set_geselecteerde_randen(m.randafzaag_randen)
+            self._kanten_rand_diagram.set_geselecteerde_randen(m.fabriekskantenband_randen)
             self._update_derde_label()
 
             is_archived = m.status == MateriaalStatus.GEARCHIVEERD
@@ -1092,10 +1104,10 @@ class MaterialenPage(QWidget):
             nerfrichting=nerf_waarde,
             kerf=self._in_kerf.value(),
             randafzaag_marge=self._in_marge.value(),
-            randafzaag_randen=frozenset(r for r, b in self._marge_rand_buttons.items() if b.isChecked()),
+            randafzaag_randen=self._marge_rand_diagram.geselecteerde_randen(),
             min_reststukgrootte=self._in_minrest.value(),
             mes_groef_notitie=self._in_mesgroef.text().strip(),
-            fabriekskantenband_randen=frozenset(r for r, b in self._kanten_rand_buttons.items() if b.isChecked()),
+            fabriekskantenband_randen=self._kanten_rand_diagram.geselecteerde_randen(),
             productcode=self._in_productcode.text().strip(),
             leverancier=self._in_leverancier.text().strip(),
             tags=tags,

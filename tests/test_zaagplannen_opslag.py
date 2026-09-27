@@ -83,11 +83,46 @@ def test_sqlite_opslag_overleeft_herstart(tmp_path):
     assert r2.strategie == r1.strategie
     assert r2.afval_oppervlak == r1.afval_oppervlak
     assert r2.niet_geplaatst == r1.niet_geplaatst
+    assert r2.niet_geplaatst_redenen == r1.niet_geplaatst_redenen
     assert r2.materiaal == r1.materiaal
     assert r2.plaatsingen == r1.plaatsingen
     assert r2.zaagvolgorde == r1.zaagvolgorde
     assert r2.reststukken == r1.reststukken
 
+    herstart_verbinding.close()
+
+
+def test_sqlite_opslag_bewaart_niet_geplaatst_redenen(tmp_path):
+    # Zelfde opzet als hierboven, maar nu met een onderdeel dat te groot
+    # is voor het materiaal -- moet ook zijn niet_geplaatst_redenen
+    # overleven, niet alleen de kale unit-id's.
+    db_pad = tmp_path / "zaagplannen.db"
+    materialen = MaterialenBibliotheek()
+    from robocutter.modellen.bibliotheek import ModellenBibliotheek
+
+    modellen = ModellenBibliotheek(materialen)
+    projecten = ProjectenBibliotheek(modellen, materialen)
+    hout = materialen.toevoegen(_materiaal(lengte=1000, breedte=1000))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                ModelOnderdeel(id="", naam="Te groot paneel", materiaal_id=hout.id, breedte=5000, hoogte=5000, aantal=1),
+            ],
+        )
+    )
+    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="efficient")
+    assert plannen[0].resultaat.niet_geplaatst_redenen
+
+    verbinding = open_verbinding(db_pad)
+    opslag = ZaagplannenOpslag(verbinding)
+    opslag.opslaan(project.id, plannen, waarschuwingen, "efficient")
+    verbinding.close()
+
+    herstart_verbinding = open_verbinding(db_pad)
+    herladen_plannen, _, _ = ZaagplannenOpslag(herstart_verbinding).laad(project.id)
+
+    assert herladen_plannen[0].resultaat.niet_geplaatst_redenen == plannen[0].resultaat.niet_geplaatst_redenen
     herstart_verbinding.close()
 
 

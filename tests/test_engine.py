@@ -8,6 +8,7 @@ min-reststukgrootte-classificatie.
 from __future__ import annotations
 
 import itertools
+import time
 
 import pytest
 
@@ -216,7 +217,82 @@ def test_stroken_gebruikt_overal_dezelfde_vaste_strookhoogte():
     assert abs(p_laag.y - p_hoog.y) == pytest.approx(900 + mat.kerf)
 
 
-@pytest.mark.parametrize("strategie", ["rijen", "stroken"])
+def test_rijen_stapelt_meerdere_smallere_onderdelen_side_by_side_in_een_band():
+    # Svens concrete voorbeeld: een "bodem" laat, binnen zijn eigen kolom,
+    # nog verticale restruimte over (110mm) waar meerdere "dwarsbalken"
+    # (elk 100mm hoog) NAAST ELKAAR in passen i.p.v. dat er maar één per
+    # band gebruikt wordt en de rest van de kolombreedte braak blijft
+    # liggen: "als je een bodem hebt van 500mm lang dan passen daar ook 4
+    # dwarsbalken binnen in die strook van 100mm".
+    mat = _standaard_materiaal(lengte=700, breedte=900, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        # Hoogste groep: bepaalt de rijhoogte (710) en krijgt zijn eigen,
+        # smalle kolom (90mm) waar geen dwarsbalk (120mm breed) op past.
+        Onderdeel(id="anker", breedte=90, hoogte=710, aantal=1),
+        # Tweede groep: te breed (500mm) om op de anker-kolom te stapelen
+        # -> eigen nieuwe kolom van 500mm breed, 600mm hoog (110mm over).
+        Onderdeel(id="bodem", breedte=500, hoogte=600, aantal=1),
+        # Derde (kortste) groep: 4x 120mm breed, 100mm hoog -- passen qua
+        # hoogte in de 110mm restruimte boven de bodem, en qua breedte
+        # (4x120 + 3x kerf = 492mm) ruim binnen de bodem's 500mm kolom.
+        Onderdeel(id="dwarsbalk", breedte=120, hoogte=100, aantal=4),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+
+    assert resultaat.niet_geplaatst == []
+    assert len(resultaat.plaatsingen) == 6
+
+    dwarsbalken = [p for p in resultaat.plaatsingen if p.onderdeel_id == "dwarsbalk"]
+    assert len(dwarsbalken) == 4
+    # Allemaal in dezelfde band (side-by-side): gelijke y, oplopende x.
+    ys = {round(p.y, 6) for p in dwarsbalken}
+    assert len(ys) == 1
+    xs = sorted(p.x for p in dwarsbalken)
+    assert xs == sorted(set(xs))  # geen twee op precies dezelfde x
+
+    bodem = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "bodem")
+    # De dwarsbalken-band staat boven op de bodem, binnen zijn kolom (x).
+    for p in dwarsbalken:
+        assert p.x >= bodem.x - 1e-6
+        assert p.x + p.breedte <= bodem.x + bodem.breedte + 1e-6
+        assert p.y >= bodem.y + bodem.hoogte - 1e-6
+
+    for a, b in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(a, b)
+
+
+def test_rijen_laat_later_lid_van_dezelfde_groep_stapelen_op_nieuwe_kolom_van_eerder_lid():
+    # Echt teruggevonden scenario (Sven's testproject "Keuken Jansen",
+    # materiaal "Melamine grijs 18"): twee identieke "lade rug korf"-
+    # stukken passen geen van beiden nog op de (al volledig hoge)
+    # kolommen van de vorige groep ("lade bodem") -- zonder de fixed-
+    # point-herhaling in _vul_rij kreeg de TWEEDE dan zijn eigen, aparte
+    # kolom, terwijl hij prima op de zojuist aangemaakte kolom van de
+    # EERSTE had gepast: "die 2e lade rug korf past makkelijk nog onder
+    # de andere 2 lade ruggen" (een derde, nog kortere "lade rug bestek"
+    # stapelt in de praktijk ook nog daarboven).
+    mat = _standaard_materiaal(lengte=2200, breedte=500, kerf=3, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="lade_bodem", breedte=506, hoogte=500, aantal=3),
+        Onderdeel(id="lade_rug_korf", breedte=506, hoogte=170, aantal=2),
+        Onderdeel(id="lade_rug_bestek", breedte=506, hoogte=70, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+
+    assert resultaat.niet_geplaatst == []
+    ruggen = [
+        p for p in resultaat.plaatsingen if p.onderdeel_id in ("lade_rug_korf", "lade_rug_bestek")
+    ]
+    assert len(ruggen) == 3
+    # Alle drie in dezelfde kolom (gelijke x), gestapeld op oplopende y.
+    xs = {round(p.x, 6) for p in ruggen}
+    assert len(xs) == 1
+
+    for a, b in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(a, b)
+
+
+@pytest.mark.parametrize("strategie", ["efficient", "rijen"])
 def test_rijen_vult_verticale_restruimte_boven_kortere_onderdelen(strategie):
     # Sven: "checkt dat bepaalde items ... minder [hoog] zijn dan de
     # rijhoogte en deze dan in de rij kan plaatsen zodat je efficiëntie
@@ -615,6 +691,107 @@ def test_genereer_zaagplannen_stopt_bij_te_groot_onderdeel_i_p_v_oneindig_door_t
     resultaten = genereer_zaagplannen(mat, onderdelen, strategie="efficient")
     assert len(resultaten) == 1
     assert resultaten[0].niet_geplaatst == ["te_groot#1"]
+    reden = resultaten[0].niet_geplaatst_redenen["te_groot#1"]
+    assert "te groot" in reden
+    assert "ook na roteren" in reden
+
+
+def test_niet_geplaatst_redenen_is_leeg_als_alles_geplaatst_is():
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    assert resultaat.niet_geplaatst == []
+    assert resultaat.niet_geplaatst_redenen == {}
+
+
+def test_niet_geplaatst_reden_meldt_dat_onderdeel_te_groot_is_ook_na_roteren():
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="te_groot", breedte=5000, hoogte=1500, aantal=1)]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    assert resultaat.niet_geplaatst == ["te_groot#1"]
+    reden = resultaat.niet_geplaatst_redenen["te_groot#1"]
+    assert "te groot" in reden
+    assert "ook na roteren" in reden
+
+
+def test_niet_geplaatst_reden_meldt_dat_nerfrichting_roteren_blokkeert():
+    # Een smalle, lange plaat: het onderdeel (1200x500) past niet
+    # ongeroteerd (1200 > lengte 1000) maar wel geroteerd (500 <= 1000
+    # en 1200 <= breedte 1600) -- de nerfrichting-eis staat die rotatie
+    # echter niet toe.
+    mat = _standaard_materiaal(lengte=1000, breedte=1600)
+    onderdelen = [
+        Onderdeel(
+            id="vast_om",
+            breedte=1200,
+            hoogte=500,
+            aantal=1,
+            nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE,
+        )
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    assert resultaat.niet_geplaatst == ["vast_om#1"]
+    reden = resultaat.niet_geplaatst_redenen["vast_om#1"]
+    assert "alleen geroteerd" in reden
+    assert "nerfrichting" in reden
+
+
+def test_niet_geplaatst_reden_meldt_dat_groep_te_groot_is():
+    # Zelfde scenario als test_rijen_slaat_te_hoge_groep_over_en_plaatst_kleinere_onderdelen_alsnog:
+    # de gestapelde groep (588mm hoog) past niet op een plaat van 500mm hoog.
+    mat = _standaard_materiaal(lengte=600, breedte=500, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="front_onder", breedte=596, hoogte=220, groep_id="lades", groep_volgorde=1),
+        Onderdeel(id="front_midden", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=2),
+        Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=3),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == ["groep:lades"]
+    reden = resultaat.niet_geplaatst_redenen["groep:lades"]
+    assert "groep" in reden.lower()
+    assert "te groot" in reden
+
+
+def test_niet_geplaatst_reden_meldt_geen_ruimte_meer_als_onderdeel_dimensioneel_wel_past():
+    # Zelfde scenario als test_rijen_stopt_pas_als_ook_de_laagste_resterende_groep_niet_meer_past:
+    # "past_ook_niet" (550x100) past qua afmeting prima op een lege
+    # 600x250-plaat, maar de rijen-heuristiek had al geen ruimte meer
+    # over op DEZE plaat -- een ander soort reden dan "te groot".
+    mat = _standaard_materiaal(lengte=600, breedte=250, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="past_al_niet", breedte=550, hoogte=220, aantal=1),
+        Onderdeel(id="past_ook_niet", breedte=550, hoogte=100, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == ["past_ook_niet#1"]
+    reden = resultaat.niet_geplaatst_redenen["past_ook_niet#1"]
+    assert "past qua afmeting wel" in reden.lower()
+    assert "te groot" not in reden
+
+
+def test_niet_geplaatst_reden_meldt_fabriekskantenband_blokkeert_rotatie():
+    # Echt teruggevonden scenario (Sven's testproject "Keuken Jansen",
+    # materiaal "Meubelpaneel wit 18"): een onderdeel met een
+    # kantenband_randen-eis op een rand die de plaat zelf al als
+    # fabriekskantenband heeft, mag daar NOOIT roteren (zie
+    # _plaats_fabriek_rand) -- past het dan niet, dan is de generieke
+    # "past qua afmeting wel, probeer opnieuw"-reden misleidend (geen
+    # zoekbudget of extra plaat lost dit ooit op), dus dit moet een
+    # eigen, specifieke reden krijgen.
+    mat = _standaard_materiaal(
+        lengte=2800, breedte=600, kerf=3, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER}),
+    )
+    onderdelen = [
+        Onderdeel(id="bodem", breedte=540, hoogte=864, aantal=1, kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    assert resultaat.niet_geplaatst == ["bodem#1"]
+    reden = resultaat.niet_geplaatst_redenen["bodem#1"]
+    assert "fabriekskantenband" in reden
+    assert "nooit roteren" in reden.lower()
+    assert "600mm" in reden
+    assert "past qua afmeting wel" not in reden.lower()
 
 
 @pytest.mark.parametrize("strategie", ["efficient", "guillotine"])
@@ -669,6 +846,39 @@ def test_zoek_tijdsbudget_zonder_budget_geeft_ongewijzigd_deterministisch_result
     met_expliciete_nul = genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=0.0)
     assert zonder_param.plaatsingen == met_expliciete_nul.plaatsingen
     assert zonder_param.zaagvolgorde == met_expliciete_nul.zaagvolgorde
+
+
+def test_min_zoek_tijdsbudget_dwingt_de_zoektocht_langer_door_te_gaan():
+    # Op Svens verzoek ("een minimale denktijd van 10 seconden ofzo"),
+    # gebruikt hier een kleine waarde om de test snel te houden: zelfs
+    # een triviaal, al-optimaal scenario (dat zonder minimum meteen na
+    # de eerste _MAX_POGINGEN_ZONDER_VERBETERING-stagnatie stopt) moet
+    # met min_zoek_tijdsbudget minstens zo lang doorzoeken.
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
+
+    start = time.monotonic()
+    genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.0)
+    duur_zonder_minimum = time.monotonic() - start
+
+    start = time.monotonic()
+    genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.3)
+    duur_met_minimum = time.monotonic() - start
+
+    assert duur_zonder_minimum < 0.3
+    assert duur_met_minimum >= 0.3
+
+
+def test_min_zoek_tijdsbudget_wordt_begrensd_door_zoek_tijdsbudget_zelf():
+    # Een min_zoek_tijdsbudget groter dan het totale zoek_tijdsbudget mag
+    # niet langer laten wachten dan dat totale budget zelf toestaat.
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
+
+    start = time.monotonic()
+    genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=0.2, min_zoek_tijdsbudget=10.0)
+    duur = time.monotonic() - start
+    assert duur < 2.0
 
 
 def _scenario_efficient():
