@@ -34,10 +34,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["Instellingen", "GELDIGE_THEMAS", "GELDIGE_ZAAGSTRATEGIEEN", "GELDIGE_LABEL_SCANCODES"]
+__all__ = [
+    "Instellingen",
+    "GELDIGE_THEMAS",
+    "GELDIGE_ZAAGSTRATEGIEEN",
+    "GELDIGE_LABEL_SCANCODES",
+    "normaliseer_zaagstrategie",
+]
 
 GELDIGE_THEMAS = ("licht", "donker", "systeem")
-GELDIGE_ZAAGSTRATEGIEEN = ("efficient", "rijen", "guillotine")
+GELDIGE_ZAAGSTRATEGIEEN = ("efficient", "horizontaal", "verticaal", "guillotine")
+# Op Svens verzoek hernoemd: "rijen" heet sinds deze stap "horizontaal"
+# (hoofdzaagsnedes horizontaal over de plaat), naast het nieuwe
+# "verticaal" (zelfde aanpak, hoofdzaagsnedes verticaal). Oude opgeslagen
+# waarden (instellingen.json, opgeslagen zaagplannen) worden bij het
+# inladen via normaliseer_zaagstrategie omgezet.
+_VEROUDERDE_ZAAGSTRATEGIEEN = {"rijen": "horizontaal"}
+
+
+def normaliseer_zaagstrategie(waarde: str) -> str:
+    """Zet een verouderde strategienaam (bv. ``"rijen"``) om naar de
+    huidige; elke andere waarde komt ongewijzigd terug."""
+
+    return _VEROUDERDE_ZAAGSTRATEGIEEN.get(waarde, waarde)
+
 # Hoofdstuk 6: de scancode-optie (QR/barcode/geen) is "één algemene
 # instelling in het programma" — niet iets wat je telkens opnieuw kiest
 # bij het printen van een labelvel.

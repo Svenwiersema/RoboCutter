@@ -46,7 +46,7 @@ def test_een_label_per_geplaatst_exemplaar():
         )
     )
 
-    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, strategie="rijen")
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, strategie="horizontaal")
     labels = genereer_labels_voor_project(project, plannen)
 
     assert len(labels) == 3

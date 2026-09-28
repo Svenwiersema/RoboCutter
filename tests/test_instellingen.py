@@ -44,7 +44,7 @@ def test_opslaan_en_laden_roundtrip(tmp_path):
         opslag_map=str(tmp_path / "andere-map"),
         thema="donker",
         bedrijfslogo_pad=str(tmp_path / "logo.png"),
-        standaard_zaagstrategie="rijen",
+        standaard_zaagstrategie="horizontaal",
         werkvoorbereider_naam="Sven",
         label_scancode="barcode",
         label_kantenband_indicatie=False,
@@ -135,3 +135,13 @@ def test_wijzig_opslaglocatie_faalt_bij_conflicterend_bestand(tmp_path):
     # Geen van beide bestanden mag zijn aangetast door de mislukte poging.
     assert (oude_map / "robocutter.db").read_text(encoding="utf-8") == "oud"
     assert (nieuwe_map / "robocutter.db").read_text(encoding="utf-8") == "bestaat-al"
+
+
+def test_oude_strategienaam_rijen_wordt_horizontaal_bij_laden(tmp_path):
+    # "rijen" is op Svens verzoek hernoemd naar "horizontaal"; een eerder
+    # opgeslagen instellingenbestand moet gewoon blijven werken.
+    pad = tmp_path / "instellingen.json"
+    pad.write_text('{"standaard_zaagstrategie": "rijen"}', encoding="utf-8")
+    instellingen = laad_instellingen(pad)
+    assert instellingen.standaard_zaagstrategie == "horizontaal"
+    assert valideer(instellingen) == []

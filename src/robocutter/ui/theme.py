@@ -277,6 +277,11 @@ def build_stylesheet(t: Theme) -> str:
         font-size: 13px;
     }}
     QPushButton[role="ghost"]:hover {{ background: {t.surface_hover}; }}
+    QPushButton[role="primary"]:disabled, QPushButton[role="ghost"]:disabled {{
+        background: {t.surface_2};
+        color: {t.text_faint};
+        border: 1px solid {t.border};
+    }}
 
     /* ---------- Stat tiles ---------- */
     QFrame#StatTile {{

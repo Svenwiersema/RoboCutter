@@ -8,11 +8,13 @@ min-reststukgrootte-classificatie.
 from __future__ import annotations
 
 import itertools
+import random
+import math
 import time
 
 import pytest
 
-from robocutter.optimalisatie.engine import genereer_zaagplan, genereer_zaagplannen
+from robocutter.optimalisatie.engine import genereer_zaagplan, genereer_zaagplannen, schat_aantal_platen
 from robocutter.optimalisatie.models import (
     Materiaal,
     Nerfrichting,
@@ -45,7 +47,7 @@ def _standaard_materiaal(**overrides) -> Materiaal:
     return Materiaal(**basis)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "rijen"])
+@pytest.mark.parametrize("strategie", ["efficient", "horizontaal"])
 def test_geen_overlappende_plaatsingen(strategie):
     mat = _standaard_materiaal()
     onderdelen = [
@@ -59,11 +61,11 @@ def test_geen_overlappende_plaatsingen(strategie):
         assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "rijen", "stroken", "guillotine"])
+@pytest.mark.parametrize("strategie", ["efficient", "horizontaal", "stroken", "guillotine"])
 def test_geplaatste_stukken_overlappen_nooit_ongeacht_strategie(strategie):
     # Zelfde mix als hierboven, maar zonder te eisen dat alles geplaatst
     # wordt: "stroken" en "guillotine" zijn bewust minder efficiënt dan
-    # "efficient"/"rijen" (vaste strookhoogte resp. uitsluitend
+    # "efficient"/"horizontaal" (vaste strookhoogte resp. uitsluitend
     # rand-tot-rand sneden), dus kunnen op een krappe plaat stukken
     # onplaatsbaar laten — dat is geen bug, zie engine.py. Geen overlap is
     # wel een harde eis voor elke strategie.
@@ -78,7 +80,7 @@ def test_geplaatste_stukken_overlappen_nooit_ongeacht_strategie(strategie):
         assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "rijen", "stroken", "guillotine"])
+@pytest.mark.parametrize("strategie", ["efficient", "horizontaal", "stroken", "guillotine"])
 def test_alle_plaatsingen_binnen_de_plaat(strategie):
     mat = _standaard_materiaal()
     onderdelen = [Onderdeel(id="a", breedte=850, hoogte=902, aantal=3)]
@@ -93,7 +95,7 @@ def test_alle_plaatsingen_binnen_de_plaat(strategie):
 def test_kerf_wordt_aangehouden_tussen_onderdelen_in_een_rij():
     mat = _standaard_materiaal(kerf=4)
     onderdelen = [Onderdeel(id="a", breedte=500, hoogte=500, aantal=2)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     xs = sorted(p.x for p in resultaat.plaatsingen)
     # Tweede onderdeel moet minstens breedte + kerf verder beginnen.
     assert xs[1] >= xs[0] + 500 + mat.kerf - 1e-6
@@ -237,7 +239,7 @@ def test_rijen_stapelt_meerdere_smallere_onderdelen_side_by_side_in_een_band():
         # (4x120 + 3x kerf = 492mm) ruim binnen de bodem's 500mm kolom.
         Onderdeel(id="dwarsbalk", breedte=120, hoogte=100, aantal=4),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
 
     assert resultaat.niet_geplaatst == []
     assert len(resultaat.plaatsingen) == 6
@@ -277,7 +279,7 @@ def test_rijen_laat_later_lid_van_dezelfde_groep_stapelen_op_nieuwe_kolom_van_ee
         Onderdeel(id="lade_rug_korf", breedte=506, hoogte=170, aantal=2),
         Onderdeel(id="lade_rug_bestek", breedte=506, hoogte=70, aantal=1),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
 
     assert resultaat.niet_geplaatst == []
     ruggen = [
@@ -292,7 +294,7 @@ def test_rijen_laat_later_lid_van_dezelfde_groep_stapelen_op_nieuwe_kolom_van_ee
         assert not _rechthoeken_overlappen(a, b)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "rijen"])
+@pytest.mark.parametrize("strategie", ["efficient", "horizontaal"])
 def test_rijen_vult_verticale_restruimte_boven_kortere_onderdelen(strategie):
     # Sven: "checkt dat bepaalde items ... minder [hoog] zijn dan de
     # rijhoogte en deze dan in de rij kan plaatsen zodat je efficiëntie
@@ -333,7 +335,7 @@ def test_rijen_vult_verticale_restruimte_ook_met_geroteerd_onderdeel():
         # maar geroteerd (500 x 150) past het net als in de vorige test.
         Onderdeel(id="vulling", breedte=150, hoogte=500, aantal=1),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == []
     vulling = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "vulling")
     assert vulling.geroteerd is True
@@ -343,7 +345,7 @@ def test_rijen_vult_verticale_restruimte_ook_met_geroteerd_onderdeel():
         assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
 
 
-@pytest.mark.parametrize("strategie", ["rijen", "stroken"])
+@pytest.mark.parametrize("strategie", ["horizontaal", "stroken"])
 def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
     # Een gestapelde groep (bv. ladefronten) naast een los onderdeel van
     # een heel andere hoogte in dezelfde rij/strook: de sneden die de
@@ -358,7 +360,7 @@ def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
         # Nerf-eis vastgezet zodat "paneel" zijn 588-hoogte behoudt (dus in
         # dezelfde rij/strook als de even hoge groep terechtkomt, wat deze
         # test bewust nodig heeft) i.p.v. te roteren naar de kortere
-        # landschap-oriëntatie die "rijen"/"stroken" sinds de rotatiefix
+        # landschap-oriëntatie die "horizontaal"/"stroken" sinds de rotatiefix
         # kiezen voor een vrij-roteerbaar onderdeel.
         Onderdeel(id="paneel", breedte=500, hoogte=588, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
     ]
@@ -370,10 +372,15 @@ def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
     groep_sneden = [s for s in resultaat.zaagvolgorde if s.richting == "horizontaal" and s.einde - s.start < mat.lengte]
     assert len(groep_sneden) == 2  # de 2 naden tussen de 3 groepsleden
     for s in groep_sneden:
-        assert s.start == pytest.approx(504.0) and s.einde == pytest.approx(1100.0)
+        # Van rand tot rand van het deelgebied van de groep-kolom: dat begint
+        # direct na het paneel (500) — de kerf ertussen (500..504) hoort bij
+        # dat deelgebied (zie _zet_sneden_op_deelgebieden) — en eindigt bij
+        # de rand van de groep (1100).
+        assert 500.0 - 1e-6 <= s.start <= 504.0 + 1e-6
+        assert s.einde == pytest.approx(1100.0)
 
 
-@pytest.mark.parametrize("strategie", ["rijen", "stroken", "efficient", "guillotine"])
+@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal", "stroken", "efficient", "guillotine"])
 def test_geen_enkele_snede_kruist_een_plaatsing(strategie):
     # Bredere, minder gerichte check dan hierboven: over alle vier
     # strategieën tegelijk, met een mix van een groep, losse onderdelen
@@ -404,7 +411,7 @@ def test_fabriekskantenband_gebruikt_meerdere_beschikbare_randen():
         Onderdeel(id=f"fabriek{i}", breedte=300, hoogte=150, aantal=1, fabriekskantenband_vereist=True)
         for i in range(6)
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == []
     ys = sorted({round(p.y, 1) for p in resultaat.plaatsingen})
     assert ys == [0.0, 550.0]  # onder-strook (y=0) én boven-strook (y=breedte-hoogte)
@@ -417,11 +424,11 @@ def test_fabriekskantenband_gebruikt_meerdere_beschikbare_randen():
         lengte=1000, breedte=700, kerf=4, min_reststukgrootte=0,
         fabriekskantenband_randen=frozenset({Rand.ONDER}),
     )
-    resultaat_een_rand = genereer_zaagplan(mat_een_rand, onderdelen, strategie="rijen")
+    resultaat_een_rand = genereer_zaagplan(mat_een_rand, onderdelen, strategie="horizontaal")
     assert len(resultaat_een_rand.niet_geplaatst) == 3
 
 
-def test_fabriekskantenband_respecteert_kantenband_randen_en_roteert_niet():
+def test_fabriekskantenband_respecteert_kantenband_randen_zonder_kwartslag():
     # Sven, over een dwarsbalk in een echt testproject: "de dwarsbalk
     # geroteerd dat de korte kant de kantenband raakt maar is het niet
     # zo dat de kantenband de lange zijde moet hebben". Kern van de bug:
@@ -442,17 +449,20 @@ def test_fabriekskantenband_respecteert_kantenband_randen_en_roteert_niet():
         Onderdeel(id="plank_onder", breedte=400, hoogte=120, aantal=1,
                   kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == []
     dwarsbalk = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "dwarsbalk_boven")
     plank = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "plank_onder")
-    # Geen van beide geroteerd: hun eigen breedte/hoogte, zoals opgegeven.
+    # Geen kwartslag: de lange zijde (waar de kantenband op zit) ligt
+    # langs de rand, dus hun eigen breedte/hoogte zoals opgegeven.
     assert not dwarsbalk.geroteerd and (dwarsbalk.breedte, dwarsbalk.hoogte) == (564, 100)
     assert not plank.geroteerd and (plank.breedte, plank.hoogte) == (400, 120)
-    # De dwarsbalk raakt zijn BOVEN-rand (de lange 564-zijde ligt daar plat tegenaan).
-    assert dwarsbalk.y + dwarsbalk.hoogte == pytest.approx(mat.breedte)
-    # De plank raakt zijn ONDER-rand.
-    assert plank.y == pytest.approx(0.0)
+    # Elk raakt met die lange zijde een fabrieksrand: ongedraaid tegen
+    # de eigen rand, of een halve slag gedraaid tegen de tegenoverliggende
+    # (ook een fabrieksrand op deze plaat) — beide leggen de juiste zijde
+    # tegen de fabriekskantenband.
+    for p in (dwarsbalk, plank):
+        assert p.y == pytest.approx(0.0) or p.y + p.hoogte == pytest.approx(mat.breedte)
 
 
 def test_fabriekskantenband_met_nerfrichting_conflict_valt_terug_op_gewoon_onderdeel():
@@ -473,7 +483,7 @@ def test_fabriekskantenband_met_nerfrichting_conflict_valt_terug_op_gewoon_onder
             nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE,
         ),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     # Nog steeds gewoon geplaatst (via het normale werkgebied), niet
     # stilzwijgend verloren of vast blijven zitten in de fabriek-route.
     assert resultaat.niet_geplaatst == []
@@ -489,10 +499,11 @@ def test_fabriekskantenband_strook_krijgt_eigen_scheidingssnede():
         Onderdeel(id="fabriek", breedte=500, hoogte=500, aantal=1, fabriekskantenband_vereist=True),
         Onderdeel(id="rest", breedte=400, hoogte=400, aantal=1),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     eerste = min(resultaat.zaagvolgorde, key=lambda s: s.volgnummer)
     assert eerste.richting == "verticaal"
-    assert eerste.positie == pytest.approx(500 + mat.kerf)
+    # Op de rand van de strook zelf (het stuk van 500), vóór de kerf.
+    assert eerste.positie == pytest.approx(500)
     assert eerste.start == pytest.approx(0.0)
     assert eerste.einde == pytest.approx(mat.breedte)
 
@@ -502,7 +513,7 @@ def test_rijen_enkele_rij_krijgt_scheidingssnede_naar_restruimte_erboven():
     # de horizontale snede die die rij scheidt van het reststuk erboven.
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [Onderdeel(id="a", breedte=800, hoogte=500, aantal=2)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == []
     horizontale_sneden = [s for s in resultaat.zaagvolgorde if s.richting == "horizontaal"]
     assert len(horizontale_sneden) == 1
@@ -525,7 +536,7 @@ def test_rijen_houdt_identieke_onderdelen_bij_elkaar_in_een_rij():
         Onderdeel(id="zijkant", breedte=720, hoogte=720, aantal=2),
         Onderdeel(id="bodem", breedte=564, hoogte=560, aantal=2),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == []
     bodems = sorted((p for p in resultaat.plaatsingen if p.onderdeel_id == "bodem"), key=lambda p: p.x)
     # Allebei op dezelfde y (zelfde rij) i.p.v. verspreid over twee rijen.
@@ -548,7 +559,7 @@ def test_rijen_slaat_te_hoge_groep_over_en_plaatst_kleinere_onderdelen_alsnog():
         Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=3),
         Onderdeel(id="lade_bodem", breedte=550, hoogte=400, aantal=1),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == ["groep:lades"]
     assert len(resultaat.plaatsingen) == 1
     assert resultaat.plaatsingen[0].onderdeel_id == "lade_bodem"
@@ -564,7 +575,7 @@ def test_rijen_stopt_pas_als_ook_de_laagste_resterende_groep_niet_meer_past():
         Onderdeel(id="past_al_niet", breedte=550, hoogte=220, aantal=1),
         Onderdeel(id="past_ook_niet", breedte=550, hoogte=100, aantal=1),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     # De eerste (hoogste) past nog wel (220 < 250); de tweede rij zou
     # cursor_y=224 + 100 = 324 > 250 zijn, past dus niet meer.
     assert len(resultaat.plaatsingen) == 1
@@ -590,7 +601,7 @@ def test_stroken_stopt_wel_meteen_helemaal_want_strookhoogte_is_plaatbreed_vast(
     assert set(resultaat.niet_geplaatst) == {"groep:lades", "lade_bodem#1"}
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "rijen", "stroken"])
+@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "horizontaal", "stroken"])
 def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [
@@ -608,7 +619,7 @@ def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
         assert eerste.einde == pytest.approx(mat.lengte)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "rijen", "stroken"])
+@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "horizontaal", "verticaal", "stroken"])
 def test_elke_snede_is_rand_tot_rand_van_zijn_eigen_deelgebied(strategie):
     # Sterkere check dan alleen de eerste snede: reconstrueer voor elke
     # snede het deelgebied waarin hij viel (op basis van alle eerdere
@@ -616,11 +627,11 @@ def test_elke_snede_is_rand_tot_rand_van_zijn_eigen_deelgebied(strategie):
     # deelgebied raken -- dat garandeert dat een snede nooit dwars door
     # een al geplaatst onderdeel heen loopt. Geldt voor "efficient"/
     # "guillotine" via _splits_vrije_rechthoek, en sinds de
-    # rij-hoogte-bugfix ook voor "rijen"/"stroken" (zie
+    # rij-hoogte-bugfix ook voor "horizontaal"/"stroken" (zie
     # _bouw_zaagvolgorde_uit_rijen: een tussen-kolom-snede stopte voorheen
     # 1 kerf te vroeg t.o.v. de echte fysieke rijgrens zodra er nóg een
     # rij op volgde — dit was tot nu toe ongedekt, want "efficient" kon
-    # tot deze iteratie nooit intern op de uitkomst van "rijen"/"stroken"
+    # tot deze iteratie nooit intern op de uitkomst van "horizontaal"/"stroken"
     # uitkomen).
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [
@@ -674,7 +685,7 @@ def test_genereer_zaagplannen_gebruikt_meerdere_platen_als_nodig():
 def test_genereer_zaagplannen_alles_past_op_een_plaat():
     mat = _standaard_materiaal()
     onderdelen = [Onderdeel(id="a", breedte=500, hoogte=500, aantal=2)]
-    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="rijen")
+    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="horizontaal")
     assert len(resultaten) == 1
     assert resultaten[0].niet_geplaatst == []
 
@@ -745,7 +756,7 @@ def test_niet_geplaatst_reden_meldt_dat_groep_te_groot_is():
         Onderdeel(id="front_midden", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=2),
         Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=3),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == ["groep:lades"]
     reden = resultaat.niet_geplaatst_redenen["groep:lades"]
     assert "groep" in reden.lower()
@@ -762,7 +773,7 @@ def test_niet_geplaatst_reden_meldt_geen_ruimte_meer_als_onderdeel_dimensioneel_
         Onderdeel(id="past_al_niet", breedte=550, hoogte=220, aantal=1),
         Onderdeel(id="past_ook_niet", breedte=550, hoogte=100, aantal=1),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == ["past_ook_niet#1"]
     reden = resultaat.niet_geplaatst_redenen["past_ook_niet#1"]
     assert "past qua afmeting wel" in reden.lower()
@@ -785,7 +796,7 @@ def test_niet_geplaatst_reden_meldt_fabriekskantenband_blokkeert_rotatie():
     onderdelen = [
         Onderdeel(id="bodem", breedte=540, hoogte=864, aantal=1, kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     assert resultaat.niet_geplaatst == ["bodem#1"]
     reden = resultaat.niet_geplaatst_redenen["bodem#1"]
     assert "fabriekskantenband" in reden
@@ -948,7 +959,7 @@ def _scenario_guillotine():
     "strategie, scenario",
     [
         ("efficient", _scenario_efficient),
-        ("rijen", _scenario_rijen),
+        ("horizontaal", _scenario_rijen),
         ("guillotine", _scenario_guillotine),
     ],
 )
@@ -973,3 +984,552 @@ def test_zoek_tijdsbudget_vindt_aantoonbaar_betere_plaatsing(strategie, scenario
         assert p.y + p.hoogte <= mat.breedte + 1e-6
     for a, b in itertools.combinations(met_budget.plaatsingen, 2):
         assert not _rechthoeken_overlappen(a, b)
+
+
+def test_voortgang_loopt_nooit_terug_en_eindigt_op_een():
+    # Voor de voortgangsbalk in de UI: tussentijdse meldingen tijdens de
+    # minimale denktijd, nooit dalend, en altijd afgesloten met 1.0.
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
+    meldingen: list[float] = []
+
+    genereer_zaagplan(
+        mat, onderdelen, strategie="efficient",
+        zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.35, voortgang=meldingen.append,
+    )
+
+    assert len(meldingen) >= 3
+    assert meldingen == sorted(meldingen)
+    assert all(0.0 <= f <= 1.0 for f in meldingen)
+    assert meldingen[-1] == 1.0
+
+
+def test_voortgang_zonder_zoekbudget_meldt_alleen_klaar():
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
+    meldingen: list[float] = []
+
+    genereer_zaagplan(mat, onderdelen, strategie="horizontaal", voortgang=meldingen.append)
+
+    assert meldingen == [1.0]
+
+
+def test_voortgang_over_meerdere_platen_meldt_het_plaatnummer():
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=900, hoogte=900, aantal=3)]
+    meldingen: list[tuple[int, float]] = []
+
+    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="horizontaal", voortgang=lambda n, f: meldingen.append((n, f)))
+
+    assert len(resultaten) == 3
+    assert [n for n, f in meldingen if f == 1.0] == [1, 2, 3]
+
+
+def test_schat_aantal_platen():
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    assert schat_aantal_platen(mat, []) == 1
+    assert schat_aantal_platen(mat, [Onderdeel(id="a", breedte=100, hoogte=100, aantal=1)]) == 1
+    # 3 onderdelen van elk 0,81 m² op een plaat van 1 m² kunnen nooit op minder dan 3 platen.
+    assert schat_aantal_platen(mat, [Onderdeel(id="a", breedte=900, hoogte=900, aantal=3)]) >= 3
+
+
+def test_oneindig_zoekbudget_stopt_na_minimale_denktijd_op_stagnatie():
+    # Zonder tijdsplafond (math.inf) moet de zoektocht nog steeds vanzelf
+    # stoppen: minimaal min_zoek_tijdsbudget, daarna zodra
+    # _MAX_POGINGEN_ZONDER_VERBETERING pogingen op rij niets opleveren.
+    # Ook over meerdere platen: elke plaat krijgt zijn eigen minimale
+    # denktijd (geen gedeeld budget dat opraakt).
+    mat = _standaard_materiaal(lengte=1000, breedte=1000)
+    onderdelen = [Onderdeel(id="a", breedte=900, hoogte=900, aantal=3)]
+    meldingen: list[tuple[int, float]] = []
+
+    start = time.monotonic()
+    resultaten = genereer_zaagplannen(
+        mat, onderdelen, strategie="efficient",
+        zoek_tijdsbudget=math.inf, min_zoek_tijdsbudget=0.2,
+        voortgang=lambda n, f: meldingen.append((n, f)),
+    )
+    duur = time.monotonic() - start
+
+    assert len(resultaten) == 3
+    assert 0.6 <= duur < 3.0
+    # Elke plaat meldde tussentijdse voortgang (dus kreeg echt zoektijd).
+    for plaat in (1, 2, 3):
+        assert any(n == plaat and 0.0 < f < 1.0 for n, f in meldingen)
+
+
+def test_fabriekskantenband_draait_een_kwartslag_om_de_juiste_zijde_tegen_de_rand_te_leggen():
+    # Sven, over "Keuken Jansen": "de stijlen hebben een fabrieksrand maar
+    # liggen niet tegen een fabrieksrand". Een stijl (60×802) met
+    # kantenband op zijn lange linkerzijde, op een smalle plaat met
+    # fabriekskantenband op onder/boven: alleen een kwartslag gedraaid
+    # komt die lange zijde tegen een fabrieksrand. Voorheen viel zo'n stijl
+    # terug op een gewone plaatsing, ergens midden op de plaat.
+    mat = _standaard_materiaal(
+        lengte=2800, breedte=600, kerf=3, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        Onderdeel(id="zijkant", breedte=360, hoogte=880, aantal=3,
+                  kantenband_randen=frozenset({Rand.LINKS}), fabriekskantenband_vereist=True),
+        # 3 × 802 (+ kerf) past precies langs de bovenrand; een 4e zou
+        # alleen in een tweede rij passen die geen rand meer raakt.
+        Onderdeel(id="stijl", breedte=60, hoogte=802, aantal=3,
+                  kantenband_randen=frozenset({Rand.LINKS}), fabriekskantenband_vereist=True),
+    ]
+    for strategie in ("efficient", "horizontaal", "guillotine"):
+        resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+        assert resultaat.niet_geplaatst == [], strategie
+        for p in resultaat.plaatsingen:
+            # Kwartslag gedraaid: de lange zijde ligt langs de plaat...
+            assert p.geroteerd, (strategie, p)
+            # ...en raakt de onder- of bovenrand.
+            assert p.y == pytest.approx(0.0) or p.y + p.hoogte == pytest.approx(mat.breedte), (strategie, p)
+
+
+def test_fabriekskantenband_gebruikt_tegenoverliggende_rand_als_eigen_rand_vol_is():
+    # Een dwarsbalk met kantenband "onder" die niet meer in de volle
+    # onderstrook past, mag een halve slag gedraaid tegen de (ook
+    # fabrieks-)bovenrand — i.p.v. door te schuiven naar een volgende
+    # plaat terwijl daar nog ruim plek is (Sven: "bij 1 plaat is nog
+    # precies genoeg over dat er een onderdeel naast kan maar dat doet hij
+    # niet").
+    mat = _standaard_materiaal(
+        lengte=2800, breedte=600, kerf=3, min_reststukgrootte=0,
+        fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        Onderdeel(id="bodem", breedte=564, hoogte=360, aantal=4,
+                  kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+        Onderdeel(id="dwarsbalk", breedte=864, hoogte=100, aantal=2,
+                  kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+    assert resultaat.niet_geplaatst == []
+    for p in resultaat.plaatsingen:
+        assert not p.geroteerd
+        assert p.y == pytest.approx(0.0) or p.y + p.hoogte == pytest.approx(mat.breedte)
+
+
+
+def test_lege_ruimte_in_fabrieksband_strook_wordt_reststuk():
+    # Sven, over een plaat met alleen een Bodem en een Dwarsbalk in de
+    # onderstrook: "dat is iets wat helaas kan gebeuren met deze
+    # strategie de rest moet gewoon als rest stuk bewaard worden". Die
+    # ruimte telde tot nu toe nergens mee en werd ook niet afgezaagd.
+    mat = _standaard_materiaal(
+        lengte=2800, breedte=600, kerf=3, min_reststukgrootte=300,
+        fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        Onderdeel(id="bodem", breedte=564, hoogte=540, aantal=1,
+                  kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+        Onderdeel(id="dwarsbalk", breedte=564, hoogte=100, aantal=1,
+                  kantenband_randen=frozenset({Rand.BOVEN}), fabriekskantenband_vereist=True),
+    ]
+
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+
+    rest = [(r.x, r.y, r.breedte, r.hoogte) for r in resultaat.reststukken]
+    # Achter het laatste stuk: volle strookdiepte tot het einde van de plaat.
+    assert (pytest.approx(1134.0), pytest.approx(0.0), pytest.approx(1666.0), pytest.approx(540.0)) in rest
+    # Boven de ondiepere dwarsbalk.
+    assert (pytest.approx(567.0), pytest.approx(103.0), pytest.approx(564.0), pytest.approx(437.0)) in rest
+    # Elk reststuk wordt ook echt afgezaagd, zonder door een onderdeel te gaan.
+    for p in resultaat.plaatsingen:
+        for snede in resultaat.zaagvolgorde:
+            assert not _snede_kruist_plaatsing(snede, p)
+    assert any(s.richting == "verticaal" and s.positie == pytest.approx(1131.0) for s in resultaat.zaagvolgorde)
+
+
+@pytest.mark.parametrize("rand", [Rand.ONDER, Rand.BOVEN, Rand.LINKS, Rand.RECHTS])
+def test_reststuk_in_fabrieksband_strook_ligt_binnen_de_plaat_en_naast_de_stukken(rand):
+    mat = _standaard_materiaal(lengte=2000, breedte=1500, kerf=4, min_reststukgrootte=0,
+                               fabriekskantenband_randen=frozenset({rand}))
+    onderdelen = [
+        Onderdeel(id="diep", breedte=400, hoogte=400, aantal=1, fabriekskantenband_vereist=True),
+        Onderdeel(id="ondiep", breedte=400, hoogte=150, aantal=1,
+                  kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+    assert resultaat.niet_geplaatst == []
+    assert resultaat.reststukken
+    for r in resultaat.reststukken:
+        assert r.x >= -1e-6 and r.y >= -1e-6
+        assert r.x + r.breedte <= mat.lengte + 1e-6 and r.y + r.hoogte <= mat.breedte + 1e-6
+        for p in resultaat.plaatsingen:
+            assert not _rechthoeken_overlappen(r, p), (r, p)
+
+
+def _geldig_zaagplan(resultaat, mat) -> None:
+    for a, b in itertools.combinations(resultaat.plaatsingen, 2):
+        assert not _rechthoeken_overlappen(a, b), (a, b)
+    for p in resultaat.plaatsingen:
+        assert p.x >= -1e-6 and p.y >= -1e-6
+        assert p.x + p.breedte <= mat.lengte + 1e-6 and p.y + p.hoogte <= mat.breedte + 1e-6
+        for snede in resultaat.zaagvolgorde:
+            assert not _snede_kruist_plaatsing(snede, p), (snede, p)
+
+
+def test_verticaal_maakt_kolommen_met_verticale_hoofdzaagsnedes():
+    # Sven: "een extra strategie genaamd verticaal die hetzelfde doet maar
+    # dan in plaats van de hoofd zaagsnedes horizontaal over de plaat
+    # verticaal over de plaat".
+    mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4, min_reststukgrootte=0)
+    onderdelen = [
+        Onderdeel(id="zijkant", breedte=720, hoogte=560, aantal=5),
+        Onderdeel(id="plank", breedte=500, hoogte=300, aantal=6),
+    ]
+
+    horizontaal = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+    verticaal = genereer_zaagplan(mat, onderdelen, strategie="verticaal")
+
+    for resultaat in (horizontaal, verticaal):
+        assert resultaat.niet_geplaatst == []
+        _geldig_zaagplan(resultaat, mat)
+    eerste_h = min(horizontaal.zaagvolgorde, key=lambda s: s.volgnummer)
+    eerste_v = min(verticaal.zaagvolgorde, key=lambda s: s.volgnummer)
+    # Horizontaal: eerste snede over de volle plaatbreedte.
+    assert eerste_h.richting == "horizontaal"
+    assert (eerste_h.start, eerste_h.einde) == (pytest.approx(0.0), pytest.approx(mat.lengte))
+    # Verticaal: eerste snede over de volle plaathoogte.
+    assert eerste_v.richting == "verticaal"
+    assert (eerste_v.start, eerste_v.einde) == (pytest.approx(0.0), pytest.approx(mat.breedte))
+    # Lange zijdes langs de kolom (staand), zoals bij horizontaal langs de rij (liggend).
+    assert all(p.breedte >= p.hoogte for p in horizontaal.plaatsingen)
+    assert all(p.hoogte >= p.breedte for p in verticaal.plaatsingen)
+
+
+def test_verticaal_respecteert_nerfrichting_van_de_echte_plaat():
+    # De plaatnerf loopt langs de echte x-as — ook als de strategie
+    # intern met een gespiegelde plaat rekent.
+    mat = _standaard_materiaal()
+    onderdelen = [
+        Onderdeel(id="lang", breedte=300, hoogte=800, aantal=2, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE),
+        Onderdeel(id="kort", breedte=800, hoogte=300, aantal=2, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="verticaal")
+    assert resultaat.niet_geplaatst == []
+    for p in resultaat.plaatsingen:
+        if p.onderdeel_id == "lang":
+            assert (p.breedte, p.hoogte) == (800, 300)  # lange zijde langs x
+        else:
+            assert (p.breedte, p.hoogte) == (300, 800)  # lange zijde loodrecht op x
+
+
+def test_verticaal_legt_een_groep_net_zo_neer_als_horizontaal():
+    # Een groep (doorlopende nerf) roteert nooit: ook bij verticaal staan
+    # de leden op hun eigen afmetingen, in volgorde boven elkaar.
+    mat = _standaard_materiaal()
+    onderdelen = [
+        Onderdeel(id=f"ladefront-{i}", breedte=400, hoogte=180, groep_id="g1", groep_volgorde=i)
+        for i in (1, 2, 3)
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="verticaal")
+    op_id = {p.onderdeel_id: p for p in resultaat.plaatsingen}
+    p1, p2, p3 = op_id["ladefront-1"], op_id["ladefront-2"], op_id["ladefront-3"]
+    assert all((p.breedte, p.hoogte, p.geroteerd) == (400, 180, False) for p in (p1, p2, p3))
+    assert p1.x == p2.x == p3.x
+    assert p1.y < p2.y < p3.y
+    assert p2.y >= p1.y + p1.hoogte
+
+
+@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal"])
+def test_horizontaal_en_verticaal_met_fabrieksband_en_randafzaag(strategie):
+    mat = _standaard_materiaal(
+        lengte=2800, breedte=2070, kerf=4, min_reststukgrootte=0, randafzaag_marge=10,
+        randafzaag_randen=frozenset({Rand.LINKS, Rand.RECHTS, Rand.ONDER, Rand.BOVEN}),
+        fabriekskantenband_randen=frozenset({Rand.ONDER}),
+    )
+    onderdelen = [
+        Onderdeel(id="bodem", breedte=564, hoogte=500, aantal=3,
+                  kantenband_randen=frozenset({Rand.ONDER}), fabriekskantenband_vereist=True),
+        Onderdeel(id="deur", breedte=450, hoogte=700, aantal=4),
+        Onderdeel(id="plank", breedte=800, hoogte=300, aantal=3),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+    assert resultaat.niet_geplaatst == []
+    _geldig_zaagplan(resultaat, mat)
+    for p in resultaat.plaatsingen:
+        if p.onderdeel_id == "bodem":
+            assert p.y == pytest.approx(0.0)
+        else:
+            # Gewone onderdelen blijven binnen de randafzaag-marge.
+            assert p.x >= 10 - 1e-6 and p.x + p.breedte <= mat.lengte - 10 + 1e-6
+            assert p.y + p.hoogte <= mat.breedte - 10 + 1e-6
+
+
+@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal", "efficient", "guillotine"])
+def test_groepssneden_lopen_nooit_door_een_ander_onderdeel(strategie):
+    # Sven, over de MDF-plaat van "Keuken Jansen" met strategie Verticaal:
+    # "hij laat een rode zaaglijn zien door een onderdeel". De snede
+    # tussen twee groepsleden (Front 1/Front 2, doorlopende nerf) werd bij
+    # Verticaal verkeerd teruggespiegeld en liep dwars door een Deur.
+    mat = _standaard_materiaal(
+        lengte=2800, breedte=2150, kerf=3, min_reststukgrootte=0, randafzaag_marge=5,
+        randafzaag_randen=frozenset({Rand.LINKS, Rand.RECHTS, Rand.ONDER, Rand.BOVEN}),
+    )
+    onderdelen = [
+        Onderdeel(id="deur", breedte=594, hoogte=895, aantal=2),
+        Onderdeel(id="front-1", breedte=594, hoogte=416, groep_id="fronten", groep_volgorde=1),
+        Onderdeel(id="front-2", breedte=594, hoogte=416, groep_id="fronten", groep_volgorde=2),
+        Onderdeel(id="passtuk", breedte=144, hoogte=835, aantal=1),
+        Onderdeel(id="blende-1", breedte=444, hoogte=835, aantal=2),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+    assert resultaat.niet_geplaatst == []
+    _geldig_zaagplan(resultaat, mat)
+    # De groep ligt zoals altijd: boven elkaar, op eigen afmetingen.
+    op_id = {p.onderdeel_id: p for p in resultaat.plaatsingen}
+    f1, f2 = op_id["front-1"], op_id["front-2"]
+    assert f1.x == f2.x and f1.y < f2.y
+    # En de snede tussen de twee leden bestaat en ligt precies tussen hen
+    # in. (Efficiënt/Guillotine noteren tussen groepsleden nog helemaal
+    # geen snede — bestaande beperking, los van deze bug.)
+    if strategie in ("horizontaal", "verticaal"):
+        assert any(
+            s.richting == "horizontaal" and s.positie == pytest.approx(f1.y + f1.hoogte)
+            and s.start <= f1.x + 1e-6 and s.einde >= f1.x + f1.breedte - 1e-6
+            for s in resultaat.zaagvolgorde
+        )
+
+
+def _randen_zonder_snede(resultaat) -> list[str]:
+    """Elke rand van elk onderdeel moet óf op de plaatrand (binnen de
+    randafzaag-marge) liggen, óf over zijn volle lengte door een snede in
+    de zaagvolgorde gemaakt worden (binnen één kerf) — anders wordt dat
+    onderdeel volgens de zaagvolgorde nooit op maat gezaagd."""
+    m = resultaat.materiaal
+    tol = m.kerf + 0.5
+
+    def gedekt(richting, pos, a, b):
+        stukken = sorted(
+            (max(a, s.start), min(b, s.einde))
+            for s in resultaat.zaagvolgorde
+            if s.richting == richting and abs(s.positie - pos) <= tol and s.einde > a and s.start < b
+        )
+        c = a
+        for x, y in stukken:
+            if x > c + 0.5:
+                return False
+            c = max(c, y)
+        return c >= b - 0.5
+
+    def plaatrand(richting, pos):
+        grens = m.lengte if richting == "verticaal" else m.breedte
+        return pos <= m.randafzaag_marge + 0.5 or pos >= grens - m.randafzaag_marge - 0.5
+
+    fout = []
+    for q in resultaat.plaatsingen:
+        for richting, pos, a, b, naam in (
+            ("verticaal", q.x, q.y, q.y + q.hoogte, "links"),
+            ("verticaal", q.x + q.breedte, q.y, q.y + q.hoogte, "rechts"),
+            ("horizontaal", q.y, q.x, q.x + q.breedte, "onder"),
+            ("horizontaal", q.y + q.hoogte, q.x, q.x + q.breedte, "boven"),
+        ):
+            if not plaatrand(richting, pos) and not gedekt(richting, pos, a, b):
+                fout.append(f"{q.onderdeel_id}#{q.instantie} {naam}")
+    return fout
+
+
+def _onverantwoord_oppervlak(resultaat) -> float:
+    """Plaatoppervlak dat nergens meetelt (geen onderdeel, reststuk of
+    afval), na aftrek van wat zaagsnedes (kerf × lengte) en randafzaag
+    (marge × zijde) mogen opeten. Hoort ≤ 0 te zijn."""
+    m = resultaat.materiaal
+    marge = sum(
+        m.randafzaag_marge * (m.breedte if rand in (Rand.LINKS, Rand.RECHTS) else m.lengte)
+        for rand in m.randafzaag_randen
+        if rand not in m.fabriekskantenband_randen
+    )
+    return (
+        m.lengte * m.breedte
+        - sum(q.breedte * q.hoogte for q in resultaat.plaatsingen)
+        - sum(r.breedte * r.hoogte for r in resultaat.reststukken)
+        - resultaat.afval_oppervlak
+        - sum((s.einde - s.start) * m.kerf for s in resultaat.zaagvolgorde)
+        - marge
+    )
+
+
+_ALLE_STRATEGIEEN = ["efficient", "horizontaal", "verticaal", "guillotine", "stroken"]
+
+
+def _keuken_jansen_scenario():
+    # Nagebouwd uit Svens "Keuken Jansen" (MDF-plaat + lade-onderdelen op
+    # melamine), waar Sven vroeg "hoe bereken je wat hergebruikt kan
+    # worden" en het narekenen twee gaten liet zien: ruimte boven een stuk
+    # dat lager is dan zijn rij telde nergens mee, en diverse randen van
+    # onderdelen kregen in de zaagvolgorde nooit een snede.
+    mdf = _standaard_materiaal(
+        lengte=2800, breedte=2150, kerf=3, min_reststukgrootte=150, randafzaag_marge=5,
+        randafzaag_randen=frozenset({Rand.LINKS, Rand.RECHTS, Rand.ONDER, Rand.BOVEN}),
+    )
+    mdf_onderdelen = [
+        Onderdeel(id="deur", breedte=594, hoogte=895, aantal=2),
+        Onderdeel(id="front-1", breedte=594, hoogte=416, groep_id="fronten", groep_volgorde=1),
+        Onderdeel(id="front-2", breedte=594, hoogte=416, groep_id="fronten", groep_volgorde=2),
+        Onderdeel(id="passtuk", breedte=144, hoogte=835, aantal=1),
+        Onderdeel(id="blende", breedte=444, hoogte=835, aantal=2),
+    ]
+    melamine = mdf
+    melamine_onderdelen = [
+        Onderdeel(id="lade-bodem", breedte=506, hoogte=500, aantal=3),
+        Onderdeel(id="rug-korf", breedte=506, hoogte=170, aantal=2),
+        Onderdeel(id="rug-bestek", breedte=506, hoogte=70, aantal=1),
+    ]
+    return [(mdf, mdf_onderdelen), (melamine, melamine_onderdelen)]
+
+
+@pytest.mark.parametrize("strategie", _ALLE_STRATEGIEEN)
+def test_elke_rand_van_elk_onderdeel_wordt_gezaagd(strategie):
+    for mat, onderdelen in _keuken_jansen_scenario():
+        resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+        assert resultaat.niet_geplaatst == []
+        assert _randen_zonder_snede(resultaat) == []
+        _geldig_zaagplan(resultaat, mat)
+
+
+@pytest.mark.parametrize("strategie", _ALLE_STRATEGIEEN)
+def test_alle_restruimte_telt_mee_als_reststuk_of_afval(strategie):
+    for mat, onderdelen in _keuken_jansen_scenario():
+        resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+        assert _onverantwoord_oppervlak(resultaat) <= 1e-3 * mat.lengte * mat.breedte
+
+
+def test_ruimte_boven_een_lager_stuk_in_een_rij_wordt_reststuk():
+    # Horizontaal: 3 lade-bodems (500 hoog) bepalen de rijhoogte; de
+    # lade-ruggen (170 + 170 + 70, gestapeld) blijven daar ~81 mm onder.
+    # Met een lagere drempel moet dat reepje als reststuk verschijnen, met
+    # een snede erboven.
+    mat = _standaard_materiaal(lengte=2800, breedte=2150, kerf=3, min_reststukgrootte=50)
+    onderdelen = [
+        Onderdeel(id="lade-bodem", breedte=506, hoogte=500, aantal=3),
+        Onderdeel(id="rug-korf", breedte=506, hoogte=170, aantal=2),
+        Onderdeel(id="rug-bestek", breedte=506, hoogte=70, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+    ruggen = [p for p in resultaat.plaatsingen if p.onderdeel_id.startswith("rug")]
+    kolom_x = ruggen[0].x
+    kolom_top = max(p.y + p.hoogte for p in ruggen)
+    assert any(
+        r.x == pytest.approx(kolom_x) and r.y == pytest.approx(kolom_top + mat.kerf) and r.breedte == pytest.approx(506)
+        for r in resultaat.reststukken
+    ), resultaat.reststukken
+    assert any(
+        s.richting == "horizontaal" and s.positie == pytest.approx(kolom_top) for s in resultaat.zaagvolgorde
+    )
+
+
+@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "horizontaal"])
+def test_reepje_smaller_dan_de_kerf_krijgt_toch_een_snede(strategie):
+    # 2 liggende stukken van 997 op een werkgebied van 2000 met kerf 4:
+    # 997 + 4 + 997 laat rechts 2 mm over — te smal voor een vrij
+    # rechthoek, maar het tweede stuk moet daar nog steeds op maat
+    # gezaagd worden.
+    mat = _standaard_materiaal(lengte=2000, breedte=1000, kerf=4, min_reststukgrootte=0)
+    onderdelen = [Onderdeel(id="a", breedte=997, hoogte=500, aantal=2)]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+    assert resultaat.niet_geplaatst == []
+    assert _randen_zonder_snede(resultaat) == []
+
+
+def test_reepje_in_fabrieksband_strook_krijgt_toch_een_snede():
+    # Een stuk dat 1 mm minder diep is dan zijn strook, en een laatste stuk
+    # dat 1 mm voor het einde van de rand ophoudt (beide uit de fuzz).
+    mat = _standaard_materiaal(lengte=2000, breedte=1500, kerf=4, min_reststukgrootte=0,
+                               fabriekskantenband_randen=frozenset({Rand.ONDER}))
+    onderdelen = [
+        Onderdeel(id="diep", breedte=995, hoogte=600, aantal=1, fabriekskantenband_vereist=True),
+        Onderdeel(id="ondiep", breedte=1000, hoogte=599, aantal=1, fabriekskantenband_vereist=True),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+    assert resultaat.niet_geplaatst == []
+    assert _randen_zonder_snede(resultaat) == []
+
+
+def _paneelzaag_fouten(resultaat) -> list[str]:
+    """Voert de zaagvolgorde uit zoals een paneelzaag: begint met de plaat
+    na de randafzaag, en elke snede moet van rand tot rand door precies één
+    op dat moment bestaand stuk plaat lopen (en splitst dat in tweeën). Aan
+    het eind mag elk stuk plaat hoogstens één onderdeel bevatten."""
+    m = resultaat.materiaal
+    e = 1e-6
+
+    def af(rand):
+        return m.randafzaag_marge if rand in m.randafzaag_randen and rand not in m.fabriekskantenband_randen else 0.0
+
+    gebieden = [(af(Rand.LINKS), af(Rand.ONDER), m.lengte - af(Rand.RECHTS), m.breedte - af(Rand.BOVEN))]
+    fout = []
+    for s in sorted(resultaat.zaagvolgorde, key=lambda z: z.volgnummer):
+        hit = None
+        for g in gebieden:
+            gx0, gy0, gx1, gy1 = g
+            if s.richting == "verticaal":
+                ok = gx0 + e < s.positie < gx1 - e and abs(s.start - gy0) < 1e-3 and abs(s.einde - gy1) < 1e-3
+            else:
+                ok = gy0 + e < s.positie < gy1 - e and abs(s.start - gx0) < 1e-3 and abs(s.einde - gx1) < 1e-3
+            if ok:
+                hit = g
+                break
+        if hit is None:
+            fout.append(f"snede {s.volgnummer} is geen rand-tot-rand snede van een stuk plaat: {s}")
+            continue
+        gx0, gy0, gx1, gy1 = hit
+        gebieden.remove(hit)
+        if s.richting == "verticaal":
+            gebieden += [(gx0, gy0, s.positie, gy1), (s.positie, gy0, gx1, gy1)]
+        else:
+            gebieden += [(gx0, gy0, gx1, s.positie), (gx0, s.positie, gx1, gy1)]
+    k = m.kerf + e
+    for g in gebieden:
+        gx0, gy0, gx1, gy1 = g
+        binnen = [
+            p for p in resultaat.plaatsingen
+            if p.x >= gx0 - k and p.x + p.breedte <= gx1 + k and p.y >= gy0 - k and p.y + p.hoogte <= gy1 + k
+        ]
+        if len(binnen) > 1:
+            fout.append(f"stuk plaat {g} bevat {len(binnen)} onderdelen")
+    return fout
+
+
+def _willekeurig_scenario(seed: int):
+    rng = random.Random(seed)
+    randen = [Rand.ONDER, Rand.BOVEN, Rand.LINKS, Rand.RECHTS]
+    mat = Materiaal(
+        naam="m", lengte=rng.choice([2800, 2440, 1200]), breedte=rng.choice([600, 1220, 2070, 800]), dikte=18,
+        kerf=rng.choice([3, 4]), min_reststukgrootte=rng.choice([0, 150, 300]), randafzaag_marge=rng.choice([0, 5]),
+        randafzaag_randen=frozenset(rng.sample(randen, rng.randint(0, 4))),
+        fabriekskantenband_randen=frozenset(rng.sample(randen, rng.choice([0, 0, 1, 2]))),
+    )
+    onderdelen = []
+    for i in range(rng.randint(1, 9)):
+        fab = rng.random() < 0.25
+        onderdelen.append(Onderdeel(
+            id=f"o{i}", breedte=rng.randint(40, 1100), hoogte=rng.randint(40, 1100), aantal=rng.randint(1, 5),
+            nerfrichting_vereist=rng.choice([Nerfrichting.GEEN] * 4 + [Nerfrichting.LANGE_ZIJDE, Nerfrichting.KORTE_ZIJDE]),
+            kantenband_randen=frozenset(rng.sample(randen, rng.randint(0, 2))) if fab else frozenset(),
+            fabriekskantenband_vereist=fab,
+        ))
+    if rng.random() < 0.4:
+        breedte = rng.randint(100, 900)
+        for j in range(rng.randint(2, 4)):
+            onderdelen.append(Onderdeel(id=f"g{j}", breedte=breedte, hoogte=rng.randint(60, 500), groep_id="g", groep_volgorde=j))
+    return mat, onderdelen
+
+
+@pytest.mark.parametrize("strategie", _ALLE_STRATEGIEEN)
+def test_paneelzaag_simulatie_op_willekeurige_scenarios(strategie):
+    # Sven: "kan je deze strategie simuleren en zelf controleren of alles
+    # klopt" (over Guillotine). Een vaste set willekeurige scenario's
+    # (fabrieksband, randafzaag, nerf, groepen) per strategie: de
+    # zaagvolgorde moet uitvoerbaar zijn op een paneelzaag, elk onderdeel in
+    # een eigen stuk plaat eindigen, elke rand gezaagd zijn en alle
+    # oppervlakte verantwoord.
+    for seed in range(120):
+        mat, onderdelen = _willekeurig_scenario(seed)
+        resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
+        _geldig_zaagplan(resultaat, mat)
+        assert _paneelzaag_fouten(resultaat) == [], (seed, _paneelzaag_fouten(resultaat)[:2])
+        assert _randen_zonder_snede(resultaat) == [], (seed, _randen_zonder_snede(resultaat)[:2])
+        assert _onverantwoord_oppervlak(resultaat) <= 1e-3 * mat.lengte * mat.breedte, seed

@@ -10,6 +10,8 @@ wegschrijven/herladen via de SQLite-opslag.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
@@ -17,6 +19,8 @@ from robocutter.materialen.models import Materiaal, MateriaalType
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
 from robocutter.modellen.models import Model, ModelOnderdeel, SubModelVerwijzing
 from robocutter.projecten.bibliotheek import (
+    ModelHeeftSubmodellenError,
+    OnbekendModelError,
     OngeldigeStatusOvergangError,
     ProjectenBibliotheek,
     valideer,
@@ -418,3 +422,174 @@ def test_sqlite_opslag_overleeft_herstart(tmp_path):
     herstart_proj_verbinding.close()
     herstart_mod_verbinding.close()
     herstart_mat_verbinding.close()
+
+
+# ----------------------------------------------------------------------
+# Een modelkopie bewerken vanuit het project (Sven: "rechtstreeks vanuit
+# projecten een model kunnen bewerken en dit dan binnen een project houden
+# of opslaan in modellen bibliotheek en ook optie om op te slaan als nieuwe
+# model")
+# ----------------------------------------------------------------------
+def _project_met_onderkast():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    onderkast = modellen.toevoegen(
+        _model(
+            naam="Onderkast 60",
+            map="Keukens",
+            tags=("onderkast",),
+            onderdelen=[
+                _onderdeel(materiaal.id, id="zij", naam="Zijwand", breedte=560, hoogte=838, aantal=2),
+                _onderdeel(materiaal.id, id="bod", naam="Bodem", breedte=564, hoogte=540),
+            ],
+        )
+    )
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, onderkast.id)
+    return materialen, modellen, projecten, materiaal, onderkast, project, project.modelinstanties[0]
+
+
+def test_modelkopie_onderdelen_opslaan_raakt_bibliotheek_niet():
+    _, modellen, projecten, _, onderkast, project, instantie = _project_met_onderkast()
+    nieuw = [replace(o, hoogte=520) if o.naam == "Bodem" else o for o in instantie.onderdelen]
+
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, nieuw)
+
+    kopie = projecten.ophalen(project.id).modelinstanties[0]
+    assert next(o for o in kopie.onderdelen if o.naam == "Bodem").hoogte == 520
+    assert next(o for o in modellen.ophalen(onderkast.id).onderdelen if o.naam == "Bodem").hoogte == 540
+
+
+def test_modelkopie_onderdelen_opslaan_valideert_en_wijst_id_toe():
+    _, _, projecten, materiaal, _, project, instantie = _project_met_onderkast()
+    ongeldig = instantie.onderdelen + [_onderdeel(materiaal.id, naam="Plank", breedte=0)]
+    with pytest.raises(ValueError, match="breedte"):
+        projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, ongeldig)
+    assert len(projecten.ophalen(project.id).modelinstanties[0].onderdelen) == 2  # niets gewijzigd
+
+    geldig = instantie.onderdelen + [_onderdeel(materiaal.id, naam="Plank")]
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, geldig)
+    plank = projecten.ophalen(project.id).modelinstanties[0].onderdelen[-1]
+    assert plank.id
+
+
+def test_modelkopie_afwijkingen_ten_opzichte_van_bibliotheek():
+    _, _, projecten, materiaal, _, project, instantie = _project_met_onderkast()
+    assert projecten.model_instantie_afwijkingen(project.id, instantie.id) == (set(), 0)
+
+    gewijzigd = [replace(instantie.onderdelen[1], hoogte=520), _onderdeel(materiaal.id, id="plk", naam="Plank")]
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, gewijzigd)
+
+    # Bodem gewijzigd, Plank nieuw, Zijwand ontbreekt.
+    assert projecten.model_instantie_afwijkingen(project.id, instantie.id) == ({"bod", "plk"}, 1)
+
+
+def test_modelkopie_naar_bibliotheek_overschrijft_bibliotheekmodel():
+    _, modellen, projecten, _, onderkast, project, instantie = _project_met_onderkast()
+    nieuw = [replace(o, hoogte=520) if o.naam == "Bodem" else o for o in instantie.onderdelen]
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, nieuw)
+
+    projecten.model_instantie_naar_bibliotheek(project.id, instantie.id)
+
+    bib = modellen.ophalen(onderkast.id)
+    assert next(o for o in bib.onderdelen if o.naam == "Bodem").hoogte == 520
+    assert bib.naam == "Onderkast 60" and bib.map == "Keukens"
+    assert projecten.model_instantie_afwijkingen(project.id, instantie.id) == (set(), 0)
+
+
+def test_modelkopie_naar_bibliotheek_laat_andere_projecten_ongemoeid():
+    _, modellen, projecten, _, onderkast, project, instantie = _project_met_onderkast()
+    ander = projecten.toevoegen(_project(naam="Keuken De Vries"))
+    ander = projecten.model_toevoegen(ander.id, onderkast.id)
+    nieuw = [replace(o, hoogte=520) if o.naam == "Bodem" else o for o in instantie.onderdelen]
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, nieuw)
+
+    projecten.model_instantie_naar_bibliotheek(project.id, instantie.id)
+
+    ander_kopie = projecten.ophalen(ander.id).modelinstanties[0]
+    assert next(o for o in ander_kopie.onderdelen if o.naam == "Bodem").hoogte == 540
+
+
+def test_modelkopie_naar_bibliotheek_niet_bij_submodellen():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    kast = modellen.toevoegen(_model(naam="Kast", onderdelen=[_onderdeel(materiaal.id, id="z", aantal=2)]))
+    keuken = modellen.toevoegen(_model(naam="Keuken", submodellen=[SubModelVerwijzing(model_id=kast.id, aantal=3)]))
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, keuken.id)
+    instantie = project.modelinstanties[0]
+
+    with pytest.raises(ModelHeeftSubmodellenError):
+        projecten.model_instantie_naar_bibliotheek(project.id, instantie.id)
+    assert modellen.ophalen(keuken.id).submodellen  # opbouw intact
+
+
+def test_modelkopie_naar_bibliotheek_onbekend_model():
+    _, modellen, projecten, _, onderkast, project, instantie = _project_met_onderkast()
+    modellen.verwijderen(onderkast.id)
+    with pytest.raises(OnbekendModelError):
+        projecten.model_instantie_naar_bibliotheek(project.id, instantie.id)
+
+
+def test_modelkopie_als_nieuw_model_koppelt_kopie_aan_nieuw_model():
+    _, modellen, projecten, _, onderkast, project, instantie = _project_met_onderkast()
+    nieuw = [replace(o, hoogte=520) if o.naam == "Bodem" else o for o in instantie.onderdelen]
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, nieuw)
+
+    model = projecten.model_instantie_als_nieuw_model(project.id, instantie.id, "Onderkast 60 (Jansen)")
+
+    assert model.id != onderkast.id
+    assert model.naam == "Onderkast 60 (Jansen)" and model.map == "Keukens" and model.tags == ("onderkast",)
+    assert next(o for o in model.onderdelen if o.naam == "Bodem").hoogte == 520
+    assert next(o for o in modellen.ophalen(onderkast.id).onderdelen if o.naam == "Bodem").hoogte == 540
+    kopie = projecten.ophalen(project.id).modelinstanties[0]
+    assert kopie.model_id == model.id and kopie.model_naam == "Onderkast 60 (Jansen)"
+    assert projecten.model_instantie_afwijkingen(project.id, instantie.id) == (set(), 0)
+
+
+def test_modelkopie_als_nieuw_model_werkt_ook_bij_submodellen_en_vereist_naam():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    kast = modellen.toevoegen(_model(naam="Kast", onderdelen=[_onderdeel(materiaal.id, id="z", aantal=2)]))
+    keuken = modellen.toevoegen(
+        _model(
+            naam="Keuken",
+            submodellen=[SubModelVerwijzing(model_id=kast.id, aantal=1), SubModelVerwijzing(model_id=kast.id, aantal=1)],
+        )
+    )
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, keuken.id)
+    instantie = project.modelinstanties[0]
+
+    with pytest.raises(ValueError, match="Naam"):
+        projecten.model_instantie_als_nieuw_model(project.id, instantie.id, "   ")
+
+    model = projecten.model_instantie_als_nieuw_model(project.id, instantie.id, "Keuken plat")
+    assert model.submodellen == []
+    ids = [o.id for o in model.onderdelen]
+    assert len(ids) == 2 and len(set(ids)) == 2  # dubbele id's uit de platgeslagen kopie opgelost
+
+
+def test_modelkopie_bewerkingen_overleven_herstart(tmp_path):
+    from robocutter.materialen.opslag import open_verbinding as open_mat
+    from robocutter.modellen.opslag import open_verbinding as open_mod
+
+    db = tmp_path / "robocutter.db"
+    materialen = MaterialenBibliotheek(open_mat(db))
+    modellen = ModellenBibliotheek(materialen, open_mod(db))
+    projecten = ProjectenBibliotheek(modellen, materialen, open_verbinding(db))
+    materiaal = materialen.toevoegen(_materiaal())
+    onderkast = modellen.toevoegen(_model(onderdelen=[_onderdeel(materiaal.id, id="bod", naam="Bodem", hoogte=540)]))
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, onderkast.id)
+    instantie = project.modelinstanties[0]
+    projecten.model_instantie_onderdelen_opslaan(project.id, instantie.id, [replace(instantie.onderdelen[0], hoogte=520)])
+    nieuw = projecten.model_instantie_als_nieuw_model(project.id, instantie.id, "Onderkast (Jansen)")
+
+    materialen2 = MaterialenBibliotheek(open_mat(db))
+    modellen2 = ModellenBibliotheek(materialen2, open_mod(db))
+    projecten2 = ProjectenBibliotheek(modellen2, materialen2, open_verbinding(db))
+    kopie = projecten2.ophalen(project.id).modelinstanties[0]
+    assert kopie.model_id == nieuw.id
+    assert kopie.onderdelen[0].hoogte == 520
+    assert modellen2.ophalen(nieuw.id).onderdelen[0].hoogte == 520

@@ -31,6 +31,13 @@ class OnbekendModelError(Exception):
     """Het model waarnaar een model-instantie verwijst bestaat niet (meer)."""
 
 
+class ModelHeeftSubmodellenError(Exception):
+    """Een bewerkte projectkopie kan niet terug naar een bibliotheekmodel
+    dat uit submodellen is opgebouwd: de kopie is platgeslagen, dus
+    overschrijven zou die opbouw wissen (op Svens keuze: dan niet
+    toestaan, "Opslaan als nieuw model" kan wel)."""
+
+
 def _platslaan(model: Model, modellen: ModellenBibliotheek, vermenigvuldiger: int = 1) -> list[ModelOnderdeel]:
     """Zet een model (incl. eventuele geneste submodellen, hoofdstuk 2)
     om in één platte onderdelenlijst, met aantallen doorvermenigvuldigd
@@ -60,7 +67,13 @@ def valideer(project: Project, materialen: MaterialenBibliotheek) -> list[str]:
     if not project.klant.strip():
         fouten.append("Klant is verplicht.")
 
-    for onderdeel in project.losse_onderdelen:
+    fouten.extend(_valideer_onderdelen(project.losse_onderdelen, materialen))
+    return fouten
+
+
+def _valideer_onderdelen(onderdelen: list[ModelOnderdeel], materialen: MaterialenBibliotheek) -> list[str]:
+    fouten: list[str] = []
+    for onderdeel in onderdelen:
         label = onderdeel.naam or "(naamloos onderdeel)"
         if onderdeel.breedte <= 0:
             fouten.append(f"Onderdeel '{label}': breedte moet groter dan 0 zijn.")
@@ -75,7 +88,6 @@ def valideer(project: Project, materialen: MaterialenBibliotheek) -> list[str]:
                 materialen.ophalen(onderdeel.materiaal_id)
             except KeyError:
                 fouten.append(f"Onderdeel '{label}': gekoppeld materiaal bestaat niet (meer).")
-
     return fouten
 
 
@@ -192,6 +204,123 @@ class ProjectenBibliotheek:
         instantie.onderdelen[index] = replace(instantie.onderdelen[index], materiaal_id=materiaal_id)
         self._persisteer(project)
         return project
+
+    # ------------------------------------------------------------------
+    # Een modelkopie bewerken vanuit het project (op Svens verzoek: "ik wil
+    # ook rechtstreeks vanuit projecten een model kunnen bewerken en dit dan
+    # binnen een project houden of opslaan in modellen bibliotheek en ook
+    # optie om op te slaan als nieuwe model"). Dit gaat verder dan het
+    # oorspronkelijke ontwerp (module 4 kende alleen bibliotheek -> project
+    # via "bijwerken naar laatste versie", en project -> model alleen voor
+    # het hele project); de mockup hiervan is door Sven goedgekeurd.
+    # ------------------------------------------------------------------
+    def _instantie(self, project: Project, instantie_id: str) -> ProjectModelInstantie:
+        instantie = next((i for i in project.modelinstanties if i.id == instantie_id), None)
+        if instantie is None:
+            raise KeyError(f"Onbekende model-instantie: {instantie_id!r}")
+        return instantie
+
+    def model_instantie_onderdelen_opslaan(
+        self, project_id: str, instantie_id: str, onderdelen: list[ModelOnderdeel]
+    ) -> Project:
+        """Vervangt de onderdelen van een modelkopie in dit project. Anders
+        dan een ongewijzigde kopie (al geldig bij het toevoegen) is dit
+        live invoer, dus wel door dezelfde controle als een los onderdeel.
+        Raakt de modellenbibliotheek niet."""
+
+        project = self._projecten[project_id]
+        instantie = self._instantie(project, instantie_id)
+        nieuwe = [o if o.id else replace(o, id=uuid.uuid4().hex[:8]) for o in onderdelen]
+        fouten = _valideer_onderdelen(nieuwe, self._materialen)
+        if fouten:
+            raise ValueError("; ".join(fouten))
+        instantie.onderdelen = nieuwe
+        self._persisteer(project)
+        return project
+
+    def model_instantie_afwijkingen(self, project_id: str, instantie_id: str) -> tuple[set[str], int] | None:
+        """Wat wijkt in deze kopie af van het huidige bibliotheekmodel:
+        (ids van gewijzigde of nieuwe onderdelen, aantal onderdelen dat in
+        de kopie ontbreekt). ``None`` als het bronmodel niet meer bestaat.
+        Vergelijkt op onderdeel-id — een platgeslagen kopie houdt de id's
+        van het bibliotheekmodel (zie ``_platslaan``)."""
+
+        instantie = self._instantie(self._projecten[project_id], instantie_id)
+        try:
+            model = self._modellen.ophalen(instantie.model_id)
+        except KeyError:
+            return None
+        bron = _platslaan(model, self._modellen)
+        kopie = instantie.onderdelen
+        bron_ids = [o.id for o in bron]
+        kopie_ids = [o.id for o in kopie]
+        if all(bron_ids) and all(kopie_ids) and len(set(bron_ids)) == len(bron_ids) and len(set(kopie_ids)) == len(kopie_ids):
+            bron_per_id = {o.id: o for o in bron}
+            gewijzigd = {o.id for o in kopie if bron_per_id.get(o.id) != o}
+            verwijderd = len(set(bron_ids) - set(kopie_ids))
+        else:
+            # Geen bruikbare id's (leeg of dubbel, bv. hetzelfde submodel
+            # twee keer): dan op volgorde vergelijken.
+            gewijzigd = {o.id for i, o in enumerate(kopie) if i >= len(bron) or bron[i] != o}
+            verwijderd = max(0, len(bron) - len(kopie))
+        return gewijzigd, verwijderd
+
+    def model_instantie_naar_bibliotheek(self, project_id: str, instantie_id: str) -> Model:
+        """Overschrijft het bibliotheekmodel met de onderdelen van deze
+        kopie. Andere projecten houden hun eigen kopie (snapshot). Kan niet
+        bij een bibliotheekmodel met submodellen
+        (``ModelHeeftSubmodellenError``)."""
+
+        project = self._projecten[project_id]
+        instantie = self._instantie(project, instantie_id)
+        try:
+            model = self._modellen.ophalen(instantie.model_id)
+        except KeyError as exc:
+            raise OnbekendModelError(
+                f"Model {instantie.model_id!r} bestaat niet (meer) in de modellenbibliotheek."
+            ) from exc
+        if model.submodellen:
+            raise ModelHeeftSubmodellenError(
+                f"Model '{model.naam}' is opgebouwd uit submodellen; overschrijven met de platgeslagen "
+                "projectkopie zou die opbouw wissen. Sla het op als nieuw model."
+            )
+        bijgewerkt = replace(model, onderdelen=[replace(o) for o in instantie.onderdelen])
+        self._modellen.bijwerken(bijgewerkt)
+        instantie.model_naam = bijgewerkt.naam
+        self._persisteer(project)
+        return bijgewerkt
+
+    def model_instantie_als_nieuw_model(self, project_id: str, instantie_id: str, naam: str) -> Model:
+        """Maakt van deze kopie een nieuw model in de bibliotheek (zonder
+        submodellen: de kopie is platgeslagen) en koppelt de kopie daarna
+        aan dat nieuwe model, zodat "bijwerken naar laatste versie" en de
+        afwijkingen voortaan dat model volgen. Omschrijving/map/tags komen
+        van het oorspronkelijke model als dat nog bestaat."""
+
+        project = self._projecten[project_id]
+        instantie = self._instantie(project, instantie_id)
+        try:
+            bron = self._modellen.ophalen(instantie.model_id)
+            omschrijving, map_, tags = bron.omschrijving, bron.map, bron.tags
+        except KeyError:
+            omschrijving, map_, tags = "", "", ()
+        nieuw = Model(
+            id="",
+            naam=naam.strip(),
+            omschrijving=omschrijving,
+            map=map_,
+            tags=tags,
+            # Verse id's: een platgeslagen kopie van een model met hetzelfde
+            # submodel meerdere keren bevat anders dubbele onderdeel-id's.
+            onderdelen=[replace(o, id=uuid.uuid4().hex[:8]) for o in instantie.onderdelen],
+            submodellen=[],
+        )
+        self._modellen.toevoegen(nieuw)
+        instantie.model_id = nieuw.id
+        instantie.model_naam = nieuw.naam
+        instantie.onderdelen = [replace(o) for o in nieuw.onderdelen]
+        self._persisteer(project)
+        return nieuw
 
     def los_onderdeel_toevoegen(self, project_id: str, onderdeel: ModelOnderdeel) -> Project:
         # Anders dan een model-instantie (een vaste snapshot, al gevalideerd op het

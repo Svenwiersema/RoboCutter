@@ -48,6 +48,10 @@ revisiegeschiedenis: alleen de laatste stand overleeft een herstart.
 
 from __future__ import annotations
 
+import math
+import sys
+import threading
+import time
 from dataclasses import replace
 from datetime import date
 from typing import Callable
@@ -67,6 +71,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -94,7 +99,7 @@ from robocutter.projecten.bibliotheek import (
 from robocutter.projecten.labels import OnderdeelLabel, genereer_labels_voor_project
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
-from robocutter.projecten.zaagplannen import PlaatZaagplan, genereer_zaagplannen_voor_project
+from robocutter.projecten.zaagplannen import PlaatZaagplan, ZaagplanVoortgang, genereer_zaagplannen_voor_project
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.label_pdf import schrijf_labels_pdf
@@ -103,6 +108,7 @@ from robocutter.ui.widgets.randen_diagram import RandenDiagram
 from robocutter.ui.widgets.stat_tile import StatTile
 from robocutter.ui.widgets.zaagplaat_widget import ZaagplaatWidget
 from robocutter.ui.zaagplan_pdf import schrijf_zaagplannen_pdf
+from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _STATUS_CHIP = {
     ProjectStatus.WERKVOORBEREIDING: ("prep", "neutral_dot"),
@@ -121,21 +127,40 @@ _PANEEL_ITEMS = [("overzicht", "user", "Overzicht"), ("samenstelling", "layers",
 _DOC_ITEMS = [("labels", "tag", "Labels", False), ("zaagplannen", "document", "Zaagplannen", False)]
 _STRATEGIE_LABEL = {
     "efficient": "Efficiënt",
-    "rijen": "Rijen",
+    "horizontaal": "Horizontaal",
+    "verticaal": "Verticaal",
     "guillotine": "Guillotine",
 }
 # Op Svens verzoek ("dat je dan even moet wachten op het resultaat zodat
 # ie goed kijkt waar alle items kunnen ... rekening houdend met de
-# zaagstrategie"): de motor mag tot een minuut extra verwerkingsvolgordes
-# proberen per materiaal (zie engine.genereer_zaagplan's zoek_tijdsbudget)
-# in ruil voor een mogelijk beter zaagplan. Stopt vanzelf eerder zodra
-# geen enkele poging meer verbetert (zie _MAX_POGINGEN_ZONDER_VERBETERING).
-_ZOEK_TIJDSBUDGET_SECONDEN = 60.0
-# Op Svens verzoek ("een minimale denktijd van 10 seconden ofzo"): ook een
-# eenvoudig zaagplan dat meteen (schijnbaar zonder iets te proberen) klaar
-# zou zijn, blijft altijd nog even doorzoeken naar een betere volgorde —
-# zie engine.genereer_zaagplan's min_zoek_tijdsbudget.
-_MIN_ZOEK_TIJDSBUDGET_SECONDEN = 10.0
+# zaagstrategie"): de motor probeert extra verwerkingsvolgordes (zie
+# engine.genereer_zaagplan's zoek_tijdsbudget) in ruil voor een mogelijk
+# beter zaagplan, en stopt zodra _MAX_POGINGEN_ZONDER_VERBETERING pogingen
+# op rij niets beters opleveren. Géén tijdsplafond meer (was 60 s per
+# materiaal): dat budget werd gedeeld over alle platen van een materiaal,
+# dus met de minimale denktijd hieronder kregen de laatste platen van een
+# materiaal met veel platen helemaal geen zoektijd meer (gemeten op
+# "Keuken Jansen": plaat 7 en 8 van Meubelpaneel wit 18 kregen 0
+# pogingen). Sven: "minimaal op 3 zetten en maximaal weglaten".
+_ZOEK_TIJDSBUDGET_SECONDEN = math.inf
+# Minimale denktijd per plaat (eerst 10 s, op Svens verzoek "een minimale
+# denktijd van 10 seconden ofzo"; teruggebracht naar 3 s nadat een meting
+# op "Keuken Jansen" liet zien dat alle verbeteringen binnen ~2 s gevonden
+# werden en de rest van de 10 s niets meer opleverde, terwijl het genereren
+# daardoor ~90 s duurde). Zie engine.genereer_zaagplan's min_zoek_tijdsbudget.
+_MIN_ZOEK_TIJDSBUDGET_SECONDEN = 3.0
+# Zolang er een zaagplan gegenereerd wordt, geeft Python de GIL veel vaker
+# door tussen threads dan de standaard 5 ms (sys.getswitchinterval()).
+# Zonder dit bevroor de UI ~3 seconden direct na het klikken op
+# "Genereren" (Sven: "het moment je op zaagplan genereren drukt hij even
+# vastloopt"): Qt heeft voor het eerste opbouwen/tekenen van de
+# "bezig"-kaart honderden keren de GIL nodig (PySide6 roept per
+# virtuele methode van een Python-widget-subklasse even Python aan), en
+# moest daar elke keer tot 5 ms op wachten terwijl _ZaagplanWorker vol
+# aan het rekenen was — gemeten: ~3,2 s bij 5 ms, ~0,7 s bij 1 ms, geen
+# merkbare hapering meer bij 0,2 ms. De motor zelf wordt daar
+# nauwelijks trager van (en is sowieso door een tijdsbudget begrensd).
+_GIL_WISSELINTERVAL_TIJDENS_GENEREREN = 0.0002
 _NERFRICHTING_LABEL = {
     Nerfrichting.LANGE_ZIJDE: "Lange zijde",
     Nerfrichting.KORTE_ZIJDE: "Korte zijde",
@@ -181,6 +206,14 @@ class _ZaagplanWorker(QThread):
     door Qt automatisch op de UI-thread afgeleverd."""
 
     klaar = Signal(list, list)
+    voortgang = Signal(object)  # ZaagplanVoortgang
+
+    # Het GIL-wisselinterval is proces-breed, en er kunnen in meerdere
+    # projecttabbladen tegelijk zaagplannen gegenereerd worden — pas
+    # terugzetten zodra de laatste worker klaar is.
+    _slot = threading.Lock()
+    _aantal_actief = 0
+    _oorspronkelijk_interval = sys.getswitchinterval()
 
     def __init__(self, project: Project, materialen: MaterialenBibliotheek, strategie: str, parent=None) -> None:
         super().__init__(parent)
@@ -189,13 +222,26 @@ class _ZaagplanWorker(QThread):
         self._strategie = strategie
 
     def run(self) -> None:
-        plannen, waarschuwingen = genereer_zaagplannen_voor_project(
-            self._project,
-            self._materialen,
-            strategie=self._strategie,
-            zoek_tijdsbudget=_ZOEK_TIJDSBUDGET_SECONDEN,
-            min_zoek_tijdsbudget=_MIN_ZOEK_TIJDSBUDGET_SECONDEN,
-        )
+        cls = _ZaagplanWorker
+        with cls._slot:
+            if cls._aantal_actief == 0:
+                cls._oorspronkelijk_interval = sys.getswitchinterval()
+                sys.setswitchinterval(_GIL_WISSELINTERVAL_TIJDENS_GENEREREN)
+            cls._aantal_actief += 1
+        try:
+            plannen, waarschuwingen = genereer_zaagplannen_voor_project(
+                self._project,
+                self._materialen,
+                strategie=self._strategie,
+                zoek_tijdsbudget=_ZOEK_TIJDSBUDGET_SECONDEN,
+                min_zoek_tijdsbudget=_MIN_ZOEK_TIJDSBUDGET_SECONDEN,
+                voortgang=self.voortgang.emit,
+            )
+        finally:
+            with cls._slot:
+                cls._aantal_actief -= 1
+                if cls._aantal_actief == 0:
+                    sys.setswitchinterval(cls._oorspronkelijk_interval)
         self.klaar.emit(plannen, waarschuwingen)
 
 
@@ -236,15 +282,18 @@ class ProjectDetailPage(QWidget):
         theme: Theme,
         on_gewijzigd: Callable[[], None] | None = None,
         on_open_projecten_tab: Callable[[], None] | None = None,
+        on_open_modelkopie: Callable[[str, str], None] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._project_id = project_id
+        self._on_open_modelkopie = on_open_modelkopie
         self._projecten = projecten
         self._modellen = modellen
         self._materialen = materialen
         self._zaagplannen_opslag = zaagplannen_opslag
         self._theme = theme
+        self._melding = OpslagMelding(self, theme)
         self._on_gewijzigd = on_gewijzigd
         self._on_open_projecten_tab = on_open_projecten_tab
 
@@ -273,6 +322,14 @@ class ProjectDetailPage(QWidget):
             self._zaagplan_waarschuwingen = []
             self._zaagplan_strategie = self._standaard_zaagstrategie()
         self._zaagplan_worker: _ZaagplanWorker | None = None
+        # Laatste tussenstand + starttijd van een lopende generatie, zodat
+        # de "bezig"-kaart na een thema-wissel (_ververs_alles) met de
+        # juiste stand herbouwd kan worden i.p.v. weer bij 0 te beginnen.
+        self._zaagplan_voortgang: ZaagplanVoortgang | None = None
+        self._zaagplan_starttijd = 0.0
+        self._zaagplan_balk: QProgressBar | None = None
+        self._zaagplan_status: QLabel | None = None
+        self._zaagplan_eta: QLabel | None = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -296,12 +353,18 @@ class ProjectDetailPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
+        self._melding.set_theme(theme)
         layout = self.layout()
         _clear_layout(layout)
         self._sidebar = self._build_sidebar()
         self._view = self._build_view()
         layout.addWidget(self._sidebar)
         layout.addWidget(self._view, 1)
+        self._ververs_alles()
+
+    def ververs(self) -> None:
+        """Opnieuw inlezen na een wijziging van buitenaf, bv. een modelkopie
+        die in zijn eigen tabblad bewerkt is (zie project_model_page.py)."""
         self._ververs_alles()
 
     def _meld_gewijzigd(self) -> None:
@@ -784,6 +847,7 @@ class ProjectDetailPage(QWidget):
         self._ov_validation_banner.hide()
         self._ververs_head()
         self._meld_gewijzigd()
+        self._melding.toon("Projectgegevens opgeslagen", f"project {kandidaat.naam}")
 
     # ------------------------------------------------------------------
     # Paneel: Samenstelling
@@ -916,6 +980,17 @@ class ProjectDetailPage(QWidget):
         sub.setProperty("role", "matMeta")
         info_col.addWidget(sub)
         layout.addLayout(info_col, 1)
+
+        if self._on_open_modelkopie is not None:
+            # Op Svens verzoek: het model in dit project bewerken, als eigen
+            # tabblad (zie project_model_page.py).
+            bewerk_btn = QToolButton()
+            bewerk_btn.setProperty("role", "rowAction")
+            bewerk_btn.setIcon(icon("pencil", self._theme.text_faint, 15))
+            bewerk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            bewerk_btn.setToolTip("Bewerken in dit project")
+            bewerk_btn.clicked.connect(lambda: self._on_open_modelkopie(self._project_id, instantie.id))
+            layout.addWidget(bewerk_btn)
 
         bijwerken_btn = QToolButton()
         bijwerken_btn.setProperty("role", "rowAction")
@@ -1313,6 +1388,7 @@ class ProjectDetailPage(QWidget):
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()
         self._meld_gewijzigd()
+        self._melding.toon(f'Onderdeel "{onderdeel.naam}" opgeslagen', f"in project {self._project().naam}")
 
     def _verwijder_los_onderdeel(self, onderdeel_id: str) -> None:
         self._projecten.los_onderdeel_verwijderen(self._project_id, onderdeel_id)
@@ -1650,14 +1726,54 @@ class ProjectDetailPage(QWidget):
         # synchroon op de UI-thread met alleen een statische
         # "Bezig..."-tekst (zie OVERDRACHT.md) — bewust een latere
         # iteratie zodra dit hinderlijk zou blijken, wat nu het geval is.
-        _clear_layout(self._zaagplannen_content)
-        self._zaagplannen_content.addWidget(self._bouw_zaagplan_bezig())
+        if self._zaagplan_worker is not None:
+            return
+        self._zaagplan_voortgang = None
+        self._zaagplan_starttijd = time.monotonic()
         self._zaagplan_worker = _ZaagplanWorker(self._project(), self._materialen, self._zaagplan_strategie, self)
+        self._zaagplan_worker.voortgang.connect(self._op_zaagplan_voortgang)
         self._zaagplan_worker.klaar.connect(self._op_zaagplannen_klaar)
+        self._ververs_zaagplannen_paneel()
         self._zaagplan_worker.start()
+
+    def _op_zaagplan_voortgang(self, voortgang: ZaagplanVoortgang) -> None:
+        self._zaagplan_voortgang = voortgang
+        self._toon_zaagplan_voortgang()
+
+    def _toon_zaagplan_voortgang(self) -> None:
+        if self._zaagplan_balk is None or self._zaagplan_status is None or self._zaagplan_eta is None:
+            return
+        v = self._zaagplan_voortgang
+        if v is None:
+            self._zaagplan_balk.setValue(0)
+            self._zaagplan_status.setText("Voorbereiden…")
+            self._zaagplan_eta.setText("Resterende tijd berekenen…")
+            return
+
+        self._zaagplan_balk.setValue(round(v.fractie * 1000))
+        materiaal = f"Materiaal {v.materiaal_nummer} van {v.materiaal_totaal}" if v.materiaal_totaal > 1 else "Materiaal"
+        self._zaagplan_status.setText(f"{materiaal}: {v.materiaal_naam} · plaat {v.plaat_nummer}")
+
+        # Resterende tijd: lineair doorgetrokken vanuit de verstreken tijd
+        # (elke plaat kost ongeveer even lang, zie ZaagplanVoortgang), pas
+        # vanaf een paar procent — daarvoor is de schatting te wild.
+        # Afgerond op 5 seconden zodat het getal niet elke tik verspringt.
+        verstreken = time.monotonic() - self._zaagplan_starttijd
+        procent = round(v.fractie * 100)
+        if v.fractie < 0.03 or verstreken < 1.0:
+            self._zaagplan_eta.setText(f"{procent}% · resterende tijd berekenen…")
+            return
+        rest = verstreken * (1.0 - v.fractie) / v.fractie
+        if rest < 5:
+            self._zaagplan_eta.setText(f"{procent}% · bijna klaar…")
+            return
+        seconden = 5 * math.ceil(rest / 5)
+        tijd = f"{seconden} seconden" if seconden < 60 else f"{seconden // 60} min {seconden % 60:02d} s"
+        self._zaagplan_eta.setText(f"{procent}% · nog ongeveer {tijd}")
 
     def _op_zaagplannen_klaar(self, plannen: list[PlaatZaagplan], waarschuwingen: list[str]) -> None:
         self._zaagplan_worker = None
+        self._zaagplan_voortgang = None
         self._zaagplannen = plannen
         self._zaagplan_waarschuwingen = waarschuwingen
         # Meteen opslaan zodat dit zaagplan overleeft als je het project
@@ -1675,29 +1791,48 @@ class ProjectDetailPage(QWidget):
         layout.setSpacing(14)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        layout.addWidget(_ZaagplanSpinner(self._theme.accent_text), 0, Qt.AlignmentFlag.AlignHCenter)
+        t = self._theme
+        layout.addWidget(_ZaagplanSpinner(t.accent_text), 0, Qt.AlignmentFlag.AlignHCenter)
 
         titel = QLabel("Bezig met zoeken naar het beste zaagplan…")
         titel.setProperty("role", "placeholderTitle")
         titel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(titel)
 
-        tekst = QLabel(
-            "RoboCutter probeert meerdere verwerkingsvolgordes en houdt de "
-            "beste — dit duurt minstens een paar seconden, ook als dat "
-            "voor dit zaagplan niet strikt nodig zou zijn."
+        # Voortgangsbalk + tussenstand (op Svens verzoek: "zodat de
+        # gebruiker kan zien hoelang het ongeveer gaat duren en hoe ver
+        # hij is"), bijgewerkt via _op_zaagplan_voortgang.
+        balk = QProgressBar()
+        balk.setRange(0, 1000)
+        balk.setTextVisible(False)
+        balk.setFixedSize(420, 8)
+        balk.setStyleSheet(
+            f"QProgressBar {{ background: {t.surface_2}; border: 1px solid {t.border}; border-radius: 4px; }}"
+            f"QProgressBar::chunk {{ background: {t.accent}; border-radius: 3px; }}"
         )
-        tekst.setProperty("role", "placeholderText")
-        tekst.setWordWrap(True)
-        tekst.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tekst.setMaximumWidth(420)
-        layout.addWidget(tekst, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addSpacing(4)
+        layout.addWidget(balk, 0, Qt.AlignmentFlag.AlignHCenter)
 
+        status = QLabel()
+        status.setStyleSheet(f"color: {t.text}; font-size: 13px; font-weight: 600; background: transparent;")
+        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(status)
+
+        eta = QLabel()
+        eta.setProperty("role", "placeholderText")
+        eta.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(eta)
+
+        self._zaagplan_balk, self._zaagplan_status, self._zaagplan_eta = balk, status, eta
+        self._toon_zaagplan_voortgang()
         return kaart
 
     def _ververs_zaagplannen_paneel(self) -> None:
         _clear_layout(self._zaagplannen_content)
-        if self._zaagplannen is None:
+        self._zaagplan_balk = self._zaagplan_status = self._zaagplan_eta = None
+        if self._zaagplan_worker is not None:
+            self._zaagplannen_content.addWidget(self._bouw_zaagplan_bezig())
+        elif self._zaagplannen is None:
             self._zaagplannen_content.addWidget(self._bouw_zaagplan_start())
         else:
             self._zaagplannen_content.addWidget(self._bouw_zaagplan_resultaat())

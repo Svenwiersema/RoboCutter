@@ -115,6 +115,7 @@ from robocutter.ui.materialen_page import MaterialenPage
 from robocutter.ui.model_detail_page import ModelDetailPage
 from robocutter.ui.modellen_page import ModellenPage
 from robocutter.ui.project_detail_page import ProjectDetailPage
+from robocutter.ui.project_model_page import ProjectModelPage
 from robocutter.ui.projecten_page import ProjectenPage
 from robocutter.ui.reststukken_page import ReststukkenPage
 from robocutter.ui.theme import Theme, build_stylesheet, resolve_thema
@@ -331,6 +332,10 @@ class MainWindow(QMainWindow):
         # Zelfde patroon voor modellen (tabsleutel f"model:{model_id}") —
         # zie model_detail_page.py.
         self._model_pages: dict[str, ModelDetailPage] = {}
+        # En voor een modelkopie die vanuit een project bewerkt wordt
+        # (tabsleutel f"projectmodel:{project_id}:{instantie_id}") — zie
+        # project_model_page.py.
+        self._projectmodel_pages: dict[str, ProjectModelPage] = {}
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -363,6 +368,8 @@ class MainWindow(QMainWindow):
             workspace.addWidget(self._project_pages[self._active_tab], 1)
         elif self._active_tab in self._model_pages:
             workspace.addWidget(self._model_pages[self._active_tab], 1)
+        elif self._active_tab in self._projectmodel_pages:
+            workspace.addWidget(self._projectmodel_pages[self._active_tab], 1)
         else:  # "dashboard"
             workspace.addWidget(self._build_main(), 1)
         return workspace
@@ -481,6 +488,9 @@ class MainWindow(QMainWindow):
             except KeyError:
                 naam = "Verwijderd project"
             return naam, "folder"
+        if key.startswith("projectmodel:"):
+            pagina = self._projectmodel_pages.get(key)
+            return (pagina.tab_titel() if pagina is not None else "Model in project"), "cube"
         if key.startswith("model:"):
             model_id = key.split(":", 1)[1]
             if model_id == "new":
@@ -559,6 +569,7 @@ class MainWindow(QMainWindow):
                 self._theme,
                 on_gewijzigd=self._on_project_gewijzigd,
                 on_open_projecten_tab=lambda: self._open_tab("projecten"),
+                on_open_modelkopie=self._open_tab_projectmodel,
             )
         if key not in self._open_tabs:
             self._open_tabs.append(key)
@@ -587,6 +598,48 @@ class MainWindow(QMainWindow):
         if key not in self._open_tabs:
             self._open_tabs.append(key)
         self._active_tab = key
+        self._rebuild_content()
+
+    def _open_tab_projectmodel(self, project_id: str, instantie_id: str) -> None:
+        # Een model uit een project bewerken, als eigen tabblad (op Svens
+        # verzoek, zie project_model_page.py). Opnieuw openen hergebruikt
+        # het bestaande tabblad.
+        key = f"projectmodel:{project_id}:{instantie_id}"
+        if key not in self._projectmodel_pages:
+            self._projectmodel_pages[key] = ProjectModelPage(
+                project_id,
+                instantie_id,
+                self._projecten_page.bibliotheek,
+                self._modellen_page.bibliotheek,
+                self._materialen_page.bibliotheek,
+                self._theme,
+                on_project_gewijzigd=lambda: self._on_modelkopie_gewijzigd(project_id),
+                on_bibliotheek_gewijzigd=self._on_model_bibliotheek_gewijzigd,
+                on_open_project=lambda: self._open_tab_project(project_id),
+            )
+        if key not in self._open_tabs:
+            self._open_tabs.append(key)
+        self._active_tab = key
+        self._rebuild_content()
+
+    def _on_modelkopie_gewijzigd(self, project_id: str) -> None:
+        # De kopie is vanuit zijn eigen tabblad gewijzigd: het projecttabblad
+        # (Samenstelling/Zaaglijst) en de projectenlijst moeten dat laten zien.
+        pagina = self._project_pages.get(f"project:{project_id}")
+        if pagina is not None:
+            pagina.ververs()
+        self._projecten_page.ververs()
+        self._rebuild_content()
+
+    def _on_model_bibliotheek_gewijzigd(self, model_id: str) -> None:
+        # Een projectkopie is naar de bibliotheek teruggeschreven of als nieuw
+        # model opgeslagen: modellenlijst verversen, en een open tabblad van
+        # dat model herladen zodat het niet met verouderde gegevens blijft
+        # staan (en die later per ongeluk terugschrijft).
+        self._modellen_page.ververs()
+        pagina = self._model_pages.get(f"model:{model_id}")
+        if pagina is not None:
+            pagina.herlaad()
         self._rebuild_content()
 
     def _model_nieuw_aangemaakt(self, nieuw_id: str) -> None:
@@ -625,6 +678,10 @@ class MainWindow(QMainWindow):
         # verversen, niet alleen de chrome/tabbladen (die haalt haar data pas
         # weer op bij de volgende _rebuild_content-aanroep, hierna).
         self._projecten_page.ververs()
+        # Een open modelkopie-tabblad volgt wijzigingen vanuit het project
+        # (bv. "bijwerken naar laatste versie" of het model verwijderen).
+        for pagina in self._projectmodel_pages.values():
+            pagina.herlaad_als_gewijzigd()
         self._rebuild_content()
 
     def _close_tab(self, key: str) -> None:
@@ -648,6 +705,11 @@ class MainWindow(QMainWindow):
         elif key.startswith("model:"):
             # Zelfde reden als bij project-tabbladen hierboven.
             pagina = self._model_pages.pop(key, None)
+            if pagina is not None:
+                pagina.setParent(None)
+                pagina.deleteLater()
+        elif key.startswith("projectmodel:"):
+            pagina = self._projectmodel_pages.pop(key, None)
             if pagina is not None:
                 pagina.setParent(None)
                 pagina.deleteLater()
@@ -848,6 +910,8 @@ class MainWindow(QMainWindow):
             pagina.set_theme(self._theme)
         for pagina in self._model_pages.values():
             pagina.set_theme(self._theme)
+        for pagina in self._projectmodel_pages.values():
+            pagina.set_theme(self._theme)
         self._rebuild_content()
         self._apply_theme()
 
@@ -878,6 +942,8 @@ class MainWindow(QMainWindow):
         for pagina in self._project_pages.values():
             pagina.setParent(None)
         for pagina in self._model_pages.values():
+            pagina.setParent(None)
+        for pagina in self._projectmodel_pages.values():
             pagina.setParent(None)
         central.deleteLater()
         self._nav_buttons = []

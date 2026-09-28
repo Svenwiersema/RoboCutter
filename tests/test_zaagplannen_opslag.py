@@ -42,7 +42,7 @@ def _project_met_zaagplan() -> tuple[list, list, MaterialenBibliotheek]:
             ],
         )
     )
-    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="rijen")
+    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="horizontaal")
     return plannen, waarschuwingen, project
 
 
@@ -53,7 +53,7 @@ def test_sqlite_opslag_overleeft_herstart(tmp_path):
 
     verbinding = open_verbinding(db_pad)
     opslag = ZaagplannenOpslag(verbinding)
-    opslag.opslaan(project.id, plannen, waarschuwingen, "rijen")
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
     verbinding.close()
 
     # Nieuwe verbinding simuleert een herstart van de app.
@@ -63,7 +63,7 @@ def test_sqlite_opslag_overleeft_herstart(tmp_path):
     assert geladen is not None
     herladen_plannen, herladen_waarschuwingen, herladen_strategie = geladen
 
-    assert herladen_strategie == "rijen"
+    assert herladen_strategie == "horizontaal"
     assert herladen_waarschuwingen == waarschuwingen
     assert len(herladen_plannen) == len(plannen)
     origineel, herladen = plannen[0], herladen_plannen[0]
@@ -138,7 +138,7 @@ def test_opslaan_overschrijft_het_vorige_zaagplan_van_hetzelfde_project(tmp_path
     opslag = ZaagplannenOpslag(verbinding)
     plannen, waarschuwingen, project = _project_met_zaagplan()
 
-    opslag.opslaan(project.id, plannen, waarschuwingen, "rijen")
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
     opslag.opslaan(project.id, plannen, waarschuwingen, "efficient")
 
     geladen = opslag.laad(project.id)
@@ -153,10 +153,28 @@ def test_verwijderen_maakt_laad_weer_none(tmp_path):
     verbinding = open_verbinding(tmp_path / "verwijderen.db")
     opslag = ZaagplannenOpslag(verbinding)
     plannen, waarschuwingen, project = _project_met_zaagplan()
-    opslag.opslaan(project.id, plannen, waarschuwingen, "rijen")
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
     assert opslag.laad(project.id) is not None
 
     opslag.verwijderen(project.id)
 
     assert opslag.laad(project.id) is None
     verbinding.close()
+
+
+def test_oude_strategienaam_rijen_wordt_horizontaal_bij_laden(tmp_path):
+    # Een zaagplan dat nog onder de oude naam "rijen" is opgeslagen, moet
+    # na de hernoeming als "horizontaal" terugkomen (anders valt het
+    # scherm terug op de standaardstrategie of kent het het label niet).
+    import dataclasses
+
+    plannen, waarschuwingen, project = _project_met_zaagplan()
+    oud = [dataclasses.replace(p, resultaat=dataclasses.replace(p.resultaat, strategie="rijen")) for p in plannen]
+    verbinding = open_verbinding(tmp_path / "zaagplannen.db")
+    opslag = ZaagplannenOpslag(verbinding)
+    opslag.opslaan(project.id, oud, waarschuwingen, "rijen")
+
+    herladen, _, strategie = opslag.laad(project.id)
+
+    assert strategie == "horizontaal"
+    assert all(p.resultaat.strategie == "horizontaal" for p in herladen)

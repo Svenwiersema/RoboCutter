@@ -43,6 +43,7 @@ from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.randen_diagram import RandenDiagram
+from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
@@ -94,6 +95,7 @@ class MaterialenPage(QWidget):
     def __init__(self, theme: Theme, parent=None) -> None:
         super().__init__(parent)
         self._theme = theme
+        self._melding = OpslagMelding(self, theme)
 
         db_pad = InstellingenBeheer().effectieve_db_pad()
         db_pad.parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +138,7 @@ class MaterialenPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
+        self._melding.set_theme(theme)
         layout = self.layout()
         _clear_layout(layout)
         self._sidebar = self._build_sidebar()
@@ -1128,3 +1131,4 @@ class MaterialenPage(QWidget):
 
         self._sluit_drawer()
         self._ververs_alles()
+        self._melding.toon(f'Materiaal "{kandidaat.naam}" opgeslagen', "in de materialenbibliotheek")

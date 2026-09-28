@@ -19,18 +19,19 @@ geheugen van het scherm dat het opvraagt, en wordt bij elke klik op
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.modellen.models import Nerfrichting, Rand
-from robocutter.optimalisatie.engine import genereer_zaagplannen
+from robocutter.optimalisatie.engine import genereer_zaagplannen, schat_aantal_platen
 from robocutter.optimalisatie.models import Materiaal as OptMateriaal
 from robocutter.optimalisatie.models import Onderdeel as OptOnderdeel
 from robocutter.optimalisatie.models import ZaagplanResultaat
 from robocutter.projecten.models import Project
 from robocutter.projecten.zaaglijst import ZaaglijstRegel, bouw_zaaglijst
 
-__all__ = ["OnderdeelInfo", "PlaatZaagplan", "genereer_zaagplannen_voor_project"]
+__all__ = ["OnderdeelInfo", "PlaatZaagplan", "ZaagplanVoortgang", "genereer_zaagplannen_voor_project"]
 
 
 @dataclass
@@ -88,6 +89,26 @@ class PlaatZaagplan:
         return self.resultaat.niet_geplaatst_redenen.get(niet_geplaatst_unit_id, "")
 
 
+@dataclass(frozen=True)
+class ZaagplanVoortgang:
+    """Tussenstand tijdens ``genereer_zaagplannen_voor_project``, voor de
+    voortgangsbalk in de UI.
+
+    ``fractie`` (0.0-1.0, nooit dalend) weegt elke plaat even zwaar —
+    elke plaat kost ongeveer even veel zoektijd (de minimale denktijd) —
+    over alle materialen van het project samen. Hoeveel platen een
+    materiaal nodig heeft staat pas vast als dat materiaal klaar is;
+    tot dan wordt ``engine.schat_aantal_platen`` gebruikt, dus de balk
+    kan even stilstaan (schatting te laag) of een sprongetje maken
+    (schatting te hoog)."""
+
+    fractie: float
+    materiaal_nummer: int
+    materiaal_totaal: int
+    materiaal_naam: str
+    plaat_nummer: int
+
+
 def _naar_optimalisatie_materiaal(materiaal_id: str, materialen: MaterialenBibliotheek) -> OptMateriaal | None:
     try:
         m = materialen.ophalen(materiaal_id)
@@ -112,6 +133,7 @@ def genereer_zaagplannen_voor_project(
     strategie: str = "efficient",
     zoek_tijdsbudget: float = 0.0,
     min_zoek_tijdsbudget: float = 0.0,
+    voortgang: Callable[[ZaagplanVoortgang], None] | None = None,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -127,7 +149,10 @@ def genereer_zaagplannen_voor_project(
         onafhankelijk pak-probleem en krijgt dus zijn eigen budget, niet
         een gedeeld totaal over alle materialen samen).
     :param min_zoek_tijdsbudget: zie ``engine.genereer_zaagplannen`` —
-        wordt hier ook per materiaal/plaat toegepast."""
+        wordt hier ook per materiaal/plaat toegepast.
+    :param voortgang: optionele callback die tussentijds een
+        ``ZaagplanVoortgang`` krijgt (vanaf de thread waarop deze functie
+        draait)."""
 
     per_materiaal: dict[str, list[ZaaglijstRegel]] = {}
     for regel in bouw_zaaglijst(project):
@@ -135,6 +160,9 @@ def genereer_zaagplannen_voor_project(
 
     plannen: list[PlaatZaagplan] = []
     waarschuwingen: list[str] = []
+    # Eerst alles omzetten, pas daarna genereren: de voortgangsbalk heeft
+    # vooraf het (geschatte) aantal platen van álle materialen nodig.
+    te_genereren: list[tuple[str, OptMateriaal, dict[str, OnderdeelInfo], list[OptOnderdeel]]] = []
 
     for materiaal_id, regels in per_materiaal.items():
         opt_materiaal = _naar_optimalisatie_materiaal(materiaal_id, materialen)
@@ -170,13 +198,40 @@ def genereer_zaagplannen_voor_project(
                 )
             )
 
+        te_genereren.append((materiaal_id, opt_materiaal, onderdeel_info, opt_onderdelen))
+
+    # Per materiaal: het echte aantal platen zodra het klaar is, tot dan
+    # de schatting (zie ZaagplanVoortgang).
+    platen_per_materiaal = [schat_aantal_platen(m, o) for _, m, _, o in te_genereren]
+    hoogste_fractie = 0.0
+
+    for index, (materiaal_id, opt_materiaal, onderdeel_info, opt_onderdelen) in enumerate(te_genereren):
+
+        def meld(plaat_nummer: int, plaat_fractie: float, index=index, naam=opt_materiaal.naam) -> None:
+            nonlocal hoogste_fractie
+            platen_hier = max(platen_per_materiaal[index], plaat_nummer)
+            totaal = sum(platen_per_materiaal[:index]) + platen_hier + sum(platen_per_materiaal[index + 1 :])
+            voltooid = sum(platen_per_materiaal[:index]) + (plaat_nummer - 1) + plaat_fractie
+            hoogste_fractie = max(hoogste_fractie, min(1.0, voltooid / totaal))
+            voortgang(
+                ZaagplanVoortgang(
+                    fractie=hoogste_fractie,
+                    materiaal_nummer=index + 1,
+                    materiaal_totaal=len(te_genereren),
+                    materiaal_naam=naam,
+                    plaat_nummer=plaat_nummer,
+                )
+            )
+
         resultaten = genereer_zaagplannen(
             opt_materiaal,
             opt_onderdelen,
             strategie=strategie,
             zoek_tijdsbudget=zoek_tijdsbudget,
             min_zoek_tijdsbudget=min_zoek_tijdsbudget,
+            voortgang=meld if voortgang is not None else None,
         )
+        platen_per_materiaal[index] = len(resultaten)
         for i, resultaat in enumerate(resultaten, start=1):
             plannen.append(
                 PlaatZaagplan(

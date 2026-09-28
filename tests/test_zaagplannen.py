@@ -10,7 +10,7 @@ from robocutter.materialen.models import Materiaal, MateriaalType
 from robocutter.modellen.models import ModelOnderdeel
 from robocutter.projecten.bibliotheek import ProjectenBibliotheek
 from robocutter.projecten.models import Project
-from robocutter.projecten.zaagplannen import genereer_zaagplannen_voor_project
+from robocutter.projecten.zaagplannen import ZaagplanVoortgang, genereer_zaagplannen_voor_project
 
 
 def _materiaal(**overrides) -> Materiaal:
@@ -51,7 +51,7 @@ def test_genereert_een_plaat_per_materiaal_in_de_zaaglijst():
         )
     )
 
-    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="rijen")
+    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="horizontaal")
 
     assert waarschuwingen == []
     assert {p.materiaal_naam for p in plannen} == {"Eiken multiplex", "Wit gemelamineerd"}
@@ -144,3 +144,32 @@ def test_reden_voor_geeft_uitleg_voor_een_te_groot_onderdeel():
     assert plan.resultaat.niet_geplaatst == ["r0#1"]
     assert "te groot" in plan.reden_voor("r0#1")
     assert plan.reden_voor("onbestaande#1") == ""
+
+
+def test_voortgang_over_meerdere_materialen_loopt_op_tot_een():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal(naam="Eiken multiplex"))
+    wit = materialen.toevoegen(_materiaal(naam="Wit gemelamineerd"))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(hout.id, naam="Zijkant", breedte=600, hoogte=720, aantal=2),
+                _onderdeel(wit.id, naam="Deur", breedte=300, hoogte=700, aantal=4),
+            ],
+        )
+    )
+    meldingen: list[ZaagplanVoortgang] = []
+
+    genereer_zaagplannen_voor_project(
+        project, materialen, strategie="horizontaal",
+        zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.25, voortgang=meldingen.append,
+    )
+
+    fracties = [m.fractie for m in meldingen]
+    assert fracties == sorted(fracties)
+    assert fracties[-1] == 1.0
+    assert {m.materiaal_nummer for m in meldingen} == {1, 2}
+    assert all(m.materiaal_totaal == 2 for m in meldingen)
+    # Halverwege (na het eerste materiaal) nog niet klaar.
+    assert max(m.fractie for m in meldingen if m.materiaal_nummer == 1) < 1.0

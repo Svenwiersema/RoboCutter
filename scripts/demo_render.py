@@ -6,7 +6,7 @@ testcase als de eerdere handgemaakte voorbeelden
 algoritme-output visueel te vergelijken is met die eerdere concepten.
 
 Let op: "stroken" en "guillotine" zijn bewust minder efficiënt dan
-"efficient"/"rijen" (zie de module-docstring van
+"efficient"/"horizontaal" (zie de module-docstring van
 ``robocutter.optimalisatie.engine``) en laten voor deze specifieke,
 krap-passende testcase een deel van de onderdelen onplaatsbaar — dat is
 zichtbaar in de gegenereerde PNG's als de "Niet geplaatst"-regel
@@ -115,7 +115,7 @@ def main():
     r1 = genereer_zaagplan(mat, onderdelen, strategie="efficient")
     render(r1, str(out / "demo_efficient.png"), "Zaagplan — strategie: meest efficiënte plaatsing")
 
-    r2 = genereer_zaagplan(mat, onderdelen, strategie="rijen")
+    r2 = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     render(r2, str(out / "demo_rijen.png"), "Zaagplan — strategie: lange zijdes eerst")
 
     r1b = genereer_zaagplan(mat, onderdelen, strategie="stroken")

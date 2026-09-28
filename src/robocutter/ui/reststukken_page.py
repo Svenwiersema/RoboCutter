@@ -49,6 +49,7 @@ from robocutter.reststukken.opslag import open_verbinding
 from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _KOLOMBREEDTES = [230, 80, 150, 200, 110, 110]
 _SORT_OPTIES = [("naam", "Sorteren op materiaal"), ("type", "Sorteren op type"), ("status", "Sorteren op status")]
@@ -70,6 +71,7 @@ class ReststukkenPage(QWidget):
     def __init__(self, materialen: MaterialenBibliotheek, theme: Theme, parent=None) -> None:
         super().__init__(parent)
         self._theme = theme
+        self._melding = OpslagMelding(self, theme)
         self.materialen = materialen
 
         db_pad = InstellingenBeheer().effectieve_db_pad()
@@ -105,6 +107,7 @@ class ReststukkenPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
+        self._melding.set_theme(theme)
         layout = self.layout()
         _clear_layout(layout)
         self._sidebar = self._build_sidebar()
@@ -889,3 +892,4 @@ class ReststukkenPage(QWidget):
 
         self._sluit_drawer()
         self._ververs_alles()
+        self._melding.toon("Reststuk opgeslagen", "in de reststukkenbibliotheek")

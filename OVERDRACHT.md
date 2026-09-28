@@ -702,6 +702,15 @@ in plaats van aan te nemen:
 6. De zaagvolgorde-nummering voor de "efficient"-strategie is een
    eerste benadering — hoofdstuk 5 zelf zegt al dat de lay-out verder
    verfijnd wordt aan de hand van gegenereerde voorbeelden.
+7. **Guillotine: praktijkcontrole uitgesteld tot de bètatest.** Technisch
+   nagelopen (eigen referentie-implementatie + paneelzaag-simulatie, zie
+   het logboek hieronder), maar Sven heeft zelf geen ervaring met deze
+   strategie: "ik vertrouw er eerst op dat jij het goed hebt ... dit is
+   iets wat we dan beter kunnen bewaren voor de betatesters". Vragen voor
+   bètatesters die met een paneelzaag werken: is de zaagvolgorde logisch
+   en praktisch, en is de uitkomst bruikbaar t.o.v. Efficiënt? Ook open:
+   moet de randafzaag als genummerde snede in de zaagvolgorde staan (nu
+   begint de volgorde pas ná het afzagen van de randen)?
 
 ## Nog niet gebouwd (bewust, dit was iteratie 1)
 
@@ -2377,6 +2386,296 @@ houden.
   teruglezen, thema-wissel) op tijdelijke databases; volledige testsuite
   ongewijzigd 161 tests groen (dit is UI-werk zonder pytest-dekking, zie
   Architectuur-sectie).
+
+- **Zaagplan genereren: bevriezing bij start opgelost + voortgangsbalk.**
+  Svens twee openstaande punten bij het laadscherm ("het moment je op
+  zaagplan genereren drukt hij even vastloopt" en "een laadbalk ... zodat
+  de gebruiker kan zien hoelang het ongeveer gaat duren en hoe ver hij
+  is"):
+  1. **Bevriezing**: gemeten (offscreen, op een kopie van de db) — de
+     Qt-event loop stond ~3,2 s stil direct na de klik, terwijl de
+     worker-thread meteen startte. Oorzaak: GIL-contentie, niet de motor
+     zelf. Qt heeft voor het eerste opbouwen/tekenen van de "bezig"-kaart
+     honderden keren kort de GIL nodig (PySide6 checkt per virtuele
+     methode van een Python-widget-subklasse op een Python-override) en
+     wachtte telkens tot het standaard-wisselinterval van 5 ms voorbij
+     was, omdat de worker onafgebroken rekende. De gap schaalde lineair
+     met `sys.setswitchinterval` (5 ms → 3,2 s, 1 ms → 0,7 s, 0,2 ms →
+     niet meer merkbaar). Fix: `_ZaagplanWorker` zet het interval op
+     `_GIL_WISSELINTERVAL_TIJDENS_GENEREREN = 0.0002` zolang er minstens één
+     worker draait (teller met lock, want meerdere projecttabbladen kunnen
+     tegelijk genereren) en zet het daarna terug. Grootste UI-stilstand
+     tijdens genereren is nu ~50 ms.
+  2. **Voortgangsbalk**: `engine.genereer_zaagplan` kreeg een optionele
+     `voortgang(fractie)`-callback (max. elke 0,1 s tijdens de zoeklus,
+     nooit dalend, altijd afgesloten met 1.0 — schatting via
+     `_zoek_fractie`: 90% van de balk voor de minimale denktijd, de rest
+     voor de staart tot het pogingen- of tijdsplafond);
+     `genereer_zaagplannen` geeft die door als `(plaat_nummer, fractie)`;
+     nieuwe `engine.schat_aantal_platen` (oppervlakte / werkgebied bij 80%
+     benutting). `projecten.zaagplannen.genereer_zaagplannen_voor_project`
+     combineert dit tot een `ZaagplanVoortgang` over álle materialen
+     samen, waarbij elke plaat even zwaar weegt (elke plaat kost
+     ongeveer de minimale denktijd) — geschat aantal platen tot een
+     materiaal klaar is, daarna het echte aantal. De "bezig"-kaart toont
+     nu een balk, "Materiaal X van Y: naam · plaat N" en "NN% · nog
+     ongeveer … " (lineair doorgetrokken uit de verstreken tijd, afgerond
+     op 5 s, pas vanaf 3%). Blijft een schatting: als een materiaal meer
+     platen nodig heeft dan geschat staat de balk even stil. De kaart
+     wordt bij een thema-wissel tijdens het genereren nu ook correct
+     herbouwd (voorheen verving `_ververs_alles` 'm door het start- of
+     oude resultaatscherm), en een tweede klik tijdens het genereren
+     start geen tweede worker meer.
+  Geen HTML-mockup vooraf: aanpassing van een bestaande laadkaart, geen
+  nieuw scherm. 5 nieuwe tests (166 totaal, groen).
+  3. **Minimale denktijd 10 s → 3 s, tijdsplafond weg.** Een meting per
+     plaat op "Keuken Jansen" (Efficiënt) liet zien dat (a) álle
+     verbeteringen binnen ~2,1 s gevonden werden (10.000–20.000 pogingen
+     per plaat in 2 s, 15.000–30.000 in 3 s) en (b) het gedeelde 60 s-
+     budget per materiaal na 6 platen × 10 s op was, waardoor plaat 7 en 8
+     van Meubelpaneel wit 18 geen enkele zoekpoging kregen. Op Svens
+     besluit ("minimaal op 3 zetten en maximaal weglaten"):
+     `_MIN_ZOEK_TIJDSBUDGET_SECONDEN = 3.0`, `_ZOEK_TIJDSBUDGET_SECONDEN =
+     math.inf` (de motor ondersteunde dat al; nu gedocumenteerd + getest).
+     Zonder plafond stopt elke plaat na de 3 s zodra
+     `_MAX_POGINGEN_ZONDER_VERBETERING` pogingen op rij niets opleveren —
+     in de meting telkens binnen milliseconden na die 3 s. Resultaat op
+     Keuken Jansen: ~90 s → ~30 s, en 10 i.p.v. 11 platen (de vroeger
+     overgeslagen plaat 7 krijgt nu wél zoektijd en neemt de rest mee).
+     Bewust risico: zonder plafond is er geen harde bovengrens meer als
+     een plaat heel lang blijft verbeteren — in de praktijk niet gezien
+     (max. 3 verbeteringen per plaat). 1 nieuwe test (167 totaal).
+
+- **Fabriekskantenband: onderdelen draaien nu naar de juiste rand.**
+  Sven: "de stijlen hebben een fabrieksrand maar liggen niet tegen een
+  fabrieksrand" (Keuken Jansen, Meubelpaneel wit 18: 2800×600,
+  fabrieksband onder/boven). Oorzaak: de fabrieksband-route probeerde
+  alleen de ongedraaide stand — een onderdeel moest de plaatrand zelf
+  letterlijk in zijn `kantenband_randen` hebben. Een stijl (60×802, band
+  "links" = lange zijde) of zijkant (band "links") matchte dus nooit
+  met onder/boven en viel terug op een gewone plaatsing; dat de zijkanten
+  toch tegen de onderrand lagen was toeval (Rijen vult van onder af).
+  Ook een dwarsbalk met band "onder" kon niet naar de (lege)
+  bovenstrook als de onderstrook vol was, en schoof door naar een nieuwe
+  plaat. Fix: nieuwe `_fabriek_orientaties(eenheid, plaat_rand)` in
+  `engine.py` (vervangt `_kantenband_positie_gegarandeerd`) bepaalt welke
+  stand(en) een van de eigen band-zijdes tegen die plaatrand leggen:
+  halve slag altijd toegestaan (afmetingen/nerf veranderen niet), een
+  kwartslag alleen als het onderdeel vrij mag roteren, anders alleen de
+  door de nerf afgedwongen stand; groepen draaien nooit. Een halve slag
+  hoeft niet apart in `Plaatsing` vastgelegd te worden: niets tekent de
+  band per onderdeel op de plaat (alleen als tekst), en de band zit na
+  het zagen hoe dan ook op de juiste zijde. Gecontroleerd op een kopie van
+  de db (Rijen): alle fabrieksband-onderdelen raken nu met de juiste zijde
+  een fabrieksrand, Meubelpaneel wit 18 van 9 naar 8 platen. 2 nieuwe
+  tests + 1 aangepast (169 totaal).
+  **Bekende eigenschap (door Sven geaccepteerd)**: een fabrieksband-
+  strook claimt de volle plaatlengte ter diepte van zijn diepste stuk,
+  ook als hij maar deels gevuld is — gewone onderdelen kunnen daar dus
+  niet in (bv. plaat 6: Bodem 564×540 + Dwarsbalk 564×100 op 21%).
+  Sven: "dat is iets wat helaas kan gebeuren met deze strategie de rest
+  moet gewoon als rest stuk bewaard worden". Tot dan telde die ruimte
+  nergens mee (geen reststuk, geen afval) en zaagde geen snede 'm af.
+  Fix: nieuw `_strook_restruimte` in `engine.py` levert de lege ruimte
+  binnen elke strook (achter het laatste stuk, en boven stukken die
+  ondieper zijn dan de strook) als vrije rechthoeken voor
+  `_classificeer_restruimte`, plus de sneden daarbinnen (dwars tussen de
+  stukken en voor het eindstuk, evenwijdig boven ondiepere stukken) — die
+  sneden bestonden eerder ook tussen de strookstukken onderling niet.
+  `_plaats_fabriek_rand` geeft daarvoor nu 8 waarden terug. Plaat 6 heeft
+  nu reststukken 1666×540 en 564×437. 5 nieuwe tests (174 totaal) + fuzz
+  uitgebreid met reststuk-checks (binnen de plaat, geen overlap met
+  onderdelen of elkaar): 4500 runs, 0 fouten.
+
+- **Strategie "Rijen" heet nu "Horizontaal", nieuwe strategie "Verticaal".**
+  Sven: "rijen hernoemen naar horizontaal en dan een extra strategie
+  genaamd verticaal die hetzelfde doet maar dan in plaats van de hoofd
+  zaagsnedes horizontaal over de plaat verticaal over de plaat".
+  - Hernoeming overal (`GELDIGE_ZAAGSTRATEGIEEN` = efficient/horizontaal/
+    verticaal/guillotine, engine, UI-labels + omschrijving in Opties,
+    tests, `demo_render.py`). Oude opgeslagen waarde `"rijen"` (Svens
+    eigen opgeslagen zaagplan stond er zo in; `instellingen.json` van
+    eerdere demo-installaties kan het ook bevatten) wordt bij het laden
+    omgezet via nieuw `instellingen.models.normaliseer_zaagstrategie`
+    (in `instellingen/opslag.py` en `projecten/zaagplannen_opslag.py`).
+    Designdocs gecontroleerd op botsende terminologie: "horizontaal/
+    verticaal" komt in hoofdstuk 5 alleen voor als beschrijving van
+    gemengd liggende/staande onderdelen, niet als strategienaam.
+  - "Verticaal" = `_pak_kolommen` in `engine.py`: spiegelt het werkgebied
+    en elke eenheid (x↔y, én nerf-eis lange↔korte zijde, want de
+    plaatnerf blijft langs de echte x-as), laat `_pak_rijen` het werk
+    doen en spiegelt vrije ruimte en sneden terug. Plaatsingen worden via
+    `_GespiegeldeEenheid.expand` door de echte eenheid gemaakt, zodat een
+    groep (doorlopende nerf) exact ligt zoals bij elke andere strategie.
+    Bewust geen tweede kopie van de rij-logica: verbeteringen aan
+    Horizontaal gelden zo vanzelf ook voor Verticaal. Fabrieksband-
+    stroken gaan zoals altijd vóór de strategie (dus op een plaat met
+    fabrieksband onder/boven blijven die stroken horizontaal). Niet
+    toegevoegd aan de kandidaten van "efficient" (niet gevraagd).
+  - 7 nieuwe tests (181 totaal): kolommen/eerste snede verticaal over de
+    volle hoogte, nerf, groep, fabrieksband + randafzaag, en het omzetten
+    van "rijen" in instellingen en opgeslagen zaagplannen. Fuzz: 1500
+    scenario's × efficient/horizontaal/verticaal/guillotine (10% met
+    zoekbudget) = 6000 runs, 0 fouten.
+  - **Bugfix direct daarna** (Sven: "een rode zaaglijn door een
+    onderdeel" op de MDF-plaat van Keuken Jansen, strategie Verticaal):
+    de snede tussen twee groepsleden (Front 1/Front 2) liep verticaal
+    dwars door een Deur. Oorzaak: `_GespiegeldeEenheid.expand` gaf de
+    ECHTE plaatsingen terug, waarna `_plaats_rij` de groepssneden met
+    echte coördinaten in het gespiegelde assenstelsel uitrekende. Fix:
+    `expand` geeft nu gespiegelde plaatsingen terug (`_pak_kolommen`
+    spiegelt ze aan het eind terug), en `_plaats_rij` herkent een groep
+    die in zijn assenstelsel naast elkaar ligt i.p.v. boven elkaar en
+    zet er dan verticale sneden tussen. De fuzz had geen groepen, vandaar
+    gemist — nu wel (50% van de scenario's). 4 nieuwe tests (185 totaal);
+    alle drie projecten × vier strategieën op een db-kopie: geen enkele
+    snede door een onderdeel.
+    **Bestaande beperking, niet aangepast**: Efficiënt en Guillotine
+    noteren tussen groepsleden helemaal geen snede (de leden worden wel
+    goed geplaatst, maar de zaagvolgorde mist die naad).
+
+- **Zaagvolgorde compleet + alle restruimte telt mee.** Op Svens vraag
+  "hoe bereken je wat hergebruikt kan worden" liet narekenen op Keuken
+  Jansen (db-kopie) twee gaten zien, die Sven liet oplossen ("ja doe
+  dit"):
+  1. **Restruimte die nergens meetelde** (Horizontaal/Verticaal, en dus
+     ook Efficiënt als die die indeling koos): ruimte boven een stuk dat
+     lager is dan zijn rij/band telde niet als reststuk én niet als afval
+     (MDF-plaat ~1800×250; bewuste vereenvoudiging uit een eerdere
+     versie, "dat zou allemaal losse, smalle reepjes worden" — met de
+     `min_reststukgrootte`-regel worden smalle reepjes nu gewoon afval).
+  2. **Randen van onderdelen zonder snede** in de genummerde
+     zaagvolgorde (Efficiënt 10, Horizontaal 15, Verticaal 21, Guillotine
+     2 op Keuken Jansen): de rechterrand van het laatste stuk in een rij,
+     de bovenkant van lagere stukken, reepjes smaller dan de kerf, en de
+     naden tussen groepsleden bij Efficiënt/Guillotine/fabrieksband-
+     stroken.
+  Fixes in `engine.py`:
+  - `_plaats_rij` krijgt `rij_hoogte` en maakt sneden + vrije rechthoeken
+    boven een stuk lager dan zijn band, rechts van een band smaller dan
+    zijn kolom, en boven een kolom lager dan zijn rij. Volgorde binnen
+    een kolom: bandnaden → naden tussen stukken → per stuk.
+  - `_bouw_zaagvolgorde_uit_rijen`: ook de rechterrand van de laatste
+    kolom (als er rechts iets overblijft), en eerst de kolomsneden, dán
+    pas de sneden binnen een kolom (andersom kan een paneelzaag niet — de
+    bestaande rand-tot-rand-test ving precies dat).
+  - Nieuw `_zet_sneden_op_deelgebieden`: loopt de zaagvolgorde na zoals
+    een paneelzaag en zet elke snede exact op de randen van zijn
+    deelgebied (de pak-functies noteren sneden niet overal op dezelfde
+    manier: vóór/na de kerf, begrensd tot stuk of kolom). Toegepast op
+    rijen/stroken/kolommen, Efficiënt en Guillotine.
+  - `_splits_vrije_rechthoek`: bij een reepje smaller dan de kerf toch
+    een snede, maar pas NA de gewone opsplitsing en alleen binnen het
+    blok van het stuk (een eerste versie liet 'm over het hele vrije
+    rechthoek lopen en sneed zo door een later, hoger stuk — gevonden
+    door de fuzz).
+  - Nieuw `_groepssneden` (gedeeld door alle strategieën en de
+    fabrieksband-strook); `_strook_restruimte` zaagt ook reepjes smaller
+    dan de kerf (stuk net minder diep dan de strook, of net vóór het
+    einde van de rand).
+  Nieuwe test-hulpfuncties in `test_engine.py`: `_randen_zonder_snede`
+  (elke rand van elk onderdeel ligt op de plaatrand of wordt over zijn
+  volle lengte door een snede gemaakt) en `_onverantwoord_oppervlak`
+  (plaat − onderdelen − reststukken − afval − kerf×snedelengte −
+  randafzaag ≤ 0). 16 nieuwe/uitgebreide tests (202 totaal). Fuzz met
+  beide controles erbij (+ groepen, 4 strategieën, 10% met zoekbudget):
+  6000 runs, 0 fouten. Keuken Jansen (alle 4 strategieën): 0 randen
+  zonder snede, 0 onverantwoorde ruimte, geen snede door een onderdeel.
+
+- **Guillotine nagelopen met een eigen simulatie.** Sven: "kan je deze
+  strategie simuleren en zelf controleren of alles klopt".
+  1. Een losse referentie-implementatie, geschreven vanuit de beschrijving
+     (grootste eerst, wachtrij van vakken strikt op volgorde, eerste
+     passende onderdeel linksonder, splitsen langs de kant waar het minst
+     overblijft) i.p.v. vanuit de code: 2000/2000 willekeurige scenario's
+     (zonder zoekbudget) exact dezelfde indeling als de motor.
+  2. Paneelzaag-simulatie (zaagvolgorde snede voor snede uitvoeren vanaf
+     de plaat na randafzaag; elke snede moet rand-tot-rand door één stuk
+     plaat, aan het eind hoogstens één onderdeel per stuk) + regels
+     (overlap, nerf, fabrieksrand of terechte terugval, reststuk-drempel,
+     aantallen, randen gezaagd, oppervlakte verantwoord).
+  Twee echte bevindingen, beide opgelost in `engine.py`:
+  - De sneden binnen een fabrieksband-strook liepen tot de rand van het
+    stuk, niet tot de scheidingssnede (één kerf verschil) en gingen niet
+    door `_zet_sneden_op_deelgebieden` — nu wel: `genereer_zaagplan` zet
+    de hele gecombineerde volgorde (fabrieksband + strategie) aan het eind
+    op de deelgebied-randen van het werkgebied.
+  - Scheidingssneden van fabrieksband-stroken worden nu op de rand van de
+    strook zelf genoteerd (vóór de kerf; LINKS: `nieuw_x0 - kerf` enz.),
+    zoals de kolomranden bij rijen. Voorheen stonden ze na de kerf, en
+    vielen de sneden van twee precies aansluitende stroken (onder én boven
+    op een smalle plaat) op dezelfde coördinaat — de tweede werd als
+    dubbel weggelaten en een stuk bleef een kerf te groot.
+    `test_fabriekskantenband_strook_krijgt_eigen_scheidingssnede` verwacht
+    daarom nu positie 500 i.p.v. 500 + kerf.
+  Daarna: 1500 scenario's × alle 5 strategieën door paneelzaag + regels:
+  0 fouten; Keuken Jansen met Guillotine (echte instellingen): alle 11
+  platen OK. Nieuwe test `test_paneelzaag_simulatie_op_willekeurige_scenarios`
+  (120 vaste scenario's × 5 strategieën, helper `_paneelzaag_fouten`) —
+  207 tests totaal.
+  **Randafzaag staat niet als genummerde snede in de zaagvolgorde** (de
+  zaagvolgorde begint na het afzagen van de randen) — zo was het al; niet
+  aangepast.
+
+- **Teruggedraaid: "eindkolom" in Rijen.** Sven meldde dat op plaat 7
+  nog "precies een 5e losse legger naast past"; narekenen gaf 536 mm vrij
+  tegen 563 mm nodig. Er werd toch een wijziging gebouwd die zo'n legger
+  gedraaid in een kolom rechts van de rijen zette — dat klopte niet met
+  de kantenband en Sven liet het terugdraaien: zijn meting was fout, niet
+  de motor. Les (Sven): als een melding op een verkeerde maat of
+  instelling berust, dat zeggen i.p.v. de code aan te passen.
+
+- **Opslagmeldingen + model bewerken vanuit een project.** Sven: een
+  melding na opslaan ("nu druk je op de knop en moet je erop vertrouwen
+  dat ie het opgeslagen heeft") en "rechtstreeks vanuit projecten een
+  model kunnen bewerken en dit dan binnen een project houden of opslaan in
+  modellen bibliotheek en ook optie om op te slaan als nieuwe model".
+  Keuzes van Sven (via vragen vooraf): onderdeel-opslaan in het
+  modelscherm slaat meteen echt op; meldingen bij álle opslaan-knoppen;
+  bewerken als eigen tabblad; terugschrijven naar de bibliotheek niet bij
+  een model met submodellen. HTML-mockup goedgekeurd
+  (https://claude.ai/artifact/9YCmeygKv5GDneSDVmBH6Q).
+  - Nieuw widget `ui/widgets/opslag_melding.py` (`OpslagMelding`): groene
+    melding rechtsonder in de pagina, verdwijnt na 3 s (klik sluit), geen
+    pop-up. Ingebouwd bij: model opslaan + onderdeel opslaan
+    (modeldetail), materiaal, reststuk, project (drawer), projectgegevens
+    en los onderdeel (projectdetail), instellingen algemeen/labels (die
+    hadden een inline succes-balk; fouten blijven in de balk). Niet in het
+    ongebruikte terugval-uitklappaneel van `modellen_page.py`.
+  - Modeldetail: "Onderdeel toevoegen"/"Wijzigingen opslaan" slaat bij een
+    bestaand model meteen de onderdelen op (naam/omschrijving/map/tags pas
+    bij "Model opslaan"); een nieuw, nooit opgeslagen model blijft tot
+    "Model opslaan". Een onderdeel **verwijderen** in het modelscherm gaat
+    nog steeds alleen uit de lijst op het scherm tot "Model opslaan" (niet
+    gevraagd; mogelijk later gelijktrekken). Nieuwe publieke `herlaad()`.
+  - Backend (`projecten/bibliotheek.py`): `model_instantie_onderdelen_opslaan`
+    (met dezelfde controle als losse onderdelen, gedeeld via
+    `_valideer_onderdelen`), `model_instantie_afwijkingen` (op onderdeel-id,
+    terugval op volgorde bij lege/dubbele id's),
+    `model_instantie_naar_bibliotheek` (nieuw `ModelHeeftSubmodellenError`),
+    `model_instantie_als_nieuw_model` (verse onderdeel-id's, kopie wordt
+    aan het nieuwe model gekoppeld). 10 nieuwe tests.
+  - UI: nieuw `ui/project_model_page.py` (`ProjectModelPage`), tabsleutel
+    `projectmodel:{project_id}:{instantie_id}` in `main_window.py`
+    (`_projectmodel_pages`), geopend via een potlood bij elk model in de
+    Samenstelling. Onderdelen opslaan/toevoegen/verwijderen gaat meteen de
+    projectkopie in; "gewijzigd"-label t.o.v. het bibliotheekmodel; onderaan
+    de drie keuzes met inline bevestiging/naamveld. `ProjectDetailPage`
+    kreeg `on_open_modelkopie` + publieke `ververs()`; open modelkopie-
+    tabbladen volgen wijzigingen vanuit het project
+    (`herlaad_als_gewijzigd`), en een open modeltabblad wordt herladen als
+    een kopie naar de bibliotheek teruggeschreven is.
+  - `theme.py`: uitgeschakelde primary/ghost-knoppen zien er nu ook
+    uitgeschakeld uit.
+  - Designdoc module 4 bijgewerkt (nieuwe paragraaf onder Samenstelling).
+  Geverifieerd met een offscreen rookproef van de echte `MainWindow` op
+  een db-kopie (APPDATA naar een tijdelijke map met een instellingen.json
+  die de opslaglocatie naar de kopie zet; echte db-hash vóór/na gelijk):
+  potlood → tabblad, onderdeel wijzigen → kopie gewijzigd + bibliotheek
+  niet + melding + status, overschrijven, als nieuw model, uitgeschakelde
+  keuze bij submodellen, modeldetail-onderdeel direct opgeslagen,
+  thema-wissel, model uit project verwijderd terwijl tabblad open staat.
+  217 tests.
 
 ## Werkwijze die Sven prettig vindt
 

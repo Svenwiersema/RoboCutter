@@ -72,6 +72,7 @@ from robocutter.modellen.models import Model, ModelOnderdeel, Nerfrichting, Rand
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.randen_diagram import RandenDiagram
+from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
@@ -129,6 +130,7 @@ class ModelDetailPage(QWidget):
         self.bibliotheek = modellen
         self.materialen = materialen
         self._theme = theme
+        self._melding = OpslagMelding(self, theme)
         self._on_gewijzigd = on_gewijzigd
         self._on_open_modellen_tab = on_open_modellen_tab
         self._on_aangemaakt = on_aangemaakt
@@ -159,6 +161,7 @@ class ModelDetailPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
+        self._melding.set_theme(theme)
         layout = self.layout()
         _clear_layout(layout)
         self._view = self._build_view()
@@ -306,6 +309,15 @@ class ModelDetailPage(QWidget):
             self.bibliotheek.bijwerken(kandidaat)
         self._meld_gewijzigd()
         self._laad_model()
+        self._melding.toon(f'Model "{kandidaat.naam}" opgeslagen', "in de modellenbibliotheek")
+
+    def herlaad(self) -> None:
+        """Opnieuw inlezen uit de bibliotheek — voor als het model van
+        buitenaf gewijzigd is (bv. een projectkopie die naar de bibliotheek
+        is teruggeschreven, zie project_model_page.py), zodat een open
+        tabblad niet met verouderde gegevens blijft staan."""
+        if self._model_id is not None:
+            self._laad_model()
 
     # ------------------------------------------------------------------
     # Gedeelde veld-helpers (zelfde patroon als modellen_page.py)
@@ -767,12 +779,32 @@ class ModelDetailPage(QWidget):
 
     def _onderdeel_opslaan_klik(self) -> None:
         onderdeel = self._onderdeel_uit_formulier()
+        vorige = list(self._werk_onderdelen)
         if self._bewerk_onderdeel_index is not None:
             self._werk_onderdelen[self._bewerk_onderdeel_index] = onderdeel
         else:
             self._werk_onderdelen.append(onderdeel)
+
+        if self._model_id is not None:
+            # Op Svens keuze: bij een bestaand model slaat dit het onderdeel
+            # meteen echt op (voorheen alleen in de lijst op het scherm, tot
+            # "Model opslaan"). Alleen de onderdelen — nog niet opgeslagen
+            # wijzigingen in naam/omschrijving/map/tags blijven op het scherm
+            # staan tot "Model opslaan". Een nieuw, nog nooit opgeslagen model
+            # kan dit nog niet: dat blijft tot "Model opslaan".
+            try:
+                self.bibliotheek.bijwerken(replace(self._model(), onderdelen=list(self._werk_onderdelen)))
+            except ValueError as exc:
+                self._werk_onderdelen = vorige
+                self._validation_label.setText("• " + "\n• ".join(str(exc).split("; ")))
+                self._validation_banner.show()
+                return
+            self._validation_banner.hide()
+            self._melding.toon(f'Onderdeel "{onderdeel.naam}" opgeslagen', f"in model {self._model().naam}")
+            self._meld_gewijzigd()
         self._reset_onderdeel_form()
         self._ververs_onderdelen()
+        self._ververs_head()
 
     # ------------------------------------------------------------------
     # Submodellen-lijst (nesting)

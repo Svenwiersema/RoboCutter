@@ -25,6 +25,21 @@ hier vanaf nul samen ontworpen.
 - Er is een expliciete actie om die kopie bij te werken naar de laatste
   modelversie; dit **triggert een nieuwe projectrevisie** (zie Module 1
   voor wat revisie-waardig is).
+- **Een modelkopie bewerken vanuit het project** (toegevoegd na
+  goedkeuring door Sven, september 2026): de kopie kan in een eigen
+  tabblad bewerkt worden (onderdelen wijzigen, toevoegen, verwijderen).
+  Die wijzigingen blijven in het project. Daarnaast twee keuzes om ze in
+  de modellenbibliotheek te bewaren:
+  - **Opslaan in de modellenbibliotheek**: overschrijft het bronmodel
+    (met bevestiging). Andere projecten houden hun eigen kopie. Kan niet
+    als het bronmodel uit submodellen bestaat: de kopie is platgeslagen,
+    dus overschrijven zou die opbouw wissen.
+  - **Opslaan als nieuw model**: maakt een nieuw model (zonder
+    submodellen); de kopie in het project hoort daarna bij dat nieuwe
+    model.
+  Dit is een uitbreiding op "Project → Model" hieronder, dat blijft gaan
+  over het hele project in één keer; hier gaat het om één model uit het
+  project.
 
 ## Project → Model
 

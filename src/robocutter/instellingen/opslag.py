@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-from robocutter.instellingen.models import Instellingen
+from robocutter.instellingen.models import Instellingen, normaliseer_zaagstrategie
 
 __all__ = ["standaard_instellingen_pad", "laad_instellingen", "sla_instellingen_op"]
 
@@ -32,7 +32,9 @@ def laad_instellingen(pad: Path | None = None) -> Instellingen:
         return Instellingen()
 
     velden = {veld.name for veld in Instellingen.__dataclass_fields__.values()}
-    return Instellingen(**{k: v for k, v in ruwe_data.items() if k in velden})
+    instellingen = Instellingen(**{k: v for k, v in ruwe_data.items() if k in velden})
+    instellingen.standaard_zaagstrategie = normaliseer_zaagstrategie(instellingen.standaard_zaagstrategie)
+    return instellingen
 
 
 def sla_instellingen_op(instellingen: Instellingen, pad: Path | None = None) -> None:

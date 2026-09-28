@@ -34,6 +34,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from robocutter.instellingen.models import normaliseer_zaagstrategie
 from robocutter.modellen.models import Nerfrichting as ModNerfrichting
 from robocutter.modellen.models import Rand as ModRand
 from robocutter.optimalisatie.models import Materiaal as OptMateriaal
@@ -79,7 +80,7 @@ class ZaagplannenOpslag:
             return None
         plannen = [_dict_naar_plan(d) for d in json.loads(rij["plannen"])]
         waarschuwingen = list(json.loads(rij["waarschuwingen"]))
-        return plannen, waarschuwingen, rij["strategie"]
+        return plannen, waarschuwingen, normaliseer_zaagstrategie(rij["strategie"])
 
     def opslaan(
         self, project_id: str, plannen: list[PlaatZaagplan], waarschuwingen: list[str], strategie: str
@@ -202,7 +203,7 @@ def _resultaat_naar_dict(r: ZaagplanResultaat) -> dict:
 def _dict_naar_resultaat(d: dict) -> ZaagplanResultaat:
     return ZaagplanResultaat(
         materiaal=_dict_naar_materiaal(d["materiaal"]),
-        strategie=d["strategie"],
+        strategie=normaliseer_zaagstrategie(d["strategie"]),
         plaatsingen=[_dict_naar_plaatsing(p) for p in d["plaatsingen"]],
         reststukken=[_dict_naar_reststuk(x) for x in d["reststukken"]],
         afval_oppervlak=d["afval_oppervlak"],

@@ -56,6 +56,7 @@ from robocutter.projecten.models import Project, ProjectStatus
 from robocutter.projecten.opslag import open_verbinding
 from robocutter.ui.icons import icon
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 # Zelfde chip-namen/kleuren als widgets/project_card.py (Dashboard), voor
 # visuele consistentie tussen Dashboard en de echte Projectenbibliotheek —
@@ -143,6 +144,7 @@ class ProjectenPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self._theme = theme
+        self._melding = OpslagMelding(self, theme)
         self._materialen = materialen
         # Op Svens verzoek opent het potlood-icoon in een rij nu het losse
         # projectdetailtabblad (project_detail_page.py) i.p.v. dit paneel in
@@ -186,6 +188,7 @@ class ProjectenPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
+        self._melding.set_theme(theme)
         layout = self.layout()
         _clear_layout(layout)
         self._sidebar = self._build_sidebar()
@@ -920,3 +923,4 @@ class ProjectenPage(QWidget):
 
         self._sluit_drawer()
         self._ververs_alles()
+        self._melding.toon(f'Project "{kandidaat.naam}" opgeslagen')

@@ -69,6 +69,7 @@ from PySide6.QtWidgets import (
 from robocutter.instellingen.beheer import InstellingenBeheer, OpslagVerplaatsenError
 from robocutter.instellingen.models import GELDIGE_LABEL_SCANCODES, GELDIGE_THEMAS, GELDIGE_ZAAGSTRATEGIEEN
 from robocutter.ui.theme import Theme
+from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _THEMA_LABEL = {"licht": "Licht", "donker": "Donker", "systeem": "Systeem"}
 _LABEL_SCANCODE_LABEL = {"geen": "Geen", "qr": "QR-code", "barcode": "Barcode"}
@@ -81,7 +82,8 @@ _LABEL_SCANCODE_LABEL = {"geen": "Geen", "qr": "QR-code", "barcode": "Barcode"}
 # samengevoegd tot alleen "efficient"/"Efficiënt".
 _STRATEGIE_LABEL = {
     "efficient": "Efficiënt",
-    "rijen": "Rijen",
+    "horizontaal": "Horizontaal",
+    "verticaal": "Verticaal",
     "guillotine": "Guillotine",
 }
 # Alle drie worden echt uitgevoerd door
@@ -89,7 +91,8 @@ _STRATEGIE_LABEL = {
 # van die module voor de precieze algoritmes per strategie.
 _STRATEGIE_OMSCHRIJVING = {
     "efficient": "Vrije plaatsing voor maximale materiaalopbrengst (best-fit) bij gemengde afmetingen — dit is de methode die de zaagmotor nu al uitvoert.",
-    "rijen": "Lange zijdes eerst in volledige-breedte rijen; elke rij krijgt zijn eigen hoogte op basis van het grootste stuk erin — overzichtelijke zaagvolgorde.",
+    "horizontaal": "Lange zijdes eerst in rijen over de volle plaatbreedte; de hoofdzaagsnedes lopen horizontaal en elke rij krijgt zijn eigen hoogte op basis van het grootste stuk erin — overzichtelijke zaagvolgorde.",
+    "verticaal": "Zoals Horizontaal, maar in kolommen over de volle plaathoogte: de hoofdzaagsnedes lopen verticaal en elke kolom krijgt zijn eigen breedte op basis van het grootste stuk erin.",
     "guillotine": "Uitsluitend doorlopende zaagsnedes van rand tot rand — de gangbare beperking van de meeste paneelzagen.",
 }
 
@@ -115,6 +118,7 @@ class InstellingenPage(QWidget):
         super().__init__(parent)
         self._beheer = beheer
         self._theme = theme
+        self._melding = OpslagMelding(self, theme)
         self._on_gewijzigd = on_gewijzigd
 
         layout = QVBoxLayout(self)
@@ -128,6 +132,7 @@ class InstellingenPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
+        self._melding.set_theme(theme)
         _clear_layout(self.layout())
         self.layout().addWidget(self._build_main())
 
@@ -422,7 +427,8 @@ class InstellingenPage(QWidget):
         except ValueError as exc:
             self._toon_banner(self._algemeen_banner, self._algemeen_banner_label, str(exc), fout=True)
             return
-        self._toon_banner(self._algemeen_banner, self._algemeen_banner_label, "Instellingen opgeslagen.", fout=False)
+        self._algemeen_banner.hide()
+        self._melding.toon("Instellingen opgeslagen", "algemeen")
 
     def _opslaan_labels(self) -> None:
         try:
@@ -434,7 +440,8 @@ class InstellingenPage(QWidget):
         except ValueError as exc:
             self._toon_banner(self._labels_banner, self._labels_banner_label, str(exc), fout=True)
             return
-        self._toon_banner(self._labels_banner, self._labels_banner_label, "Instellingen opgeslagen.", fout=False)
+        self._labels_banner.hide()
+        self._melding.toon("Instellingen opgeslagen", "labels")
 
     def _wijzig_opslaglocatie(self) -> None:
         nieuwe_map = self._in_map.text().strip()
