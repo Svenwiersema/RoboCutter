@@ -2677,6 +2677,48 @@ houden.
   thema-wissel, model uit project verwijderd terwijl tabblad open staat.
   217 tests.
 
+- **Eigen titelbalk i.p.v. de standaard Windows-titelbalk.** Sven: "het
+  frame van de venster zelfde style maken als de app in plaats van
+  standaard windows". Keuze van Sven (vooraf gevraagd): de knoppen in de
+  bestaande donkere header, zoals VS Code, i.p.v. een aparte dunne balk.
+  - Nieuw `ui/vensterframe.py`: Qt krijgt `FramelessWindowHint`, het
+    native venster krijgt de gewone stijlbits terug (`WS_CAPTION`/
+    `WS_THICKFRAME`/min/max), en via `MainWindow.nativeEvent` handelt het
+    `WM_NCCALCSIZE` (geen Windows-rand; gemaximaliseerd de randdikte eraf,
+    anders valt het venster buiten het scherm) en `WM_NCHITTEST` af
+    (onzichtbare resize-randen van 6 px, en de header telt als titelbalk
+    behalve op knoppen). Zo blijven schaduw, afgeronde hoeken (Win 11),
+    Aero Snap, dubbelklik = maximaliseren, rechtsklik = systeemmenu,
+    animaties en minimaliseren via de taakbalk gewoon van Windows zelf.
+    Buiten het Windows-platform van Qt (offscreen-rooktests) doet het
+    niets.
+  - Nieuw `ui/widgets/vensterknoppen.py`: drie zelf getekende knoppen
+    (dunne lijnen zoals Windows 11, sluiten rood bij hover), max-icoon
+    wisselt naar "vorige grootte" bij gemaximaliseerd (`changeEvent`).
+    Hover wordt na een vensterwissel opnieuw bepaald (anders bleef de
+    knop die onder de muis vandaan schoof "gehoverd").
+  - Gecontroleerd met een echte (niet-offscreen) venstertest op een
+    db-kopie: hit-tests, maximaliseren (client = beschikbaar scherm),
+    herstellen, screenshots.
+  - **Daarna, op Svens verzoek ("je mag van mij die functionaliteit nu wel
+    toevoegen"):** de Windows 11-schermindelingen-popup (snap layouts) bij
+    hover over de maximaliseerknop, en een automatisch verbergende
+    taakbalk. De maximaliseerknop meldt zich als `HTMAXBUTTON`; hover/
+    ingedrukt/klik komen dan binnen als niet-client-berichten en worden in
+    `vensterframe.py` naar de knop vertaald (`VensterKnop.zet_native_toestand`).
+    Gemaximaliseerd blijft aan de kant van een automatisch verbergende
+    taakbalk 2 px vrij. **Lessen (gemeten, met een kaal ctypes-Win32-venster
+    als referentie, waarin de popup wél werkte):** de popup verschijnt níet
+    met `DwmExtendFrameIntoClientArea` (eerder toegevoegd voor de schaduw
+    op Windows 10, nu weggehaald — op Windows 11 blijven schaduw en
+    afgeronde hoeken ook zonder) en niet bij de `WS_POPUP`-stijl die Qt een
+    frameloos venster geeft (nu weggehaald). `WM_NCHITTEST` rekent nu met
+    het punt uit `lParam` i.p.v. `QCursor.pos()`. Geverifieerd met echte
+    (vanuit een ander proces gegenereerde) muisbewegingen + screenshot:
+    popup verschijnt; klikken op de knop maximaliseert/herstelt; hover
+    verdwijnt bij verlaten. De automatisch verbergende taakbalk is niet
+    live getest (zou Svens eigen taakbalkinstelling wijzigen).
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

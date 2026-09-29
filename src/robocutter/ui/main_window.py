@@ -85,7 +85,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QMimeData, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QMimeData, QSize, Qt, Signal
 from PySide6.QtGui import QDrag, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -109,6 +109,7 @@ from robocutter.projecten.zaaglijst import bouw_zaaglijst
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.projecten.zaagplannen_opslag import open_verbinding as open_zaagplannen_verbinding
 from robocutter.reststukken.models import ReststukStatus
+from robocutter.ui import vensterframe
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.instellingen_page import InstellingenPage
 from robocutter.ui.materialen_page import MaterialenPage
@@ -121,6 +122,7 @@ from robocutter.ui.reststukken_page import ReststukkenPage
 from robocutter.ui.theme import Theme, build_stylesheet, resolve_thema
 from robocutter.ui.widgets.project_card import ProjectCard
 from robocutter.ui.widgets.stat_tile import StatTile
+from robocutter.ui.widgets.vensterknoppen import VensterKnoppen
 
 # De volledige logo-illustratie ("zonder tekst") leest bij 28px niet meer als
 # een gezicht (zie design/chapters/11-ux-ui.md); hoofdstuk 11 wijst voor
@@ -296,6 +298,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("RoboCutter")
         self.resize(1360, 860)
+        # Eigen titelbalk: de donkere header vervangt de Windows-titelbalk
+        # (zie vensterframe.py). Buiten Windows (bijv. offscreen-rooktests)
+        # blijft het een gewoon venster zonder eigen vensterknoppen.
+        # De attributen staan er vóór installeer(), want nativeEvent komt al
+        # binnen zodra het native venster daarin aangemaakt wordt.
+        self._eigen_frame = vensterframe.is_actief()
+        self._header: QWidget | None = None
+        self._vensterknoppen: VensterKnoppen | None = None
+        vensterframe.installeer(self)
 
         self._instellingen = InstellingenBeheer()
         self._theme: Theme = resolve_thema(self._instellingen.huidige.thema)
@@ -383,7 +394,9 @@ class MainWindow(QMainWindow):
         header.setObjectName("Header")
         header.setFixedHeight(52)
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(18, 0, 18, 0)
+        # Met eigen titelbalk sluiten de vensterknoppen rechts direct aan op
+        # de rand (zoals in Windows zelf), dus daar geen marge.
+        layout.setContentsMargins(18, 0, 0 if self._eigen_frame else 18, 0)
         layout.setSpacing(28)
 
         brand = QHBoxLayout()
@@ -454,6 +467,14 @@ class MainWindow(QMainWindow):
         avatar.setFixedSize(30, 30)
         avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(avatar)
+
+        self._header = header
+        self._vensterknoppen = None
+        if self._eigen_frame:
+            knoppen = VensterKnoppen(self, self._theme.chrome_text_muted, self._theme.chrome_text)
+            knoppen.setFixedHeight(header.height())
+            layout.addWidget(knoppen)
+            self._vensterknoppen = knoppen
 
         return header
 
@@ -917,6 +938,19 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self) -> None:
         self.setStyleSheet(build_stylesheet(self._theme))
+
+    def nativeEvent(self, event_type, message):
+        if self._eigen_frame:
+            max_knop = self._vensterknoppen.max_knop if self._vensterknoppen is not None else None
+            resultaat = vensterframe.verwerk_native_event(self, self._header, max_knop, event_type, message)
+            if resultaat is not None:
+                return resultaat
+        return super().nativeEvent(event_type, message)
+
+    def changeEvent(self, event) -> None:
+        if event.type() == QEvent.Type.WindowStateChange and self._vensterknoppen is not None:
+            self._vensterknoppen.werk_status_bij()
+        super().changeEvent(event)
 
     def closeEvent(self, event) -> None:
         self._modellen_page.sluit_verbinding()
