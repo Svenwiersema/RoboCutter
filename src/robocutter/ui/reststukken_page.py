@@ -811,7 +811,7 @@ class ReststukkenPage(QWidget):
             return
         status_tekst = "" if materiaal.status == MateriaalStatus.ACTIEF else " · gearchiveerd"
         self._materiaal_info.setText(
-            f"Dikte {materiaal.derde_afmeting:g} mm · kerf {materiaal.kerf:g} mm"
+            f"Dikte {materiaal.derde_afmeting:g} mm"
             f"{(' · ' + materiaal.familie) if materiaal.familie else ''}{status_tekst}"
         )
 

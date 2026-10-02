@@ -61,21 +61,21 @@ def _sample_materialen() -> list[Materiaal]:
         Materiaal(
             id="", naam="Eiken multiplex 18mm", type=MateriaalType.PLAAT,
             lengte=2800, breedte=2070, derde_afmeting=18, familie="Eiken multiplex",
-            kleur_afwerking="Naturel", nerfrichting=Nerfrichting.LANGE_ZIJDE, kerf=4,
+            kleur_afwerking="Naturel", nerfrichting=Nerfrichting.LANGE_ZIJDE,
             min_reststukgrootte=300, productcode="EMP-18", leverancier="Houthandel Jansen",
             tags=("multiplex", "eiken"),
         ),
         Materiaal(
             id="", naam="Wit gemelamineerd 18mm", type=MateriaalType.PLAAT,
             lengte=2800, breedte=2070, derde_afmeting=18, familie="Wit gemelamineerd",
-            kleur_afwerking="Wit", nerfrichting=Nerfrichting.GEEN, kerf=3.2,
+            kleur_afwerking="Wit", nerfrichting=Nerfrichting.GEEN,
             min_reststukgrootte=200, productcode="MEL-WIT-18", leverancier="Egger",
             tags=("melamine",),
         ),
         Materiaal(
             id="", naam="Vurenhouten regel 40x60", type=MateriaalType.BALK,
             lengte=3000, breedte=40, derde_afmeting=60, familie="Vurenhout regelwerk",
-            kleur_afwerking="Naturel", nerfrichting=Nerfrichting.LANGE_ZIJDE, kerf=3,
+            kleur_afwerking="Naturel", nerfrichting=Nerfrichting.LANGE_ZIJDE,
             min_reststukgrootte=200,
         ),
     ]
@@ -990,23 +990,20 @@ class MaterialenPage(QWidget):
         )
         section.addWidget(nerf_widget)
 
+        # De zaagsnede/kerf staat hier niet meer: op Svens verzoek is dat
+        # een centrale instelling geworden (Instellingen-scherm).
         rij = QHBoxLayout()
         kol1 = QVBoxLayout()
-        kol1.addWidget(self._field_label("Zaagsnede/kerf-breedte (mm)"))
-        kerf_wrap, self._in_kerf = self._field_spin(toegestaan_nul=True)
-        self._in_kerf.setValue(4.0)
-        kol1.addWidget(kerf_wrap)
+        kol1.addWidget(self._field_label("Min. reststukgrootte (mm)"))
+        minrest_wrap, self._in_minrest = self._field_spin(toegestaan_nul=True)
+        kol1.addWidget(minrest_wrap)
         rij.addLayout(kol1)
         kol2 = QVBoxLayout()
-        kol2.addWidget(self._field_label("Min. reststukgrootte (mm)"))
-        minrest_wrap, self._in_minrest = self._field_spin(toegestaan_nul=True)
-        kol2.addWidget(minrest_wrap)
+        kol2.addWidget(self._field_label("Randafzaag-marge (mm)"))
+        marge_wrap, self._in_marge = self._field_spin(toegestaan_nul=True)
+        kol2.addWidget(marge_wrap)
         rij.addLayout(kol2)
         section.addLayout(rij)
-
-        section.addWidget(self._field_label("Randafzaag-marge (mm)"))
-        marge_wrap, self._in_marge = self._field_spin(toegestaan_nul=True)
-        section.addWidget(marge_wrap)
 
         section.addWidget(self._field_label("Randafzaag op"))
         self._marge_rand_diagram = RandenDiagram(self._theme)
@@ -1032,7 +1029,6 @@ class MaterialenPage(QWidget):
             veld.clear()
         for veld in (self._in_lengte, self._in_breedte, self._in_derde, self._in_minrest):
             veld.setValue(0)
-        self._in_kerf.setValue(4.0)
         self._in_marge.setValue(0)
         self._type_group.buttons()[0].setChecked(True)
         self._nerf_group.buttons()[0].setChecked(True)
@@ -1060,7 +1056,6 @@ class MaterialenPage(QWidget):
             self._in_lengte.setValue(m.lengte)
             self._in_breedte.setValue(m.breedte)
             self._in_derde.setValue(m.derde_afmeting)
-            self._in_kerf.setValue(m.kerf)
             self._in_marge.setValue(m.randafzaag_marge)
             self._in_minrest.setValue(m.min_reststukgrootte)
             self._in_mesgroef.setText(m.mes_groef_notitie)
@@ -1105,7 +1100,6 @@ class MaterialenPage(QWidget):
             familie=self._in_familie.text().strip(),
             kleur_afwerking=self._in_kleur.text().strip(),
             nerfrichting=nerf_waarde,
-            kerf=self._in_kerf.value(),
             randafzaag_marge=self._in_marge.value(),
             randafzaag_randen=self._marge_rand_diagram.geselecteerde_randen(),
             min_reststukgrootte=self._in_minrest.value(),

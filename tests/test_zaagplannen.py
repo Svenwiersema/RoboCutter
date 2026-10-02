@@ -16,7 +16,7 @@ from robocutter.projecten.zaagplannen import ZaagplanVoortgang, genereer_zaagpla
 def _materiaal(**overrides) -> Materiaal:
     basis = dict(
         id="", naam="Eiken multiplex 18mm", type=MateriaalType.PLAAT,
-        lengte=2800, breedte=2070, derde_afmeting=18, kerf=4, min_reststukgrootte=300,
+        lengte=2800, breedte=2070, derde_afmeting=18, min_reststukgrootte=300,
     )
     basis.update(overrides)
     return Materiaal(**basis)
@@ -85,8 +85,8 @@ def test_onbekend_materiaal_wordt_overgeslagen_met_waarschuwing():
 
 def test_meerdere_platen_voor_een_materiaal_krijgen_elk_een_eigen_plaatzaagplan():
     materialen, projecten = _bibliotheken()
-    hout = materialen.toevoegen(_materiaal(lengte=2800, breedte=2070, kerf=4))
-    # Elke plaat heeft plek voor 2 stukken van 1398x2070 (met kerf net
+    hout = materialen.toevoegen(_materiaal(lengte=2800, breedte=2070))
+    # Elke plaat heeft plek voor 2 stukken van 1398x2070 (met tussenruimte net
     # geen 2800) -- 5 stuks moeten dus over meerdere platen verdeeld worden.
     project = projecten.toevoegen(
         Project(
@@ -95,7 +95,7 @@ def test_meerdere_platen_voor_een_materiaal_krijgen_elk_een_eigen_plaatzaagplan(
         )
     )
 
-    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="efficient")
+    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="horizontaal")
 
     assert waarschuwingen == []
     hout_plannen = [p for p in plannen if p.materiaal_id == hout.id]
@@ -173,3 +173,15 @@ def test_voortgang_over_meerdere_materialen_loopt_op_tot_een():
     assert all(m.materiaal_totaal == 2 for m in meldingen)
     # Halverwege (na het eerste materiaal) nog niet klaar.
     assert max(m.fractie for m in meldingen if m.materiaal_nummer == 1) < 1.0
+
+
+def test_zaagsnede_komt_uit_de_instellingen():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(
+        Project(id="", naam="Test", klant="Test", losse_onderdelen=[_onderdeel(hout.id, breedte=400, hoogte=300)])
+    )
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, strategie="guillotine", zaagsnede=3)
+
+    assert plannen[0].resultaat.materiaal.kerf == 3

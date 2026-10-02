@@ -47,7 +47,7 @@ def _standaard_materiaal(**overrides) -> Materiaal:
     return Materiaal(**basis)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "horizontaal"])
+@pytest.mark.parametrize("strategie", ["cnc", "horizontaal"])
 def test_geen_overlappende_plaatsingen(strategie):
     mat = _standaard_materiaal()
     onderdelen = [
@@ -61,12 +61,11 @@ def test_geen_overlappende_plaatsingen(strategie):
         assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "horizontaal", "stroken", "guillotine"])
+@pytest.mark.parametrize("strategie", ["cnc", "horizontaal", "guillotine"])
 def test_geplaatste_stukken_overlappen_nooit_ongeacht_strategie(strategie):
     # Zelfde mix als hierboven, maar zonder te eisen dat alles geplaatst
-    # wordt: "stroken" en "guillotine" zijn bewust minder efficiënt dan
-    # "efficient"/"horizontaal" (vaste strookhoogte resp. uitsluitend
-    # rand-tot-rand sneden), dus kunnen op een krappe plaat stukken
+    # wordt: "guillotine" is bewust minder efficiënt (uitsluitend
+    # rand-tot-rand sneden), dus kan op een krappe plaat stukken
     # onplaatsbaar laten — dat is geen bug, zie engine.py. Geen overlap is
     # wel een harde eis voor elke strategie.
     mat = _standaard_materiaal()
@@ -80,7 +79,7 @@ def test_geplaatste_stukken_overlappen_nooit_ongeacht_strategie(strategie):
         assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "horizontaal", "stroken", "guillotine"])
+@pytest.mark.parametrize("strategie", ["cnc", "horizontaal", "guillotine"])
 def test_alle_plaatsingen_binnen_de_plaat(strategie):
     mat = _standaard_materiaal()
     onderdelen = [Onderdeel(id="a", breedte=850, hoogte=902, aantal=3)]
@@ -106,7 +105,7 @@ def test_randafzaag_marge_wordt_gerespecteerd():
         randafzaag_marge=10, randafzaag_randen=frozenset({Rand.LINKS, Rand.ONDER, Rand.RECHTS, Rand.BOVEN})
     )
     onderdelen = [Onderdeel(id="a", breedte=500, hoogte=500, aantal=1)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     p = resultaat.plaatsingen[0]
     assert p.x >= 10 - 1e-6
     assert p.y >= 10 - 1e-6
@@ -123,7 +122,7 @@ def test_fabriekskantenband_rand_wordt_niet_afgezaagd_ook_niet_met_randafzaag():
         fabriekskantenband_randen=frozenset({Rand.LINKS}),
     )
     onderdelen = [Onderdeel(id="a", breedte=500, hoogte=500, aantal=1, fabriekskantenband_vereist=True)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     p = resultaat.plaatsingen[0]
     assert p.x == pytest.approx(0.0)
 
@@ -133,14 +132,14 @@ def test_nerfrichting_lange_zijde_dwingt_orientatie_af():
     # Onderdeel is "liggend" (breder dan hoog) maar vraagt lange zijde
     # -> mag niet roteren, blijft dus liggend t.o.v. de x-as.
     onderdeel = Onderdeel(id="a", breedte=800, hoogte=300, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE)
-    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="efficient")
+    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="cnc")
     p = resultaat.plaatsingen[0]
     assert p.breedte == 800 and p.hoogte == 300 and p.geroteerd is False
 
     # Nu staand (hoger dan breed) met dezelfde eis -> moet roteren zodat
     # de lange zijde (800) alsnog evenwijdig aan de x-as komt.
     onderdeel2 = Onderdeel(id="b", breedte=300, hoogte=800, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE)
-    resultaat2 = genereer_zaagplan(mat, [onderdeel2], strategie="efficient")
+    resultaat2 = genereer_zaagplan(mat, [onderdeel2], strategie="cnc")
     p2 = resultaat2.plaatsingen[0]
     assert p2.breedte == 800 and p2.hoogte == 300 and p2.geroteerd is True
 
@@ -148,7 +147,7 @@ def test_nerfrichting_lange_zijde_dwingt_orientatie_af():
 def test_nerfrichting_korte_zijde_is_tegenovergesteld_van_lange_zijde():
     mat = _standaard_materiaal()
     onderdeel = Onderdeel(id="a", breedte=800, hoogte=300, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE)
-    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="efficient")
+    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="cnc")
     p = resultaat.plaatsingen[0]
     # Lange zijde (800) moet nu loodrecht op de x-as staan -> breedte=300, hoogte=800.
     assert p.breedte == 300 and p.hoogte == 800
@@ -161,7 +160,7 @@ def test_groep_wordt_aaneengesloten_en_in_volgorde_geplaatst():
         Onderdeel(id="ladefront-2", breedte=400, hoogte=180, groep_id="g1", groep_volgorde=2),
         Onderdeel(id="ladefront-3", breedte=400, hoogte=180, groep_id="g1", groep_volgorde=3),
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     op_id = {p.onderdeel_id: p for p in resultaat.plaatsingen}
     p1, p2, p3 = op_id["ladefront-1"], op_id["ladefront-2"], op_id["ladefront-3"]
     # Zelfde x (zelfde kolom) en oplopende y in de opgegeven volgorde.
@@ -174,7 +173,7 @@ def test_min_reststukgrootte_classificeert_klein_gat_als_afval():
     mat = _standaard_materiaal(min_reststukgrootte=300)
     # Onderdeel dat een smalle reststrook overlaat (< 300mm breed).
     onderdeel = Onderdeel(id="a", breedte=2600, hoogte=2070, aantal=1)
-    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="efficient")
+    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="cnc")
     assert resultaat.reststukken == []
     assert resultaat.afval_oppervlak > 0
 
@@ -182,7 +181,7 @@ def test_min_reststukgrootte_classificeert_klein_gat_als_afval():
 def test_min_reststukgrootte_classificeert_groot_gat_als_reststuk():
     mat = _standaard_materiaal(min_reststukgrootte=300)
     onderdeel = Onderdeel(id="a", breedte=2000, hoogte=1500, aantal=1)
-    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="efficient")
+    resultaat = genereer_zaagplan(mat, [onderdeel], strategie="cnc")
     assert len(resultaat.reststukken) >= 1
     for r in resultaat.reststukken:
         assert r.breedte >= 300 and r.hoogte >= 300
@@ -191,7 +190,7 @@ def test_min_reststukgrootte_classificeert_groot_gat_als_reststuk():
 def test_te_veel_onderdelen_worden_gerapporteerd_als_niet_geplaatst():
     mat = _standaard_materiaal(lengte=1000, breedte=1000)
     onderdelen = [Onderdeel(id="a", breedte=900, hoogte=900, aantal=3)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     assert len(resultaat.plaatsingen) == 1
     assert len(resultaat.niet_geplaatst) == 2
 
@@ -200,23 +199,6 @@ def test_onbekende_strategie_geeft_duidelijke_fout():
     mat = _standaard_materiaal()
     with pytest.raises(ValueError):
         genereer_zaagplan(mat, [], strategie="onzin")
-
-
-def test_stroken_gebruikt_overal_dezelfde_vaste_strookhoogte():
-    mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
-    # Allebei te breed om samen in één strook te passen -> elk onderdeel
-    # komt in zijn eigen strook terecht. De afstand tussen de stroken moet
-    # gelijk zijn aan de hoogte van het HOOGSTE onderdeel + kerf, ook al
-    # staat het lagere onderdeel in zijn eigen, verder ongebruikte strook.
-    onderdelen = [
-        Onderdeel(id="hoog", breedte=2600, hoogte=900, aantal=1),
-        Onderdeel(id="laag", breedte=2600, hoogte=500, aantal=1),
-    ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="stroken")
-    assert resultaat.niet_geplaatst == []
-    p_hoog = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "hoog")
-    p_laag = next(p for p in resultaat.plaatsingen if p.onderdeel_id == "laag")
-    assert abs(p_laag.y - p_hoog.y) == pytest.approx(900 + mat.kerf)
 
 
 def test_rijen_stapelt_meerdere_smallere_onderdelen_side_by_side_in_een_band():
@@ -294,7 +276,7 @@ def test_rijen_laat_later_lid_van_dezelfde_groep_stapelen_op_nieuwe_kolom_van_ee
         assert not _rechthoeken_overlappen(a, b)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "horizontaal"])
+@pytest.mark.parametrize("strategie", ["cnc", "horizontaal"])
 def test_rijen_vult_verticale_restruimte_boven_kortere_onderdelen(strategie):
     # Sven: "checkt dat bepaalde items ... minder [hoog] zijn dan de
     # rijhoogte en deze dan in de rij kan plaatsen zodat je efficiëntie
@@ -345,7 +327,7 @@ def test_rijen_vult_verticale_restruimte_ook_met_geroteerd_onderdeel():
         assert not _rechthoeken_overlappen(p1, p2), f"{p1} overlapt met {p2}"
 
 
-@pytest.mark.parametrize("strategie", ["horizontaal", "stroken"])
+@pytest.mark.parametrize("strategie", ["horizontaal"])
 def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
     # Een gestapelde groep (bv. ladefronten) naast een los onderdeel van
     # een heel andere hoogte in dezelfde rij/strook: de sneden die de
@@ -360,7 +342,7 @@ def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
         # Nerf-eis vastgezet zodat "paneel" zijn 588-hoogte behoudt (dus in
         # dezelfde rij/strook als de even hoge groep terechtkomt, wat deze
         # test bewust nodig heeft) i.p.v. te roteren naar de kortere
-        # landschap-oriëntatie die "horizontaal"/"stroken" sinds de rotatiefix
+        # landschap-oriëntatie die "horizontaal" sinds de rotatiefix
         # kiezen voor een vrij-roteerbaar onderdeel.
         Onderdeel(id="paneel", breedte=500, hoogte=588, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
     ]
@@ -380,7 +362,7 @@ def test_groep_interne_snede_blijft_binnen_eigen_kolom(strategie):
         assert s.einde == pytest.approx(1100.0)
 
 
-@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal", "stroken", "efficient", "guillotine"])
+@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal", "cnc", "guillotine"])
 def test_geen_enkele_snede_kruist_een_plaatsing(strategie):
     # Bredere, minder gerichte check dan hierboven: over alle vier
     # strategieën tegelijk, met een mix van een groep, losse onderdelen
@@ -583,25 +565,7 @@ def test_rijen_stopt_pas_als_ook_de_laagste_resterende_groep_niet_meer_past():
     assert resultaat.niet_geplaatst == ["past_ook_niet#1"]
 
 
-def test_stroken_stopt_wel_meteen_helemaal_want_strookhoogte_is_plaatbreed_vast():
-    # Bewuste asymmetrie met de twee tests hierboven: "Stroken" gebruikt
-    # NIET de _pak_rijen-fix (zie de docstring van _pak_stroken) omdat de
-    # strookhoogte voor de hele plaat vastligt op het hoogste onderdeel --
-    # als één strook niet meer past, past dus ECHT niets meer, ook geen
-    # kleiner onderdeel (elke strook is immers altijd even hoog).
-    mat = _standaard_materiaal(lengte=600, breedte=500, kerf=4, min_reststukgrootte=0)
-    onderdelen = [
-        Onderdeel(id="front_onder", breedte=596, hoogte=220, groep_id="lades", groep_volgorde=1),
-        Onderdeel(id="front_midden", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=2),
-        Onderdeel(id="front_boven", breedte=596, hoogte=180, groep_id="lades", groep_volgorde=3),
-        Onderdeel(id="lade_bodem", breedte=550, hoogte=400, aantal=1),
-    ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="stroken")
-    assert resultaat.plaatsingen == []
-    assert set(resultaat.niet_geplaatst) == {"groep:lades", "lade_bodem#1"}
-
-
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "horizontaal", "stroken"])
+@pytest.mark.parametrize("strategie", ["guillotine", "horizontaal"])
 def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [
@@ -619,20 +583,16 @@ def test_eerste_snede_is_rand_tot_rand_van_de_hele_plaat(strategie):
         assert eerste.einde == pytest.approx(mat.lengte)
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "horizontaal", "verticaal", "stroken"])
+@pytest.mark.parametrize("strategie", ["cnc", "guillotine", "horizontaal", "verticaal"])
 def test_elke_snede_is_rand_tot_rand_van_zijn_eigen_deelgebied(strategie):
     # Sterkere check dan alleen de eerste snede: reconstrueer voor elke
     # snede het deelgebied waarin hij viel (op basis van alle eerdere
     # sneden) en controleer dat start/einde exact de randen van dat
     # deelgebied raken -- dat garandeert dat een snede nooit dwars door
-    # een al geplaatst onderdeel heen loopt. Geldt voor "efficient"/
-    # "guillotine" via _splits_vrije_rechthoek, en sinds de
-    # rij-hoogte-bugfix ook voor "horizontaal"/"stroken" (zie
-    # _bouw_zaagvolgorde_uit_rijen: een tussen-kolom-snede stopte voorheen
-    # 1 kerf te vroeg t.o.v. de echte fysieke rijgrens zodra er nóg een
-    # rij op volgde — dit was tot nu toe ongedekt, want "efficient" kon
-    # tot deze iteratie nooit intern op de uitkomst van "horizontaal"/"stroken"
-    # uitkomen).
+    # een al geplaatst onderdeel heen loopt. Geldt voor "guillotine" via
+    # _splits_vrije_rechthoek, en sinds de rij-hoogte-bugfix ook voor
+    # "horizontaal"/"verticaal" (zie _bouw_zaagvolgorde_uit_rijen). "cnc"
+    # heeft geen zaagvolgorde, dus daar is niets te controleren.
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4)
     onderdelen = [
         Onderdeel(id="a", breedte=850, hoogte=902, aantal=3),
@@ -669,7 +629,7 @@ def test_genereer_zaagplannen_gebruikt_meerdere_platen_als_nodig():
     # 5 stukken moeten dus over 3 platen verdeeld worden.
     mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=4, min_reststukgrootte=0)
     onderdelen = [Onderdeel(id="paneel", breedte=1398, hoogte=2070, aantal=5)]
-    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="efficient")
+    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="cnc")
     assert len(resultaten) == 3
     totaal_geplaatst = sum(len(r.plaatsingen) for r in resultaten)
     assert totaal_geplaatst == 5
@@ -699,7 +659,7 @@ def test_genereer_zaagplannen_stopt_bij_te_groot_onderdeel_i_p_v_oneindig_door_t
         Onderdeel(id="te_groot", breedte=5000, hoogte=5000, aantal=1),
         Onderdeel(id="past_wel", breedte=400, hoogte=400, aantal=1),
     ]
-    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="efficient")
+    resultaten = genereer_zaagplannen(mat, onderdelen, strategie="cnc")
     assert len(resultaten) == 1
     assert resultaten[0].niet_geplaatst == ["te_groot#1"]
     reden = resultaten[0].niet_geplaatst_redenen["te_groot#1"]
@@ -710,7 +670,7 @@ def test_genereer_zaagplannen_stopt_bij_te_groot_onderdeel_i_p_v_oneindig_door_t
 def test_niet_geplaatst_redenen_is_leeg_als_alles_geplaatst_is():
     mat = _standaard_materiaal(lengte=1000, breedte=1000)
     onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     assert resultaat.niet_geplaatst == []
     assert resultaat.niet_geplaatst_redenen == {}
 
@@ -718,7 +678,7 @@ def test_niet_geplaatst_redenen_is_leeg_als_alles_geplaatst_is():
 def test_niet_geplaatst_reden_meldt_dat_onderdeel_te_groot_is_ook_na_roteren():
     mat = _standaard_materiaal(lengte=1000, breedte=1000)
     onderdelen = [Onderdeel(id="te_groot", breedte=5000, hoogte=1500, aantal=1)]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     assert resultaat.niet_geplaatst == ["te_groot#1"]
     reden = resultaat.niet_geplaatst_redenen["te_groot#1"]
     assert "te groot" in reden
@@ -740,7 +700,7 @@ def test_niet_geplaatst_reden_meldt_dat_nerfrichting_roteren_blokkeert():
             nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE,
         )
     ]
-    resultaat = genereer_zaagplan(mat, onderdelen, strategie="efficient")
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     assert resultaat.niet_geplaatst == ["vast_om#1"]
     reden = resultaat.niet_geplaatst_redenen["vast_om#1"]
     assert "alleen geroteerd" in reden
@@ -805,7 +765,7 @@ def test_niet_geplaatst_reden_meldt_fabriekskantenband_blokkeert_rotatie():
     assert "past qua afmeting wel" not in reden.lower()
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine"])
+@pytest.mark.parametrize("strategie", ["cnc", "guillotine"])
 def test_krappe_restmarge_kleiner_dan_de_kerf_geeft_geen_plaatsing_buiten_de_plaat(strategie):
     # Regressietest voor een door fuzz-testen gevonden bug (concreet
     # scenario, teruggevonden met een vaste seed): zowel
@@ -853,8 +813,8 @@ def test_zoek_tijdsbudget_zonder_budget_geeft_ongewijzigd_deterministisch_result
         Onderdeel(id="a", breedte=900, hoogte=600, aantal=2),
         Onderdeel(id="b", breedte=500, hoogte=400, aantal=3),
     ]
-    zonder_param = genereer_zaagplan(mat, onderdelen, strategie="efficient")
-    met_expliciete_nul = genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=0.0)
+    zonder_param = genereer_zaagplan(mat, onderdelen, strategie="cnc")
+    met_expliciete_nul = genereer_zaagplan(mat, onderdelen, strategie="cnc", zoek_tijdsbudget=0.0)
     assert zonder_param.plaatsingen == met_expliciete_nul.plaatsingen
     assert zonder_param.zaagvolgorde == met_expliciete_nul.zaagvolgorde
 
@@ -869,11 +829,11 @@ def test_min_zoek_tijdsbudget_dwingt_de_zoektocht_langer_door_te_gaan():
     onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
 
     start = time.monotonic()
-    genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.0)
+    genereer_zaagplan(mat, onderdelen, strategie="cnc", zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.0)
     duur_zonder_minimum = time.monotonic() - start
 
     start = time.monotonic()
-    genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.3)
+    genereer_zaagplan(mat, onderdelen, strategie="cnc", zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.3)
     duur_met_minimum = time.monotonic() - start
 
     assert duur_zonder_minimum < 0.3
@@ -887,7 +847,7 @@ def test_min_zoek_tijdsbudget_wordt_begrensd_door_zoek_tijdsbudget_zelf():
     onderdelen = [Onderdeel(id="a", breedte=400, hoogte=400, aantal=1)]
 
     start = time.monotonic()
-    genereer_zaagplan(mat, onderdelen, strategie="efficient", zoek_tijdsbudget=0.2, min_zoek_tijdsbudget=10.0)
+    genereer_zaagplan(mat, onderdelen, strategie="cnc", zoek_tijdsbudget=0.2, min_zoek_tijdsbudget=10.0)
     duur = time.monotonic() - start
     assert duur < 2.0
 
@@ -958,7 +918,7 @@ def _scenario_guillotine():
 @pytest.mark.parametrize(
     "strategie, scenario",
     [
-        ("efficient", _scenario_efficient),
+        ("cnc", _scenario_efficient),
         ("horizontaal", _scenario_rijen),
         ("guillotine", _scenario_guillotine),
     ],
@@ -994,7 +954,7 @@ def test_voortgang_loopt_nooit_terug_en_eindigt_op_een():
     meldingen: list[float] = []
 
     genereer_zaagplan(
-        mat, onderdelen, strategie="efficient",
+        mat, onderdelen, strategie="cnc",
         zoek_tijdsbudget=1.0, min_zoek_tijdsbudget=0.35, voortgang=meldingen.append,
     )
 
@@ -1045,7 +1005,7 @@ def test_oneindig_zoekbudget_stopt_na_minimale_denktijd_op_stagnatie():
 
     start = time.monotonic()
     resultaten = genereer_zaagplannen(
-        mat, onderdelen, strategie="efficient",
+        mat, onderdelen, strategie="cnc",
         zoek_tijdsbudget=math.inf, min_zoek_tijdsbudget=0.2,
         voortgang=lambda n, f: meldingen.append((n, f)),
     )
@@ -1077,7 +1037,7 @@ def test_fabriekskantenband_draait_een_kwartslag_om_de_juiste_zijde_tegen_de_ran
         Onderdeel(id="stijl", breedte=60, hoogte=802, aantal=3,
                   kantenband_randen=frozenset({Rand.LINKS}), fabriekskantenband_vereist=True),
     ]
-    for strategie in ("efficient", "horizontaal", "guillotine"):
+    for strategie in ("cnc", "horizontaal", "guillotine"):
         resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
         assert resultaat.niet_geplaatst == [], strategie
         for p in resultaat.plaatsingen:
@@ -1259,7 +1219,7 @@ def test_horizontaal_en_verticaal_met_fabrieksband_en_randafzaag(strategie):
             assert p.y + p.hoogte <= mat.breedte - 10 + 1e-6
 
 
-@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal", "efficient", "guillotine"])
+@pytest.mark.parametrize("strategie", ["horizontaal", "verticaal", "cnc", "guillotine"])
 def test_groepssneden_lopen_nooit_door_een_ander_onderdeel(strategie):
     # Sven, over de MDF-plaat van "Keuken Jansen" met strategie Verticaal:
     # "hij laat een rode zaaglijn zien door een onderdeel". De snede
@@ -1352,7 +1312,10 @@ def _onverantwoord_oppervlak(resultaat) -> float:
     )
 
 
-_ALLE_STRATEGIEEN = ["efficient", "horizontaal", "verticaal", "guillotine", "stroken"]
+_ALLE_STRATEGIEEN = ["cnc", "horizontaal", "verticaal", "guillotine"]
+# "cnc" is een CNC-strategie zonder zaagvolgorde (zie engine.py) —
+# de zaag-specifieke controles gelden alleen voor deze:
+_ZAAGSTRATEGIEEN = [s for s in _ALLE_STRATEGIEEN if s != "cnc"]
 
 
 def _keuken_jansen_scenario():
@@ -1381,7 +1344,7 @@ def _keuken_jansen_scenario():
     return [(mdf, mdf_onderdelen), (melamine, melamine_onderdelen)]
 
 
-@pytest.mark.parametrize("strategie", _ALLE_STRATEGIEEN)
+@pytest.mark.parametrize("strategie", _ZAAGSTRATEGIEEN)
 def test_elke_rand_van_elk_onderdeel_wordt_gezaagd(strategie):
     for mat, onderdelen in _keuken_jansen_scenario():
         resultaat = genereer_zaagplan(mat, onderdelen, strategie=strategie)
@@ -1421,7 +1384,7 @@ def test_ruimte_boven_een_lager_stuk_in_een_rij_wordt_reststuk():
     )
 
 
-@pytest.mark.parametrize("strategie", ["efficient", "guillotine", "horizontaal"])
+@pytest.mark.parametrize("strategie", ["guillotine", "horizontaal"])
 def test_reepje_smaller_dan_de_kerf_krijgt_toch_een_snede(strategie):
     # 2 liggende stukken van 997 op een werkgebied van 2000 met kerf 4:
     # 997 + 4 + 997 laat rechts 2 mm over — te smal voor een vrij
@@ -1518,7 +1481,7 @@ def _willekeurig_scenario(seed: int):
     return mat, onderdelen
 
 
-@pytest.mark.parametrize("strategie", _ALLE_STRATEGIEEN)
+@pytest.mark.parametrize("strategie", _ZAAGSTRATEGIEEN)
 def test_paneelzaag_simulatie_op_willekeurige_scenarios(strategie):
     # Sven: "kan je deze strategie simuleren en zelf controleren of alles
     # klopt" (over Guillotine). Een vaste set willekeurige scenario's
@@ -1533,3 +1496,90 @@ def test_paneelzaag_simulatie_op_willekeurige_scenarios(strategie):
         assert _paneelzaag_fouten(resultaat) == [], (seed, _paneelzaag_fouten(resultaat)[:2])
         assert _randen_zonder_snede(resultaat) == [], (seed, _randen_zonder_snede(resultaat)[:2])
         assert _onverantwoord_oppervlak(resultaat) <= 1e-3 * mat.lengte * mat.breedte, seed
+
+
+# ----------------------------------------------------------------------
+# CNC-nesting ("cnc", niet kiesbaar in de app; bewaard voor een latere CNC-upgrade)
+# ----------------------------------------------------------------------
+
+
+def _tussenruimte(a, b) -> float:
+    """Afstand tussen twee rechthoeken langs de as waarop ze uit elkaar
+    liggen (≥ freesdiameter betekent: de frees past ertussen)."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return max(bx - (ax + aw), ax - (bx + bw), by - (ay + ah), ay - (by + bh))
+
+
+def _cnc_fouten(resultaat, mat) -> list[str]:
+    fouten = []
+    if resultaat.zaagvolgorde:
+        fouten.append("CNC hoort geen zaagvolgorde te hebben")
+    stukken = [(p.x, p.y, p.breedte, p.hoogte) for p in resultaat.plaatsingen]
+    rest = [(r.x, r.y, r.breedte, r.hoogte) for r in resultaat.reststukken]
+    for a, b in itertools.combinations(stukken, 2):
+        if _tussenruimte(a, b) < mat.kerf - 1e-6:
+            fouten.append(f"onderdelen te dicht op elkaar: {a} {b}")
+    for r in rest:
+        if r[2] < mat.min_reststukgrootte - 1e-6 or r[3] < mat.min_reststukgrootte - 1e-6:
+            fouten.append(f"reststuk te klein: {r}")
+        for a in stukken:
+            if _tussenruimte(a, r) < mat.kerf - 1e-6:
+                fouten.append(f"reststuk te dicht op onderdeel: {r} {a}")
+    for a, b in itertools.combinations(rest, 2):
+        if _tussenruimte(a, b) < mat.kerf - 1e-6:
+            fouten.append(f"reststukken te dicht op elkaar: {a} {b}")
+    if abs(_onverantwoord_oppervlak(resultaat)) > 1e-3 * mat.lengte * mat.breedte:
+        fouten.append(f"oppervlak klopt niet: {_onverantwoord_oppervlak(resultaat)}")
+    return fouten
+
+
+def test_cnc_nesting_op_willekeurige_scenarios():
+    # Zelfde willekeurige scenario's (fabrieksband, randafzaag, nerf,
+    # groepen) als de paneelzaag-simulatie: geen overlap, binnen de plaat,
+    # overal minstens een freesdiameter tussenruimte (ook rond reststukken),
+    # geen zaagvolgorde en alle oppervlak precies verantwoord.
+    for seed in range(120):
+        mat, onderdelen = _willekeurig_scenario(seed)
+        resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
+        _geldig_zaagplan(resultaat, mat)
+        assert _cnc_fouten(resultaat, mat) == [], (seed, _cnc_fouten(resultaat, mat)[:2])
+
+
+def test_cnc_respecteert_nerfrichting():
+    mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=8)
+    onderdelen = [
+        Onderdeel(id="lang", breedte=300, hoogte=900, aantal=4, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE),
+        Onderdeel(id="kort", breedte=900, hoogte=300, aantal=4, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
+    assert resultaat.niet_geplaatst == []
+    for p in resultaat.plaatsingen:
+        if p.onderdeel_id == "lang":
+            assert p.breedte >= p.hoogte
+        else:
+            assert p.hoogte >= p.breedte
+
+
+def test_cnc_laat_lege_ruimte_als_een_groot_reststuk():
+    # Svens keuze: na zo min mogelijk platen zo min mogelijk afval, dus een
+    # zo groot mogelijk reststuk i.p.v. losse snippers.
+    mat = _standaard_materiaal(lengte=2800, breedte=2070, kerf=8, min_reststukgrootte=200)
+    onderdelen = [Onderdeel(id="a", breedte=600, hoogte=400, aantal=6), Onderdeel(id="b", breedte=300, hoogte=250, aantal=5)]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
+    assert resultaat.niet_geplaatst == []
+    vrij = mat.lengte * mat.breedte - sum(p.breedte * p.hoogte for p in resultaat.plaatsingen)
+    grootste = max(r.oppervlak for r in resultaat.reststukken)
+    assert grootste >= 0.75 * vrij
+
+
+def test_cnc_heeft_in_totaal_niet_meer_platen_nodig_dan_de_zaagstrategieen():
+    # Vrije plaatsing heeft geen paneelzaag-beperking, dus hoort over een
+    # reeks projecten samen nooit méér platen nodig te hebben dan de kiesbare
+    # zaagstrategieën.
+    platen = {s: 0 for s in _ALLE_STRATEGIEEN}
+    for seed in range(40):
+        mat, onderdelen = _willekeurig_scenario(seed)
+        for strategie in _ALLE_STRATEGIEEN:
+            platen[strategie] += len(genereer_zaagplannen(mat, onderdelen, strategie=strategie))
+    assert platen["cnc"] <= min(platen[s] for s in _ZAAGSTRATEGIEEN), platen

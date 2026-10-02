@@ -34,7 +34,6 @@ CREATE TABLE IF NOT EXISTS materialen (
     familie TEXT NOT NULL,
     kleur_afwerking TEXT NOT NULL,
     nerfrichting TEXT NOT NULL,
-    kerf REAL NOT NULL,
     randafzaag_marge REAL NOT NULL,
     randafzaag_randen TEXT NOT NULL,
     min_reststukgrootte REAL NOT NULL,
@@ -52,6 +51,13 @@ def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
     verbinding = sqlite3.connect(db_pad)
     verbinding.row_factory = sqlite3.Row
     verbinding.execute(_SCHEMA)
+    # De kerf stond vroeger per materiaal; op Svens verzoek staat de
+    # zaagsnede-breedte nu centraal in de instellingen (een eigenschap van
+    # de machine, niet van het materiaal). Een bestaande
+    # database verliest hier de oude kolom.
+    kolommen = {rij["name"] for rij in verbinding.execute("PRAGMA table_info(materialen)")}
+    if "kerf" in kolommen:
+        verbinding.execute("ALTER TABLE materialen DROP COLUMN kerf")
     verbinding.commit()
     return verbinding
 
@@ -66,11 +72,11 @@ def opslaan(verbinding: sqlite3.Connection, materiaal: Materiaal) -> None:
         """
         INSERT OR REPLACE INTO materialen (
             id, naam, type, lengte, breedte, derde_afmeting, familie,
-            kleur_afwerking, nerfrichting, kerf, randafzaag_marge,
+            kleur_afwerking, nerfrichting, randafzaag_marge,
             randafzaag_randen, min_reststukgrootte, mes_groef_notitie,
             fabriekskantenband_randen, productcode, leverancier, tags,
             status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         _materiaal_naar_rij(materiaal),
     )
@@ -93,7 +99,6 @@ def _materiaal_naar_rij(m: Materiaal) -> tuple:
         m.familie,
         m.kleur_afwerking,
         m.nerfrichting.value,
-        m.kerf,
         m.randafzaag_marge,
         json.dumps(sorted(r.value for r in m.randafzaag_randen)),
         m.min_reststukgrootte,
@@ -117,7 +122,6 @@ def _rij_naar_materiaal(rij: sqlite3.Row) -> Materiaal:
         familie=rij["familie"],
         kleur_afwerking=rij["kleur_afwerking"],
         nerfrichting=Nerfrichting(rij["nerfrichting"]),
-        kerf=rij["kerf"],
         randafzaag_marge=rij["randafzaag_marge"],
         randafzaag_randen=frozenset(Rand(v) for v in json.loads(rij["randafzaag_randen"])),
         min_reststukgrootte=rij["min_reststukgrootte"],

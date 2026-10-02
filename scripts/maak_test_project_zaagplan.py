@@ -98,18 +98,18 @@ def main() -> None:
 
     hout = _materiaal_vers_aanmaken(
         materialen, naam="Eiken multiplex 18mm (testmateriaal zaagplan)", lengte=2800, breedte=2070, derde_afmeting=18,
-        familie="Eiken multiplex", kerf=4, min_reststukgrootte=300,
+        familie="Eiken multiplex", min_reststukgrootte=300,
         fabriekskantenband_randen=frozenset({Rand.LINKS}),
     )
     wit = _materiaal_vers_aanmaken(
         materialen, naam="Wit gemelamineerd 18mm (testmateriaal zaagplan)", lengte=2800, breedte=2070, derde_afmeting=18,
-        familie="Gemelamineerd", kerf=4, min_reststukgrootte=300,
+        familie="Gemelamineerd", min_reststukgrootte=300,
     )
     # Klein restant-formaat MDF, bewust te krap voor de ladefronten-groep
     # hieronder -> test het "niet geplaatst"-pad van het nieuwe scherm.
     mdf = _materiaal_vers_aanmaken(
         materialen, naam="MDF 16mm (testmateriaal zaagplan)", lengte=600, breedte=500, derde_afmeting=16,
-        familie="MDF", kerf=4, min_reststukgrootte=150,
+        familie="MDF", min_reststukgrootte=150,
     )
 
     onderkast = _model_vers_aanmaken(

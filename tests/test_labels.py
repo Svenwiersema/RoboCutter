@@ -17,7 +17,7 @@ from robocutter.projecten.zaagplannen import genereer_zaagplannen_voor_project
 def _materiaal(**overrides) -> Materiaal:
     basis = dict(
         id="", naam="Eiken multiplex 18mm", type=MateriaalType.PLAAT,
-        lengte=2800, breedte=2070, derde_afmeting=18, kerf=4, min_reststukgrootte=300,
+        lengte=2800, breedte=2070, derde_afmeting=18, min_reststukgrootte=300,
     )
     basis.update(overrides)
     return Materiaal(**basis)

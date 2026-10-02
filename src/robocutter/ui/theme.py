@@ -418,6 +418,7 @@ def build_stylesheet(t: Theme) -> str:
     }}
     QLabel[role="inUseWarning"] {{ color: {t.warning_ink}; font-size: 11px; font-weight: 600; }}
     QFrame[role="subRow"] {{ background: {t.surface_2}; border-radius: 8px; }}
+    QFrame[role="subRowVerwijderd"] {{ background: {t.critical_soft}; border-radius: 8px; }}
 
     QToolButton[role="rowAction"] {{
         background: transparent; border: none; border-radius: 6px; color: {t.text_faint};

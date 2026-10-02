@@ -478,7 +478,7 @@ def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) ->
             ("Materiaal", plan.materiaal_naam),
             ("Formaat", afmeting),
             ("Dikte", f"{mat.dikte:g} mm"),
-            ("Kerf", f"{mat.kerf:g} mm"),
+            ("Zaagsnede", f"{mat.kerf:g} mm"),
             ("Benutting", f"{plan.resultaat.benuttingspercentage:g}%".replace(".", ",")),
         ],
     )

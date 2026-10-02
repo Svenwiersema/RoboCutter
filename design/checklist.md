@@ -90,7 +90,7 @@ map.
   CSV/Excel-import; **twee aparte bibliotheken** (materialen vs.
   reststukken), binnen elk platen+balken samengevoegd met filters;
   materiaal-velden: naam, type (plaat/balk), afmetingen,
-  materiaalfamilie, kleur/afwerking, nerfrichting, kerf, randafzaag-
+  materiaalfamilie, kleur/afwerking, nerfrichting, randafzaag-
   marge, minimale reststukgrootte, mes/groef, **fabriekskantenband**
   (welke rand(en)), productcode, **leverancier**, vrije tags, status —
   nadrukkelijk géén voorraadaantal of prijs (ERP-taak); reststuk-record

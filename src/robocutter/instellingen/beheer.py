@@ -42,6 +42,8 @@ def valideer(instellingen: Instellingen) -> list[str]:
             f"Onbekende zaagstrategie: {instellingen.standaard_zaagstrategie!r} "
             f"(verwacht {', '.join(GELDIGE_ZAAGSTRATEGIEEN)})."
         )
+    if instellingen.zaagsnede < 0:
+        fouten.append("Zaagsnede-breedte kan niet negatief zijn.")
     if instellingen.label_scancode not in GELDIGE_LABEL_SCANCODES:
         fouten.append(
             f"Onbekende labelscancode: {instellingen.label_scancode!r} "

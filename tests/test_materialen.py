@@ -48,7 +48,6 @@ def test_valideer_geldig_materiaal_geeft_geen_fouten():
         ({"lengte": 0}, "Lengte moet groter dan 0 zijn."),
         ({"breedte": -5}, "Breedte moet groter dan 0 zijn."),
         ({"derde_afmeting": 0}, "Dikte moet groter dan 0 zijn."),
-        ({"kerf": -1}, "Kerf/zaagsnede-breedte kan niet negatief zijn."),
         ({"randafzaag_marge": -1}, "Randafzaag-marge kan niet negatief zijn."),
         ({"min_reststukgrootte": -1}, "Minimale reststukgrootte kan niet negatief zijn."),
     ],
@@ -181,3 +180,34 @@ def test_sqlite_opslag_overleeft_herstart(tmp_path):
     derde_bib = MaterialenBibliotheek(derde_verbinding)
     assert derde_bib.lijst() == []
     derde_verbinding.close()
+
+
+def test_oude_database_met_kerf_kolom_wordt_omgezet(tmp_path):
+    # De kerf stond vroeger per materiaal; nu is het een centrale instelling.
+    # Een bestaande database met de oude kolom moet gewoon blijven werken.
+    import sqlite3
+
+    db_pad = tmp_path / "oud.db"
+    oud = sqlite3.connect(db_pad)
+    oud.execute(
+        """CREATE TABLE materialen (
+            id TEXT PRIMARY KEY, naam TEXT NOT NULL, type TEXT NOT NULL,
+            lengte REAL NOT NULL, breedte REAL NOT NULL, derde_afmeting REAL NOT NULL,
+            familie TEXT NOT NULL, kleur_afwerking TEXT NOT NULL, nerfrichting TEXT NOT NULL,
+            kerf REAL NOT NULL, randafzaag_marge REAL NOT NULL, randafzaag_randen TEXT NOT NULL,
+            min_reststukgrootte REAL NOT NULL, mes_groef_notitie TEXT NOT NULL,
+            fabriekskantenband_randen TEXT NOT NULL, productcode TEXT NOT NULL,
+            leverancier TEXT NOT NULL, tags TEXT NOT NULL, status TEXT NOT NULL)"""
+    )
+    oud.execute(
+        "INSERT INTO materialen VALUES ('m1', 'Eiken', 'plaat', 2800, 2070, 18, '', '', 'geen', 3,"
+        " 0, '[]', 300, '', '[]', '', '', '[]', 'actief')"
+    )
+    oud.commit()
+    oud.close()
+
+    bibliotheek = MaterialenBibliotheek(open_verbinding(db_pad))
+    assert bibliotheek.ophalen("m1").naam == "Eiken"
+    bibliotheek.toevoegen(_plaat(naam="Nieuw", id=""))
+    herstart = MaterialenBibliotheek(open_verbinding(db_pad))
+    assert sorted(m.naam for m in herstart.lijst()) == ["Eiken", "Nieuw"]

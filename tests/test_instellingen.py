@@ -45,6 +45,7 @@ def test_opslaan_en_laden_roundtrip(tmp_path):
         thema="donker",
         bedrijfslogo_pad=str(tmp_path / "logo.png"),
         standaard_zaagstrategie="horizontaal",
+        zaagsnede=3.2,
         werkvoorbereider_naam="Sven",
         label_scancode="barcode",
         label_kantenband_indicatie=False,
@@ -64,6 +65,25 @@ def test_valideer_signaleert_onbekend_thema_en_strategie():
 def test_valideer_signaleert_onbekende_labelscancode():
     fouten = valideer(Instellingen(label_scancode="hologram"))
     assert any("labelscancode" in f.lower() for f in fouten)
+
+
+def test_valideer_signaleert_negatieve_zaagsnede():
+    fouten = valideer(Instellingen(zaagsnede=-1))
+    assert any("zaagsnede" in f.lower() for f in fouten)
+
+
+def test_oude_strategie_efficient_wordt_horizontaal_bij_laden(tmp_path):
+    # "efficient" (CNC) is geen keuze meer; Horizontaal is de standaard.
+    pad = tmp_path / "instellingen.json"
+    pad.write_text('{"standaard_zaagstrategie": "efficient"}', encoding="utf-8")
+    assert laad_instellingen(pad).standaard_zaagstrategie == "horizontaal"
+
+
+def test_oud_bestand_zonder_zaagsnede_krijgt_standaardwaarden(tmp_path):
+    pad = tmp_path / "instellingen.json"
+    pad.write_text('{"thema": "donker"}', encoding="utf-8")
+    herladen = laad_instellingen(pad)
+    assert herladen.zaagsnede == Instellingen().zaagsnede
 
 
 def test_valideer_geldige_instellingen_geeft_geen_fouten():

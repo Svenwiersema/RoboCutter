@@ -78,7 +78,7 @@ def _voorbeeld_materialen(bib: MaterialenBibliotheek) -> None:
             familie="Eiken multiplex",
             kleur_afwerking="Naturel",
             nerfrichting=Nerfrichting.LANGE_ZIJDE,
-            kerf=4,
+           
             min_reststukgrootte=300,
             productcode="EMP-18",
             leverancier="Houthandel Jansen",
@@ -94,7 +94,7 @@ def _voorbeeld_materialen(bib: MaterialenBibliotheek) -> None:
             breedte=40,
             derde_afmeting=60,
             familie="Vurenhout regelwerk",
-            kerf=3,
+           
         )
     )
 

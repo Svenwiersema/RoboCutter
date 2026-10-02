@@ -10,10 +10,13 @@ HTML-mockup hiervan is door Sven goedgekeurd. Een model in een project
 is een vaste, platgeslagen kopie (hoofdstuk 4, zie
 ``ProjectModelInstantie``); dit scherm bewerkt die kopie:
 
-- Een onderdeel opslaan/toevoegen/verwijderen gaat meteen de projectkopie
-  in (``ProjectenBibliotheek.model_instantie_onderdelen_opslaan``) — de
+- Een onderdeel opslaan/toevoegen gaat meteen de projectkopie in
+  (``ProjectenBibliotheek.model_instantie_onderdelen_opslaan``) — de
   modellenbibliotheek blijft ongewijzigd. Wat afwijkt van het
   bibliotheekmodel krijgt een "gewijzigd"-label.
+- Een onderdeel verwijderen gaat níet meteen de opslag in (Sven: "dit kan
+  per ongeluk gaan"): de rij wordt doorgestreept, kan teruggezet worden, en
+  wordt pas bij een van de drie opslaan-keuzes echt verwijderd.
 - Onderaan drie keuzes: alleen in dit project, ook in de
   modellenbibliotheek (overschrijven, met bevestiging; niet bij een
   bibliotheekmodel met submodellen — Svens keuze, zie
@@ -107,6 +110,9 @@ class ProjectModelPage(QWidget):
 
         self._werk_onderdelen: list[ModelOnderdeel] = []
         self._bewerk_onderdeel_index: int | None = None
+        # Indexen in _werk_onderdelen die pas bij een opslaan-keuze
+        # verwijderd worden (zie de module-docstring).
+        self._te_verwijderen: set[int] = set()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -206,6 +212,12 @@ class ProjectModelPage(QWidget):
         self._status_label = QLabel("")
         self._status_label.setProperty("role", "fieldHint")
         inhoud_layout.addWidget(self._status_label)
+        # Onder de tabel (bij de opslaan-keuzes) i.p.v. erboven, zodat de
+        # rijen niet verspringen als je iets verwijdert (Sven).
+        self._verwijder_hint = QLabel("")
+        self._verwijder_hint.setWordWrap(True)
+        self._verwijder_hint.hide()
+        inhoud_layout.addWidget(self._verwijder_hint)
         inhoud_layout.addLayout(self._build_keuzes())
         outer.addWidget(self._inhoud)
 
@@ -588,6 +600,7 @@ class ProjectModelPage(QWidget):
             self._pill.hide()
             return
         self._werk_onderdelen = list(instantie.onderdelen)
+        self._te_verwijderen = set()
         self._validation_banner.hide()
         self._bib_bevestiging.hide()
         self._nieuw_formulier.hide()
@@ -662,13 +675,26 @@ class ProjectModelPage(QWidget):
                 "bibliotheek te bewaren."
             )
 
-        self._onderdelen_label.setText(f"ONDERDELEN ({len(self._werk_onderdelen)})")
+        self._onderdelen_label.setText(f"ONDERDELEN ({len(self._werk_onderdelen) - len(self._te_verwijderen)})")
+        n = len(self._te_verwijderen)
+        if n:
+            t = self._theme
+            self._verwijder_hint.setStyleSheet(
+                f"background: transparent; color: {t.critical}; font-size: 12.5px; font-weight: 600;"
+            )
+            wat = "1 onderdeel wordt" if n == 1 else f"{n} onderdelen worden"
+            self._verwijder_hint.setText(
+                f"{wat} verwijderd bij opslaan — kies hieronder waar."
+            )
+        self._verwijder_hint.setVisible(bool(n))
         _clear_layout(self._onderdelen_container)
         self._onderdelen_leeg_label.setVisible(not self._werk_onderdelen)
         for index, onderdeel in enumerate(self._werk_onderdelen):
-            self._onderdelen_container.addWidget(self._bouw_onderdeel_rij(onderdeel, index, onderdeel.id in gewijzigd))
+            self._onderdelen_container.addWidget(
+                self._bouw_onderdeel_rij(onderdeel, index, onderdeel.id in gewijzigd, index in self._te_verwijderen)
+            )
 
-    def _bouw_onderdeel_rij(self, o: ModelOnderdeel, index: int, gewijzigd: bool) -> QWidget:
+    def _bouw_onderdeel_rij(self, o: ModelOnderdeel, index: int, gewijzigd: bool, te_verwijderen: bool = False) -> QWidget:
         row = QFrame()
         row.setProperty("role", "subRow")
         layout = QHBoxLayout(row)
@@ -681,8 +707,12 @@ class ProjectModelPage(QWidget):
         titel_rij.setSpacing(8)
         titel = QLabel(o.naam + (f"  ×{o.aantal}" if o.aantal > 1 else ""))
         titel.setProperty("role", "matName")
+        if te_verwijderen:
+            titel.setText(titel.text() + "  · wordt verwijderd")
+            titel.setStyleSheet(f"color: {self._theme.critical}; text-decoration: line-through;")
+            row.setProperty("role", "subRowVerwijderd")
         titel_rij.addWidget(titel)
-        if gewijzigd:
+        if gewijzigd and not te_verwijderen:
             t = self._theme
             label = QLabel("gewijzigd")
             label.setStyleSheet(
@@ -710,6 +740,16 @@ class ProjectModelPage(QWidget):
         info_col.addWidget(detail)
         layout.addLayout(info_col, 1)
 
+        if te_verwijderen:
+            terug_btn = QToolButton()
+            terug_btn.setProperty("role", "rowAction")
+            terug_btn.setIcon(icon("undo", self._theme.critical, 14))
+            terug_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            terug_btn.setToolTip("Terugzetten")
+            terug_btn.clicked.connect(lambda: self._zet_onderdeel_terug(index))
+            layout.addWidget(terug_btn)
+            return row
+
         edit_btn = QToolButton()
         edit_btn.setProperty("role", "rowAction")
         edit_btn.setIcon(icon("pencil", self._theme.text_faint, 14))
@@ -721,7 +761,7 @@ class ProjectModelPage(QWidget):
         del_btn.setProperty("role", "rowActionDanger")
         del_btn.setIcon(icon("trash", self._theme.text_faint, 14))
         del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        del_btn.setToolTip("Verwijderen uit deze kopie")
+        del_btn.setToolTip("Verwijderen uit deze kopie (definitief bij opslaan)")
         del_btn.clicked.connect(lambda: self._verwijder_onderdeel(index))
         layout.addWidget(del_btn)
         return row
@@ -838,23 +878,42 @@ class ProjectModelPage(QWidget):
         self._ververs()
 
     def _verwijder_onderdeel(self, index: int) -> None:
-        naam = self._werk_onderdelen[index].naam
-        nieuwe = [o for i, o in enumerate(self._werk_onderdelen) if i != index]
-        if not self._sla_kopie_op(nieuwe):
-            return
+        # Alleen markeren (zie de module-docstring). De rij blijft in
+        # _werk_onderdelen, zodat de indexen gelijk blijven aan de opgeslagen
+        # kopie en het direct opslaan van een ánder onderdeel deze
+        # verwijdering niet stilletjes meeneemt.
+        self._te_verwijderen.add(index)
         if self._bewerk_onderdeel_index == index:
             self._reset_onderdeel_form()
-        elif self._bewerk_onderdeel_index is not None and self._bewerk_onderdeel_index > index:
-            self._bewerk_onderdeel_index -= 1
-        self._melding.toon(f'Onderdeel "{naam}" verwijderd', f"uit de kopie in {self._project().naam}")
         self._ververs()
+
+    def _zet_onderdeel_terug(self, index: int) -> None:
+        self._te_verwijderen.discard(index)
+        self._ververs()
+
+    def _verwijderingen_doorvoeren(self) -> bool:
+        """Gemarkeerde verwijderingen echt in de projectkopie opslaan —
+        de eerste stap van elke opslaan-keuze."""
+        if not self._te_verwijderen:
+            return True
+        nieuwe = [o for i, o in enumerate(self._werk_onderdelen) if i not in self._te_verwijderen]
+        # Vóór het opslaan leegmaken: _sla_kopie_op roept on_project_gewijzigd
+        # aan, wat dit tabblad al kan verversen met de nieuwe, kortere lijst.
+        gemarkeerd, self._te_verwijderen = self._te_verwijderen, set()
+        if not self._sla_kopie_op(nieuwe):
+            self._te_verwijderen = gemarkeerd
+            return False
+        self._reset_onderdeel_form()
+        return True
 
     # ------------------------------------------------------------------
     # De drie opslaan-keuzes
     # ------------------------------------------------------------------
     def _opslaan_in_project(self) -> None:
-        # Onderdelen gaan al bij elke wijziging de projectkopie in; dit legt
-        # de huidige stand nog eens vast en bevestigt dat.
+        # Toegevoegde/gewijzigde onderdelen staan al in de projectkopie; dit
+        # voert de gemarkeerde verwijderingen door en bevestigt de stand.
+        if not self._verwijderingen_doorvoeren():
+            return
         if not self._sla_kopie_op(list(self._werk_onderdelen)):
             return
         self._melding.toon(f"Opgeslagen in project {self._project().naam}", "de modellenbibliotheek is niet gewijzigd")
@@ -862,6 +921,8 @@ class ProjectModelPage(QWidget):
 
     def _opslaan_in_bibliotheek(self) -> None:
         self._bib_bevestiging.hide()
+        if not self._verwijderingen_doorvoeren():
+            return
         try:
             model = self._projecten.model_instantie_naar_bibliotheek(self.project_id, self.instantie_id)
         except (ModelHeeftSubmodellenError, OnbekendModelError, ValueError) as exc:
@@ -886,6 +947,8 @@ class ProjectModelPage(QWidget):
         self._in_nieuwe_naam.selectAll()
 
     def _opslaan_als_nieuw_model(self) -> None:
+        if not self._verwijderingen_doorvoeren():
+            return
         try:
             model = self._projecten.model_instantie_als_nieuw_model(
                 self.project_id, self.instantie_id, self._in_nieuwe_naam.text()

@@ -2646,8 +2646,9 @@ houden.
     bestaand model meteen de onderdelen op (naam/omschrijving/map/tags pas
     bij "Model opslaan"); een nieuw, nooit opgeslagen model blijft tot
     "Model opslaan". Een onderdeel **verwijderen** in het modelscherm gaat
-    nog steeds alleen uit de lijst op het scherm tot "Model opslaan" (niet
-    gevraagd; mogelijk later gelijktrekken). Nieuwe publieke `herlaad()`.
+    nog steeds alleen uit de lijst op het scherm tot "Model opslaan" (zo
+    door Sven bevestigd, zie verderop: verwijderen gaat nooit meteen de
+    opslag in). Nieuwe publieke `herlaad()`.
   - Backend (`projecten/bibliotheek.py`): `model_instantie_onderdelen_opslaan`
     (met dezelfde controle als losse onderdelen, gedeeld via
     `_valideer_onderdelen`), `model_instantie_afwijkingen` (op onderdeel-id,
@@ -2658,8 +2659,8 @@ houden.
   - UI: nieuw `ui/project_model_page.py` (`ProjectModelPage`), tabsleutel
     `projectmodel:{project_id}:{instantie_id}` in `main_window.py`
     (`_projectmodel_pages`), geopend via een potlood bij elk model in de
-    Samenstelling. Onderdelen opslaan/toevoegen/verwijderen gaat meteen de
-    projectkopie in; "gewijzigd"-label t.o.v. het bibliotheekmodel; onderaan
+    Samenstelling. Onderdelen opslaan/toevoegen gaat meteen de projectkopie
+    in (verwijderen inmiddels pas bij een opslaan-keuze, zie verderop); "gewijzigd"-label t.o.v. het bibliotheekmodel; onderaan
     de drie keuzes met inline bevestiging/naamveld. `ProjectDetailPage`
     kreeg `on_open_modelkopie` + publieke `ververs()`; open modelkopie-
     tabbladen volgen wijzigingen vanuit het project
@@ -2718,6 +2719,120 @@ houden.
     popup verschijnt; klikken op de knop maximaliseert/herstelt; hover
     verdwijnt bij verlaten. De automatisch verbergende taakbalk is niet
     live getest (zou Svens eigen taakbalkinstelling wijzigen).
+
+- **Verwijderen van onderdelen gaat nooit meer meteen de opslag in.**
+  Sven, over het verschil tussen direct opgeslagen toevoegen/wijzigen en
+  verwijderen: "hij moet niet direct opslaan als je een item verwijdert
+  want dit kan per ongeluk gaan ... mij lijkt gewoon niet opslaan pas als
+  je specifiek model opslaan drukt een betere oplossing" (liever dan een
+  "weet je het zeker?"-vraag).
+  - Modelscherm (`model_detail_page.py`): de prullenbak markeert het
+    onderdeel (`_te_verwijderen`, indexen in `_werk_onderdelen`); de rij
+    blijft staan met een rode achtergrond (Sven: "veel duidelijker dan
+    alleen een streep door de naam"; nieuwe rol `subRowVerwijderd` in
+    `theme.py`), rode doorgestreepte naam en een terugzet-pijl (nieuw icoon
+    `undo` in `icons.py`). Een rode regel in de voettekst, naast "Model
+    opslaan", zegt hoeveel onderdelen bij opslaan verwijderd worden. Op
+    Svens verzoek staat die melding níet boven de tabel ("waardoor alles
+    verspringt"), en ook de bevestiging na "Model opslaan"/onderdeel
+    opslaan staat nu als groene regel in de voettekst (3 s) i.p.v. de
+    zwevende `OpslagMelding` ("in plaats van een popup die over alles heen
+    gaat") — dit scherm gebruikt `OpslagMelding` dus niet meer. "Annuleren" zet alles terug.
+    **Bug opgelost:** voorheen verdween het onderdeel echt uit de
+    werklijst, en schreef het direct opslaan van een ánder onderdeel die
+    hele lijst weg — de verwijdering werd dan stilletjes meegenomen. Door
+    alleen te markeren blijven de indexen gelijk aan het opgeslagen model.
+  - Modelkopie in een project (`project_model_page.py`): verwijderen ging
+    daar wél meteen de projectkopie in; nu hetzelfde markeren, en elk van
+    de drie opslaan-keuzes voert de gemarkeerde verwijderingen eerst door
+    (`_verwijderingen_doorvoeren`). Toevoegen/wijzigen gaat nog steeds
+    meteen de kopie in. Dit scherm heeft geen voettekst; de rode
+    verwijder-regel staat daar onder de tabel, bij de opslaan-keuzes (de
+    tabel verspringt dus niet), en de bevestigingen zijn hier nog de
+    zwevende `OpslagMelding`.
+  - Geverifieerd met een offscreen rookproef (alleen in-memory
+    bibliotheken, geen db): markeren slaat niets op, een ander onderdeel
+    opslaan/toevoegen houdt het gemarkeerde, terugzetten, annuleren, Model
+    opslaan, en in het project alle drie de opslaan-keuzes; screenshots
+    licht/donker. 217 tests.
+
+- **"Efficiënt" wordt "CNC (nesting)"; zaagsnede en freesdiameter naar
+  Instellingen.** Sven: "deze strategie moet eigenlijk kijken wat het
+  minste afval laat liggen maakt niet uit hoe het gezaagd word, dit is
+  namelijk een strategie voor een cnc". Keuzes van Sven (vooraf gevraagd):
+  geen zaagvolgorde bij CNC; doel eerst minste platen, dan het grootste
+  reststuk; hernoemen naar "CNC (nesting)"; en "ik denk dat we kerf ook
+  niet per materiaal moeten instellen maar frees en zaag snede breedte in
+  de instellingen moeten zetten".
+  - **Instellingen:** nieuwe velden `zaagsnede` (standaard 4 mm) en
+    `freesdiameter` (standaard 8 mm) in `Instellingen`/`instellingen.json`,
+    met controle (niet negatief) en twee invoervelden in het
+    Instellingen-scherm onder de standaard zaagstrategie. Bestaande
+    instellingen.json zonder deze velden krijgen de standaardwaarden —
+    **Svens materialen hadden allemaal kerf 3 mm**, dus de zaagsnede moet
+    hij zelf op 3 zetten als dat klopt.
+  - **Materialen:** `kerf` weg uit `Materiaal`, de validatie, de zoekterm-
+    match, het materialenformulier (min. reststukgrootte en randafzaag-
+    marge staan nu naast elkaar) en de reststuk-info. `materialen/opslag.py`
+    verwijdert bij het openen een bestaande `kerf`-kolom (`ALTER TABLE ...
+    DROP COLUMN`), getest met een database in het oude formaat.
+  - **Koppeling:** `projecten/zaagplannen.py` vult de `kerf` van de motor
+    via `tussenruimte_voor_strategie`: freesdiameter bij `efficient`,
+    anders zaagsnede. `genereer_zaagplannen_voor_project` kreeg
+    `zaagsnede`/`freesdiameter`; de zaagplan-worker leest ze uit de
+    instellingen. De voettekst van een zaagplan (scherm + PDF) zegt
+    "Frees" of "Zaagsnede" i.p.v. "Kerf".
+  - **Motor:** `_pak_efficient` (en het proberen van alle vier de
+    zaagheuristieken) is weg. Nieuw: `_pak_nesting` (MaxRects: maximale
+    vrije rechthoeken die mogen overlappen, geen rand-tot-rand-eis), met 5
+    plaatsingsregels (onder-links, links-onder, korte zijde, oppervlak,
+    contact) × 5 sorteringen; met zoekbudget telkens één willekeurige regel
+    met verstoorde volgorde. De freesdiameter zit in het pakken zelf (elk
+    stuk rechts/boven een freesdiameter groter, in een werkgebied dat daar
+    ook een freesdiameter groter is). Score (`_nesting_score`): meeste
+    geplaatst oppervlak, dan minste afval, dan grootste reststuk.
+    Reststukken (`_nesting_reststukken`): steeds de grootste vrije
+    rechthoek die groot genoeg is, op een freesdiameter afstand van
+    onderdelen en van elkaar. Afval = werkgebied − onderdelen − reststukken
+    (dus inclusief de freesbanen). Geen zaagvolgorde, ook niet voor de
+    fabriekskantenband-stroken (die blijven wel tegen de fabrieksrand).
+    Interne waarde blijft `"efficient"`, zodat opgeslagen instellingen en
+    zaagplannen blijven werken. **Een eerder opgeslagen "Efficiënt"-
+    zaagplan toont nog de oude indeling met zaagvolgorde tot je opnieuw
+    genereert.**
+  - **Tests:** de zaag-specifieke controles lopen nu over
+    `_ZAAGSTRATEGIEEN` (zonder `efficient`); nieuw `_cnc_fouten` (minstens
+    een freesdiameter tussen onderdelen en rond reststukken, geen
+    zaagvolgorde, oppervlak precies verantwoord) op 120 willekeurige
+    scenario's, plus tests voor nerf, één groot reststuk en "nooit meer
+    platen dan de zaagstrategieën" (40 scenario's: CNC 135 platen,
+    Verticaal 143, Horizontaal/Guillotine 148). Daarbij gezien: de interne
+    `"stroken"` geeft bij een onderdeel dat niet past soms al na één plaat
+    op (niet opgelost; stroken is geen keuze meer). Keuken Jansen (op een
+    db-kopie): CNC 10 platen, Guillotine 11. 220 tests.
+
+- **Daarna teruggedraaid: CNC en Stroken uit de zaagplannen, freesdiameter
+  uit de instellingen.** Sven: "stroken is een oude strategie en kan
+  eigenlijk uit het programma gehaald worden, cnc ziet er goed uit maar
+  eigenlijk hoeft deze niet in zaagplannen want daar ben je geen zaagplan
+  voor nodig je deze script wel onthouden maar dit word later gebruikt
+  denk ik voor een gehele cnc upgrade, de cnc zaag breedte mag je dan ook
+  eerst weg laten in de instellingen".
+  - Kiesbaar: alleen nog **Horizontaal (nieuwe standaard, Svens keuze)**,
+    Verticaal en Guillotine. Een opgeslagen `"efficient"` in
+    instellingen.json wordt bij het laden Horizontaal. Een eerder opgeslagen
+    zaagplan met `"efficient"` blijft zoals het is (de strategiekeuze valt
+    terug op de standaard).
+  - `_pak_stroken` en zijn tests zijn weg (en de alleen-voor-stroken
+    parameter `beschikbare_hoogte` van `_vul_rij`).
+  - De nesting-code blijft in `engine.py` als strategie **`"cnc"`** (niet
+    in `GELDIGE_ZAAGSTRATEGIEEN`, dus niet kiesbaar), mét de CNC-tests
+    (`_cnc_fouten` enz.) — klaar voor een latere CNC-upgrade. Die heeft dan
+    ook een freesdiameter-instelling nodig: `genereer_zaagplan` gebruikt nu
+    gewoon `materiaal.kerf` als freesdiameter.
+  - Instellingen: alleen `zaagsnede` (freesdiameter weg uit model, opslag,
+    controle en scherm). Zaagplan-voettekst/PDF: "Zaagsnede".
+  - `scripts/demo_render.py`: stroken weg, CNC als `demo_cnc.png`. 210 tests.
 
 ## Werkwijze die Sven prettig vindt
 

@@ -58,7 +58,8 @@ definitieve actie.**
 - Materiaalfamilie-koppeling
 - Kleur/afwerking
 - Nerfrichting: lange zijde / korte zijde / geen (zie hoofdstuk 5)
-- Zaagsnede/kerf-breedte (zie hoofdstuk 5)
+- ~~Zaagsnede/kerf-breedte~~ — sinds oktober 2026 geen materiaalveld meer:
+  de zaagsnede-breedte is een centrale instelling (zie hoofdstuk 5)
 - Randafzaag-marge + welke randen (zie hoofdstuk 5)
 - Minimale reststukgrootte (zie hoofdstuk 5)
 - Mes/groef-eigenschappen (zie hoofdstuk 5 — technisch verder te
@@ -78,7 +79,7 @@ buiten scope, dit is een ERP-taak (zie hoofdstuk 9).
 ## Velden van een reststuk-record (bevestigd)
 
 Een reststuk staat in de aparte reststukkenbibliotheek en neemt de
-eigenschappen van zijn onderliggende materiaal over (kerf, nerfrichting,
+eigenschappen van zijn onderliggende materiaal over (nerfrichting,
 randafzaag-marge, etc.), aangevuld met:
 
 - **Huidige (resterende) afmetingen** — anders dan de standaardafmeting

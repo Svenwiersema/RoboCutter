@@ -126,7 +126,6 @@ _PANEEL_ITEMS = [("overzicht", "user", "Overzicht"), ("samenstelling", "layers",
 # leunen op een gegenereerd zaagplan van dit project.
 _DOC_ITEMS = [("labels", "tag", "Labels", False), ("zaagplannen", "document", "Zaagplannen", False)]
 _STRATEGIE_LABEL = {
-    "efficient": "Efficiënt",
     "horizontaal": "Horizontaal",
     "verticaal": "Verticaal",
     "guillotine": "Guillotine",
@@ -220,6 +219,9 @@ class _ZaagplanWorker(QThread):
         self._project = project
         self._materialen = materialen
         self._strategie = strategie
+        # Hier (op de UI-thread) uitlezen, niet in run().
+        instellingen = InstellingenBeheer().huidige
+        self._zaagsnede = instellingen.zaagsnede
 
     def run(self) -> None:
         cls = _ZaagplanWorker
@@ -236,6 +238,7 @@ class _ZaagplanWorker(QThread):
                 zoek_tijdsbudget=_ZOEK_TIJDSBUDGET_SECONDEN,
                 min_zoek_tijdsbudget=_MIN_ZOEK_TIJDSBUDGET_SECONDEN,
                 voortgang=self.voortgang.emit,
+                zaagsnede=self._zaagsnede,
             )
         finally:
             with cls._slot:
@@ -312,7 +315,7 @@ class ProjectDetailPage(QWidget):
             self._zaagplannen, self._zaagplan_waarschuwingen, opgeslagen_strategie = opgeslagen
             # Val terug op de standaardstrategie als een eerder opgeslagen
             # zaagplan een inmiddels afgeschafte strategienaam heeft (zie
-            # het schrappen van "stroken" als losse keuze) — zelfde
+            # het schrappen van "stroken" en "efficient") — zelfde
             # verdediging als _standaard_zaagstrategie hieronder.
             self._zaagplan_strategie = (
                 opgeslagen_strategie if opgeslagen_strategie in GELDIGE_ZAAGSTRATEGIEEN else self._standaard_zaagstrategie()
@@ -2182,7 +2185,7 @@ class ProjectDetailPage(QWidget):
             ("Materiaal", plan.materiaal_naam),
             ("Formaat", f"{mat.lengte:g} × {mat.breedte:g} mm"),
             ("Dikte", f"{mat.dikte:g} mm"),
-            ("Kerf", f"{mat.kerf:g} mm"),
+            ("Zaagsnede", f"{mat.kerf:g} mm"),
             ("Benutting", f"{plan.resultaat.benuttingspercentage:g}%".replace(".", ",")),
         ]
         for label, waarde in cellen:

@@ -81,7 +81,6 @@ def _voorbeelddata(bib: MaterialenBibliotheek) -> None:
             familie="Eiken multiplex",
             kleur_afwerking="Naturel",
             nerfrichting=Nerfrichting.LANGE_ZIJDE,
-            kerf=4,
             min_reststukgrootte=300,
             productcode="EMP-18",
             leverancier="Houthandel Jansen",
@@ -97,7 +96,6 @@ def _voorbeelddata(bib: MaterialenBibliotheek) -> None:
             breedte=40,
             derde_afmeting=60,
             familie="Vurenhout regelwerk",
-            kerf=3,
         )
     )
     bib.archiveren(balk.id)
@@ -214,8 +212,6 @@ class MaterialenTestVenster(QMainWindow):
             self.veld_nerfrichting.addItem(label, waarde)
         form.addRow("Nerfrichting", self.veld_nerfrichting)
 
-        self.veld_kerf = self._maak_afmeting_veld(toegestaan_nul=True)
-        form.addRow("Zaagsnede/kerf-breedte (mm)", self.veld_kerf)
 
         self.veld_randafzaag_marge = self._maak_afmeting_veld(toegestaan_nul=True)
         form.addRow("Randafzaag-marge (mm)", self.veld_randafzaag_marge)
@@ -333,7 +329,6 @@ class MaterialenTestVenster(QMainWindow):
         self.veld_familie.setText(materiaal.familie)
         self.veld_kleur.setText(materiaal.kleur_afwerking)
         self._zet_combo(self.veld_nerfrichting, materiaal.nerfrichting)
-        self.veld_kerf.setValue(materiaal.kerf)
         self.veld_randafzaag_marge.setValue(materiaal.randafzaag_marge)
         for rand, check in self.randafzaag_checks.items():
             check.setChecked(rand in materiaal.randafzaag_randen)
@@ -369,7 +364,6 @@ class MaterialenTestVenster(QMainWindow):
             self.veld_lengte,
             self.veld_breedte,
             self.veld_derde_afmeting,
-            self.veld_kerf,
             self.veld_randafzaag_marge,
             self.veld_min_reststuk,
         ):
@@ -393,7 +387,6 @@ class MaterialenTestVenster(QMainWindow):
             familie=self.veld_familie.text(),
             kleur_afwerking=self.veld_kleur.text(),
             nerfrichting=Nerfrichting(self.veld_nerfrichting.currentData()),
-            kerf=self.veld_kerf.value(),
             randafzaag_marge=self.veld_randafzaag_marge.value(),
             randafzaag_randen=frozenset(
                 rand for rand, check in self.randafzaag_checks.items() if check.isChecked()

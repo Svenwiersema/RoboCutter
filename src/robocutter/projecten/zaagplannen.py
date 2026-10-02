@@ -109,7 +109,9 @@ class ZaagplanVoortgang:
     plaat_nummer: int
 
 
-def _naar_optimalisatie_materiaal(materiaal_id: str, materialen: MaterialenBibliotheek) -> OptMateriaal | None:
+def _naar_optimalisatie_materiaal(
+    materiaal_id: str, materialen: MaterialenBibliotheek, kerf: float
+) -> OptMateriaal | None:
     try:
         m = materialen.ophalen(materiaal_id)
     except KeyError:
@@ -119,7 +121,7 @@ def _naar_optimalisatie_materiaal(materiaal_id: str, materialen: MaterialenBibli
         lengte=m.lengte,
         breedte=m.breedte,
         dikte=m.derde_afmeting,
-        kerf=m.kerf,
+        kerf=kerf,
         randafzaag_marge=m.randafzaag_marge,
         randafzaag_randen=m.randafzaag_randen,
         min_reststukgrootte=m.min_reststukgrootte,
@@ -130,10 +132,11 @@ def _naar_optimalisatie_materiaal(materiaal_id: str, materialen: MaterialenBibli
 def genereer_zaagplannen_voor_project(
     project: Project,
     materialen: MaterialenBibliotheek,
-    strategie: str = "efficient",
+    strategie: str = "horizontaal",
     zoek_tijdsbudget: float = 0.0,
     min_zoek_tijdsbudget: float = 0.0,
     voortgang: Callable[[ZaagplanVoortgang], None] | None = None,
+    zaagsnede: float = 4.0,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -152,7 +155,9 @@ def genereer_zaagplannen_voor_project(
         wordt hier ook per materiaal/plaat toegepast.
     :param voortgang: optionele callback die tussentijds een
         ``ZaagplanVoortgang`` krijgt (vanaf de thread waarop deze functie
-        draait)."""
+        draait).
+    :param zaagsnede: zaagsnede-breedte (mm) uit de instellingen (op Svens
+        verzoek niet meer per materiaal) — wordt de ``kerf`` van de motor."""
 
     per_materiaal: dict[str, list[ZaaglijstRegel]] = {}
     for regel in bouw_zaaglijst(project):
@@ -165,7 +170,7 @@ def genereer_zaagplannen_voor_project(
     te_genereren: list[tuple[str, OptMateriaal, dict[str, OnderdeelInfo], list[OptOnderdeel]]] = []
 
     for materiaal_id, regels in per_materiaal.items():
-        opt_materiaal = _naar_optimalisatie_materiaal(materiaal_id, materialen)
+        opt_materiaal = _naar_optimalisatie_materiaal(materiaal_id, materialen, zaagsnede)
         if opt_materiaal is None:
             waarschuwingen.append(
                 f"Materiaal '{materiaal_id}' bestaat niet (meer) in de materialenbibliotheek — "

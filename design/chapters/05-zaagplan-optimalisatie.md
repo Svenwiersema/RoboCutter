@@ -8,8 +8,18 @@ van gegenereerde voorbeelden — zie onderaan).
 - **Prioriteit** is instelbaar door de gebruiker: bijvoorbeeld zo min
   mogelijk afval, of een zaagstrategie zoals "lange sneden eerst, daarna
   opdelen in kortere sneden" versus "meest efficiënte plaatsing".
-- **Zaagsnede (kerf)** wordt ingesteld **per materiaal** in de
-  materialenbibliotheek (Module 3).
+- **Zaagsnede-breedte** is (sinds oktober 2026, op Svens verzoek) een
+  **centrale instelling** in het Instellingen-scherm, niet meer per
+  materiaal: het is een eigenschap van de machine.
+- **Zaagstrategieën:** Horizontaal (standaard), Verticaal en Guillotine.
+  "Efficiënt" en "Stroken" zijn geschrapt.
+- **CNC-nesting** (bewaard voor een latere CNC-upgrade, niet kiesbaar):
+  "Efficiënt" is kort een strategie voor een CNC-freesmachine geweest
+  (onderdelen vrij in elkaar geschoven, zonder zaagvolgorde; eerst minste
+  platen, dan minste afval / één groot reststuk; overal één freesdiameter
+  tussenruimte). Sven: een CNC heeft geen zaagplan nodig — de code staat
+  als strategie `cnc` in de motor, klaar voor een bredere CNC-upgrade
+  (dan ook met een freesdiameter-instelling).
 - **Randafzagen**: per materiaal instelbaar of er een marge (bv. 5mm) van
   bepaalde randen van de plaat afgezaagd moet worden, en welke randen dat
   betreft.

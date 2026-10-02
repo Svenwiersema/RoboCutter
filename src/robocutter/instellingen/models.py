@@ -20,14 +20,15 @@ doorlopende zaagsnedes van rand tot rand — een écht apart, strikter
 algoritme dan ``"efficient"``, ook al gebruikt ``"efficient"`` zelf al
 een guillotine-stijl interne splitsing, zie ``engine.py``). Een vierde
 optie, ``"stroken"`` (vaste, gelijke strookhoogte i.p.v. de per-rij
-aangepaste hoogte van ``"rijen"``), is later weer geschrapt als
-zichtbare keuze — Sven zag 'm in de praktijk niet gebruikt worden en
-het resultaat verschilt zelden merkbaar van ``"rijen"`` (alleen als
-onderdelen sterk in hoogte uiteenlopen). De onderliggende heuristiek
-(``engine._pak_stroken``) bestaat nog wél en wordt nog steeds intern
-door ``"efficient"`` meegewogen (zie ``_kies_beste_pakresultaat`` in
-``engine.py``) — enkel de losse, door de gebruiker kiesbare optie is
-weg.
+aangepaste hoogte van ``"rijen"``), is later helemaal geschrapt, ook uit
+de motor.
+
+``"efficient"`` werd daarna op Svens verzoek een CNC-strategie (vrije
+nesting zonder zaagvolgorde) en is toen uit de keuzes gehaald: "daar ben
+je geen zaagplan voor nodig". De nesting-code staat bewaard in de motor
+als ``"cnc"``, voor een latere CNC-upgrade. Sindsdien is ``"horizontaal"``
+de standaard (Svens keuze); een opgeslagen ``"efficient"`` wordt bij het
+laden van de instellingen Horizontaal (zie ``instellingen/opslag.py``).
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ __all__ = [
 ]
 
 GELDIGE_THEMAS = ("licht", "donker", "systeem")
-GELDIGE_ZAAGSTRATEGIEEN = ("efficient", "horizontaal", "verticaal", "guillotine")
+GELDIGE_ZAAGSTRATEGIEEN = ("horizontaal", "verticaal", "guillotine")
 # Op Svens verzoek hernoemd: "rijen" heet sinds deze stap "horizontaal"
 # (hoofdzaagsnedes horizontaal over de plaat), naast het nieuwe
 # "verticaal" (zelfde aanpak, hoofdzaagsnedes verticaal). Oude opgeslagen
@@ -69,7 +70,10 @@ class Instellingen:
     opslag_map: str | None = None  # None = standaardlocatie (<repo>/data)
     thema: str = "licht"
     bedrijfslogo_pad: str | None = None
-    standaard_zaagstrategie: str = "efficient"
+    standaard_zaagstrategie: str = "horizontaal"
+    # Op Svens verzoek centraal i.p.v. per materiaal: de ruimte die het
+    # zaagblad tussen twee onderdelen wegneemt (zie projecten/zaagplannen.py).
+    zaagsnede: float = 4.0  # mm
     werkvoorbereider_naam: str = ""
     # Hoofdstuk 6 (Labels & identificatie): de optionele labelvelden zijn
     # bewust app-brede instellingen, geen keuze per printactie.

@@ -44,7 +44,7 @@ import uuid
 from dataclasses import replace
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QStringListModel
+from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -72,7 +72,6 @@ from robocutter.modellen.models import Model, ModelOnderdeel, Nerfrichting, Rand
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.randen_diagram import RandenDiagram
-from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
@@ -103,6 +102,9 @@ class _ZoekVeld(QLineEdit):
             self.completer().complete()
 
 
+_FOOTER_BEVESTIGING_MS = 3000
+
+
 class ModelDetailPage(QWidget):
     def __init__(
         self,
@@ -130,7 +132,15 @@ class ModelDetailPage(QWidget):
         self.bibliotheek = modellen
         self.materialen = materialen
         self._theme = theme
-        self._melding = OpslagMelding(self, theme)
+        # Meldingen staan in de voettekst naast "Model opslaan" i.p.v. als
+        # zwevende OpslagMelding: op Svens verzoek, zodat niets over de
+        # inhoud heen valt of verspringt. Na opslaan staat er even een
+        # groene bevestiging (_FOOTER_BEVESTIGING_MS), daarna weer de
+        # eventuele nog niet opgeslagen verwijderingen.
+        self._footer_bevestiging = ""
+        self._footer_timer = QTimer(self)
+        self._footer_timer.setSingleShot(True)
+        self._footer_timer.timeout.connect(self._na_footer_bevestiging)
         self._on_gewijzigd = on_gewijzigd
         self._on_open_modellen_tab = on_open_modellen_tab
         self._on_aangemaakt = on_aangemaakt
@@ -139,6 +149,11 @@ class ModelDetailPage(QWidget):
         self._werk_onderdelen: list[ModelOnderdeel] = []
         self._werk_submodellen: list[SubModelVerwijzing] = []
         self._bewerk_onderdeel_index: int | None = None
+        # Indexen in _werk_onderdelen die bij "Model opslaan" verwijderd
+        # worden. Op Svens verzoek gaat verwijderen nooit meteen de opslag in
+        # ("dit kan per ongeluk gaan"): de rij blijft doorgestreept staan,
+        # met een knop om 'm terug te zetten, tot "Model opslaan".
+        self._te_verwijderen: set[int] = set()
         self._sm_naam_naar_id: dict[str, str] = {}
 
         outer = QVBoxLayout(self)
@@ -161,7 +176,6 @@ class ModelDetailPage(QWidget):
     # ------------------------------------------------------------------
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
-        self._melding.set_theme(theme)
         layout = self.layout()
         _clear_layout(layout)
         self._view = self._build_view()
@@ -263,6 +277,16 @@ class ModelDetailPage(QWidget):
         cancel_btn.clicked.connect(self._annuleren)
         layout.addWidget(cancel_btn)
         layout.addStretch(1)
+        self._footer_melding = QWidget()
+        melding_layout = QHBoxLayout(self._footer_melding)
+        melding_layout.setContentsMargins(0, 0, 6, 0)
+        melding_layout.setSpacing(7)
+        self._footer_melding_icoon = QLabel()
+        self._footer_melding_icoon.setStyleSheet("background: transparent;")
+        melding_layout.addWidget(self._footer_melding_icoon)
+        self._footer_melding_tekst = QLabel("")
+        melding_layout.addWidget(self._footer_melding_tekst)
+        layout.addWidget(self._footer_melding)
         save_btn = QPushButton("  Model opslaan")
         save_btn.setProperty("role", "primary")
         save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -290,7 +314,7 @@ class ModelDetailPage(QWidget):
             omschrijving=self._in_omschrijving.text().strip(),
             map=self._in_map.text().strip(),
             tags=tags,
-            onderdelen=list(self._werk_onderdelen),
+            onderdelen=self._onderdelen_na_verwijderen(),
             submodellen=list(self._werk_submodellen),
         )
 
@@ -309,7 +333,34 @@ class ModelDetailPage(QWidget):
             self.bibliotheek.bijwerken(kandidaat)
         self._meld_gewijzigd()
         self._laad_model()
-        self._melding.toon(f'Model "{kandidaat.naam}" opgeslagen', "in de modellenbibliotheek")
+        self._toon_bevestiging(f'Model "{kandidaat.naam}" opgeslagen')
+
+    def _toon_bevestiging(self, tekst: str) -> None:
+        self._footer_bevestiging = tekst
+        self._footer_timer.start(_FOOTER_BEVESTIGING_MS)
+        self._ververs_footer_melding()
+
+    def _na_footer_bevestiging(self) -> None:
+        self._footer_bevestiging = ""
+        self._ververs_footer_melding()
+
+    def _ververs_footer_melding(self) -> None:
+        t = self._theme
+        n = len(self._te_verwijderen)
+        if self._footer_bevestiging:
+            naam, kleur, tekst = "check", t.success, self._footer_bevestiging
+        elif n:
+            wat = "1 onderdeel wordt" if n == 1 else f"{n} onderdelen worden"
+            naam, kleur, tekst = "trash", t.critical, f"{wat} verwijderd bij opslaan"
+        else:
+            self._footer_melding.hide()
+            return
+        self._footer_melding_icoon.setPixmap(icon_pixmap(naam, kleur, 15))
+        self._footer_melding_tekst.setText(tekst)
+        self._footer_melding_tekst.setStyleSheet(
+            f"background: transparent; color: {kleur}; font-size: 12.5px; font-weight: 600;"
+        )
+        self._footer_melding.show()
 
     def herlaad(self) -> None:
         """Opnieuw inlezen uit de bibliotheek — voor als het model van
@@ -637,13 +688,17 @@ class ModelDetailPage(QWidget):
             self._of_materiaal.setCurrentIndex(idx)
 
     def _ververs_onderdelen(self) -> None:
-        self._onderdelen_label.setText(f"ONDERDELEN ({len(self._werk_onderdelen)})")
+        aantal = len(self._werk_onderdelen) - len(self._te_verwijderen)
+        self._onderdelen_label.setText(f"ONDERDELEN ({aantal})")
+        self._ververs_footer_melding()
         _clear_layout(self._onderdelen_container)
         self._onderdelen_leeg_label.setVisible(not self._werk_onderdelen)
         for index, onderdeel in enumerate(self._werk_onderdelen):
-            self._onderdelen_container.addWidget(self._bouw_onderdeel_rij(onderdeel, index))
+            self._onderdelen_container.addWidget(
+                self._bouw_onderdeel_rij(onderdeel, index, index in self._te_verwijderen)
+            )
 
-    def _bouw_onderdeel_rij(self, o: ModelOnderdeel, index: int) -> QWidget:
+    def _bouw_onderdeel_rij(self, o: ModelOnderdeel, index: int, te_verwijderen: bool = False) -> QWidget:
         row = QFrame()
         row.setProperty("role", "subRow")
         layout = QHBoxLayout(row)
@@ -655,6 +710,10 @@ class ModelDetailPage(QWidget):
         titel_tekst = o.naam + (f"  ×{o.aantal}" if o.aantal > 1 else "")
         titel = QLabel(titel_tekst)
         titel.setProperty("role", "matName")
+        if te_verwijderen:
+            titel.setText(titel_tekst + "  · wordt verwijderd")
+            titel.setStyleSheet(f"color: {self._theme.critical}; text-decoration: line-through;")
+            row.setProperty("role", "subRowVerwijderd")
         info_col.addWidget(titel)
 
         try:
@@ -683,6 +742,16 @@ class ModelDetailPage(QWidget):
 
         layout.addLayout(info_col, 1)
 
+        if te_verwijderen:
+            terug_btn = QToolButton()
+            terug_btn.setProperty("role", "rowAction")
+            terug_btn.setIcon(icon("undo", self._theme.critical, 14))
+            terug_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            terug_btn.setToolTip("Terugzetten")
+            terug_btn.clicked.connect(lambda: self._zet_onderdeel_terug(index))
+            layout.addWidget(terug_btn)
+            return row
+
         edit_btn = QToolButton()
         edit_btn.setProperty("role", "rowAction")
         edit_btn.setIcon(icon("pencil", self._theme.text_faint, 14))
@@ -694,6 +763,7 @@ class ModelDetailPage(QWidget):
         del_btn.setProperty("role", "rowActionDanger")
         del_btn.setIcon(icon("trash", self._theme.text_faint, 14))
         del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setToolTip('Verwijderen (definitief bij "Model opslaan")')
         del_btn.clicked.connect(lambda: self._verwijder_onderdeel(index))
         layout.addWidget(del_btn)
 
@@ -752,10 +822,21 @@ class ModelDetailPage(QWidget):
         self._vul_onderdeel_form(o)
 
     def _verwijder_onderdeel(self, index: int) -> None:
-        del self._werk_onderdelen[index]
+        # Alleen markeren, niet uit de lijst halen: zo blijven de indexen
+        # gelijk aan die van het opgeslagen model, en neemt het direct
+        # opslaan van een ánder onderdeel (_onderdeel_opslaan_klik) deze
+        # verwijdering niet stilletjes mee.
+        self._te_verwijderen.add(index)
         if self._bewerk_onderdeel_index == index:
             self._reset_onderdeel_form()
         self._ververs_onderdelen()
+
+    def _zet_onderdeel_terug(self, index: int) -> None:
+        self._te_verwijderen.discard(index)
+        self._ververs_onderdelen()
+
+    def _onderdelen_na_verwijderen(self) -> list[ModelOnderdeel]:
+        return [o for i, o in enumerate(self._werk_onderdelen) if i not in self._te_verwijderen]
 
     def _onderdeel_uit_formulier(self) -> ModelOnderdeel:
         huidig_id = ""
@@ -791,7 +872,9 @@ class ModelDetailPage(QWidget):
             # "Model opslaan"). Alleen de onderdelen — nog niet opgeslagen
             # wijzigingen in naam/omschrijving/map/tags blijven op het scherm
             # staan tot "Model opslaan". Een nieuw, nog nooit opgeslagen model
-            # kan dit nog niet: dat blijft tot "Model opslaan".
+            # kan dit nog niet: dat blijft tot "Model opslaan". Gemarkeerde
+            # verwijderingen gaan hier bewust gewoon mee als onderdeel; die
+            # worden pas bij "Model opslaan" echt verwijderd.
             try:
                 self.bibliotheek.bijwerken(replace(self._model(), onderdelen=list(self._werk_onderdelen)))
             except ValueError as exc:
@@ -800,7 +883,7 @@ class ModelDetailPage(QWidget):
                 self._validation_banner.show()
                 return
             self._validation_banner.hide()
-            self._melding.toon(f'Onderdeel "{onderdeel.naam}" opgeslagen', f"in model {self._model().naam}")
+            self._toon_bevestiging(f'Onderdeel "{onderdeel.naam}" opgeslagen')
             self._meld_gewijzigd()
         self._reset_onderdeel_form()
         self._ververs_onderdelen()
@@ -923,6 +1006,7 @@ class ModelDetailPage(QWidget):
         self._in_map.setText(m.map)
         self._in_tags.setText(", ".join(m.tags))
         self._werk_onderdelen = [replace(o) for o in m.onderdelen]
+        self._te_verwijderen = set()
         self._werk_submodellen = [replace(s) for s in m.submodellen]
 
         mappen = sorted({model.map for model in self.bibliotheek.lijst() if model.map})

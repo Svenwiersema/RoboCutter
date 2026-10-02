@@ -1,16 +1,13 @@
 """Visuele demo van de zaagplan-optimalisatie-motor.
 
-Genereert voor alle vier strategieën een PNG op basis van dezelfde
+Genereert voor de drie zaagstrategieën (en de bewaarde CNC-nesting) een PNG op basis van dezelfde
 testcase als de eerdere handgemaakte voorbeelden
 (design/voorbeelden/zaagplan-voorbeeld-v1.pdf en -v2.pdf), zodat de
 algoritme-output visueel te vergelijken is met die eerdere concepten.
 
-Let op: "stroken" en "guillotine" zijn bewust minder efficiënt dan
-"efficient"/"horizontaal" (zie de module-docstring van
-``robocutter.optimalisatie.engine``) en laten voor deze specifieke,
-krap-passende testcase een deel van de onderdelen onplaatsbaar — dat is
-zichtbaar in de gegenereerde PNG's als de "Niet geplaatst"-regel
-onderaan, geen bug.
+Let op: een strategie kan voor deze krap-passende testcase een deel van
+de onderdelen onplaatsbaar laten — dat is zichtbaar in de gegenereerde
+PNG's als de "Niet geplaatst"-regel onderaan, geen bug.
 
 Gebruik: python3 scripts/demo_render.py
 """
@@ -112,14 +109,11 @@ def main():
     out = Path(__file__).resolve().parent.parent / "output"
     out.mkdir(exist_ok=True)
 
-    r1 = genereer_zaagplan(mat, onderdelen, strategie="efficient")
-    render(r1, str(out / "demo_efficient.png"), "Zaagplan — strategie: meest efficiënte plaatsing")
+    r1 = genereer_zaagplan(mat, onderdelen, strategie="cnc")
+    render(r1, str(out / "demo_cnc.png"), "Plaatindeling — CNC-nesting (niet kiesbaar in de app)")
 
     r2 = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
     render(r2, str(out / "demo_rijen.png"), "Zaagplan — strategie: lange zijdes eerst")
-
-    r1b = genereer_zaagplan(mat, onderdelen, strategie="stroken")
-    render(r1b, str(out / "demo_stroken.png"), "Zaagplan — strategie: stroken (vaste strookhoogte)")
 
     r1c = genereer_zaagplan(mat, onderdelen, strategie="guillotine")
     render(r1c, str(out / "demo_guillotine.png"), "Zaagplan — strategie: guillotine (rand-tot-rand sneden)")
@@ -133,7 +127,7 @@ def main():
         Onderdeel(id="ladefront-3-boven", breedte=596, hoogte=180, groep_id="lades-onderkast", groep_volgorde=3),
         Onderdeel(id="zijpaneel-kast", breedte=560, hoogte=720, aantal=2),
     ]
-    r3 = genereer_zaagplan(mat2, onderdelen2, strategie="efficient")
+    r3 = genereer_zaagplan(mat2, onderdelen2, strategie="horizontaal")
     render(r3, str(out / "demo_groepering.png"), "Zaagplan — groep 'lades-onderkast' (vaste volgorde/nerf)")
 
 

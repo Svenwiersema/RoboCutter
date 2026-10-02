@@ -49,7 +49,6 @@ class Materiaal:
     familie: str = ""
     kleur_afwerking: str = ""
     nerfrichting: Nerfrichting = Nerfrichting.GEEN
-    kerf: float = 4.0  # mm
     randafzaag_marge: float = 0.0  # mm
     randafzaag_randen: frozenset[Rand] = field(default_factory=frozenset)
     min_reststukgrootte: float = 0.0  # mm

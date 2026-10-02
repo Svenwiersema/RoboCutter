@@ -17,7 +17,7 @@ from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag, open_verb
 def _materiaal(**overrides) -> Materiaal:
     basis = dict(
         id="", naam="Eiken multiplex 18mm", type=MateriaalType.PLAAT,
-        lengte=2800, breedte=2070, derde_afmeting=18, kerf=4, min_reststukgrootte=300,
+        lengte=2800, breedte=2070, derde_afmeting=18, min_reststukgrootte=300,
         fabriekskantenband_randen=frozenset({Rand.LINKS}),
     )
     basis.update(overrides)
@@ -111,12 +111,12 @@ def test_sqlite_opslag_bewaart_niet_geplaatst_redenen(tmp_path):
             ],
         )
     )
-    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="efficient")
+    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, strategie="horizontaal")
     assert plannen[0].resultaat.niet_geplaatst_redenen
 
     verbinding = open_verbinding(db_pad)
     opslag = ZaagplannenOpslag(verbinding)
-    opslag.opslaan(project.id, plannen, waarschuwingen, "efficient")
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
     verbinding.close()
 
     herstart_verbinding = open_verbinding(db_pad)
@@ -139,11 +139,11 @@ def test_opslaan_overschrijft_het_vorige_zaagplan_van_hetzelfde_project(tmp_path
     plannen, waarschuwingen, project = _project_met_zaagplan()
 
     opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
-    opslag.opslaan(project.id, plannen, waarschuwingen, "efficient")
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
 
     geladen = opslag.laad(project.id)
     assert geladen is not None
-    assert geladen[2] == "efficient"
+    assert geladen[2] == "horizontaal"
     aantal_rijen = verbinding.execute("SELECT COUNT(*) AS n FROM zaagplannen").fetchone()["n"]
     assert aantal_rijen == 1
     verbinding.close()

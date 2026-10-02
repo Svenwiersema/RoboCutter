@@ -38,8 +38,6 @@ def valideer(materiaal: Materiaal) -> list[str]:
         fouten.append("Breedte moet groter dan 0 zijn.")
     if materiaal.derde_afmeting <= 0:
         fouten.append(f"{materiaal.derde_afmeting_label} moet groter dan 0 zijn.")
-    if materiaal.kerf < 0:
-        fouten.append("Kerf/zaagsnede-breedte kan niet negatief zijn.")
     if materiaal.randafzaag_marge < 0:
         fouten.append("Randafzaag-marge kan niet negatief zijn.")
     if materiaal.min_reststukgrootte < 0:
@@ -61,7 +59,6 @@ def _materiaal_matcht_term(materiaal: Materiaal, term: str) -> bool:
             materiaal.lengte,
             materiaal.breedte,
             materiaal.derde_afmeting,
-            materiaal.kerf,
             materiaal.randafzaag_marge,
             materiaal.min_reststukgrootte,
         )

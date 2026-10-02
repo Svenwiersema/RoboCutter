@@ -1,7 +1,7 @@
 """Opties/instellingen-scherm: één simpel formulier voor de app-brede
 instellingen uit ``robocutter.instellingen`` (thema, bedrijfslogo,
-standaard zaagstrategie, werkvoorbereider-naam, opslaglocatie van het
-databasebestand).
+standaard zaagstrategie, zaagsnede-breedte,
+werkvoorbereider-naam, opslaglocatie van het databasebestand).
 
 Op Svens expliciete verzoek zonder HTML-mockup rechtstreeks in PySide6
 gebouwd ("dit moet een simpel ui zijn") — geen sidebar, tabel of drawer
@@ -24,7 +24,10 @@ tabbladen) meteen meewisselt i.p.v. pas na een herstart.
 
 ``standaard zaagstrategie`` heeft, op Svens verzoek, drie
 keuze-opties (``_STRATEGIE_LABEL``/``_STRATEGIE_OMSCHRIJVING``):
-"Efficiënt", "Rijen" en "Guillotine". Dit ging via meerdere
+"Horizontaal" (de standaard), "Verticaal" en "Guillotine". "Efficiënt"
+(later "CNC (nesting)") is eruit gehaald: een CNC heeft geen zaagplan
+nodig — de nesting-code is bewaard in de motor voor een latere
+CNC-upgrade. Dit ging via meerdere
 correctierondes (zie OVERDRACHT.md voor de volledige geschiedenis) —
 met name: Sven corrigeerde zichzelf expliciet dat "efficient" en
 "guillotine" NIET hetzelfde zijn (Guillotine is een écht apart,
@@ -38,9 +41,8 @@ opbrengst) — die twee zijn daarom weer samengevoegd tot alleen
 maar met overal dezelfde vaste strookhoogte), die later weer is
 geschrapt als losse keuze: Sven zag 'm in de praktijk niet gebruikt
 worden en het resultaat verschilt zelden merkbaar van "Rijen" (alleen
-bij sterk uiteenlopende onderdeelhoogtes). De onderliggende heuristiek
-bestaat nog wel en draait nog steeds intern mee binnen "Efficiënt" (zie
-``engine.py``'s module-docstring) — alleen de zichtbare optie is weg.
+bij sterk uiteenlopende onderdeelhoogtes); inmiddels ook uit de motor
+gehaald.
 Alle drie overgebleven opties worden echt uitgevoerd door
 ``robocutter.optimalisatie.engine.genereer_zaagplan`` (zie de
 docstring van die module voor de precieze algoritmes).
@@ -53,8 +55,10 @@ from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QButtonGroup,
     QCheckBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -62,12 +66,14 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from robocutter.instellingen.beheer import InstellingenBeheer, OpslagVerplaatsenError
 from robocutter.instellingen.models import GELDIGE_LABEL_SCANCODES, GELDIGE_THEMAS, GELDIGE_ZAAGSTRATEGIEEN
+from robocutter.ui.icons import icon
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
@@ -79,9 +85,9 @@ _LABEL_SCANCODE_LABEL = {"geen": "Geen", "qr": "QR-code", "barcode": "Barcode"}
 # is een écht apart, strikter algoritme (alleen doorlopende zaagsnedes).
 # "efficient" was juist wel hetzelfde als wat eerder "vrije_plaatsing" heette
 # (vrije plaatsing voor maximale opbrengst) — die twee zijn daarom weer
-# samengevoegd tot alleen "efficient"/"Efficiënt".
+# samengevoegd tot alleen "efficient". Later een CNC-strategie geworden en
+# uit de keuzes gehaald (zie de module-docstring).
 _STRATEGIE_LABEL = {
-    "efficient": "Efficiënt",
     "horizontaal": "Horizontaal",
     "verticaal": "Verticaal",
     "guillotine": "Guillotine",
@@ -90,7 +96,6 @@ _STRATEGIE_LABEL = {
 # robocutter.optimalisatie.engine.genereer_zaagplan — zie de docstring
 # van die module voor de precieze algoritmes per strategie.
 _STRATEGIE_OMSCHRIJVING = {
-    "efficient": "Vrije plaatsing voor maximale materiaalopbrengst (best-fit) bij gemengde afmetingen — dit is de methode die de zaagmotor nu al uitvoert.",
     "horizontaal": "Lange zijdes eerst in rijen over de volle plaatbreedte; de hoofdzaagsnedes lopen horizontaal en elke rij krijgt zijn eigen hoogte op basis van het grootste stuk erin — overzichtelijke zaagvolgorde.",
     "verticaal": "Zoals Horizontaal, maar in kolommen over de volle plaathoogte: de hoofdzaagsnedes lopen verticaal en elke kolom krijgt zijn eigen breedte op basis van het grootste stuk erin.",
     "guillotine": "Uitsluitend doorlopende zaagsnedes van rand tot rand — de gangbare beperking van de meeste paneelzagen.",
@@ -175,6 +180,43 @@ class InstellingenPage(QWidget):
         field.setProperty("role", "field")
         return field
 
+    def _wrap_spin_met_stappen(self, field) -> QFrame:
+        omhoog = QToolButton()
+        omhoog.setProperty("role", "spinStep")
+        omhoog.setIcon(icon("chevron-up", self._theme.text_muted, 9))
+        omhoog.setCursor(Qt.CursorShape.PointingHandCursor)
+        omhoog.setAutoRepeat(True)
+        omhoog.clicked.connect(field.stepUp)
+        omlaag = QToolButton()
+        omlaag.setProperty("role", "spinStep")
+        omlaag.setIcon(icon("chevron-down", self._theme.text_muted, 9))
+        omlaag.setCursor(Qt.CursorShape.PointingHandCursor)
+        omlaag.setAutoRepeat(True)
+        omlaag.clicked.connect(field.stepDown)
+        stap_kolom = QVBoxLayout()
+        stap_kolom.setContentsMargins(0, 0, 0, 0)
+        stap_kolom.setSpacing(0)
+        stap_kolom.addWidget(omhoog)
+        stap_kolom.addWidget(omlaag)
+
+        wrapper = QFrame()
+        wrapper.setProperty("role", "fieldSpinWrap")
+        wrap_layout = QHBoxLayout(wrapper)
+        wrap_layout.setContentsMargins(0, 0, 0, 0)
+        wrap_layout.setSpacing(0)
+        wrap_layout.addWidget(field, 1)
+        wrap_layout.addLayout(stap_kolom)
+        return wrapper
+
+    def _field_spin(self) -> tuple[QFrame, QDoubleSpinBox]:
+        field = QDoubleSpinBox()
+        field.setProperty("role", "fieldSpin")
+        field.setRange(0.0, 100.0)
+        field.setDecimals(1)
+        field.setSingleStep(0.5)
+        field.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        return self._wrap_spin_met_stappen(field), field
+
     def _segmented(self, opties: list[tuple[str, str]], huidig: str) -> tuple[QWidget, QButtonGroup]:
         container = QWidget()
         container.setObjectName("Segmented")
@@ -256,6 +298,24 @@ class InstellingenPage(QWidget):
         self._strategie_group.buttonClicked.connect(
             lambda btn: self._ververs_strategie_hint(btn.property("waarde"))
         )
+
+        # Op Svens verzoek centraal i.p.v. per materiaal: wat het zaagblad
+        # tussen twee onderdelen wegneemt.
+        maten = QHBoxLayout()
+        maten.setSpacing(12)
+        kol = QVBoxLayout()
+        kol.setSpacing(6)
+        kol.addWidget(self._field_label("Zaagsnede-breedte (mm)"))
+        zaag_wrap, self._in_zaagsnede = self._field_spin()
+        self._in_zaagsnede.setValue(instellingen.zaagsnede)
+        kol.addWidget(zaag_wrap)
+        maten.addLayout(kol, 1)
+        maten.addStretch(1)
+        layout.addLayout(maten)
+        maten_hint = QLabel("De ruimte die het zaagblad tussen twee onderdelen wegneemt; geldt voor alle materialen.")
+        maten_hint.setProperty("role", "fieldHint")
+        maten_hint.setWordWrap(True)
+        layout.addWidget(maten_hint)
 
         layout.addWidget(self._field_label("Werkvoorbereider-naam"))
         self._in_werkvoorbereider = self._field_input()
@@ -421,6 +481,7 @@ class InstellingenPage(QWidget):
         try:
             self._beheer.bijwerken(
                 standaard_zaagstrategie=self._strategie_group.checkedButton().property("waarde"),
+                zaagsnede=self._in_zaagsnede.value(),
                 werkvoorbereider_naam=self._in_werkvoorbereider.text().strip(),
                 bedrijfslogo_pad=self._in_logo.text().strip() or None,
             )
