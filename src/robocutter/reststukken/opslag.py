@@ -10,8 +10,11 @@ mogen leven.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
+
+from robocutter.optimalisatie.models import Rand
 
 from robocutter.reststukken.models import Reststuk, ReststukStatus
 
@@ -23,7 +26,10 @@ CREATE TABLE IF NOT EXISTS reststukken (
     breedte REAL NOT NULL,
     herkomst_project TEXT NOT NULL,
     herkomst_model TEXT NOT NULL,
-    status TEXT NOT NULL
+    status TEXT NOT NULL,
+    project_id TEXT NOT NULL DEFAULT '',
+    project_naam TEXT NOT NULL DEFAULT '',
+    fabriekskantenband_randen TEXT NOT NULL DEFAULT '[]'
 )
 """
 
@@ -32,6 +38,12 @@ def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
     verbinding = sqlite3.connect(db_pad)
     verbinding.row_factory = sqlite3.Row
     verbinding.execute(_SCHEMA)
+    # Oudere databases: kolommen voor de reservering door een project
+    # (zaagmotor gebruikt reststukken) bijvoegen.
+    kolommen = {rij["name"] for rij in verbinding.execute("PRAGMA table_info(reststukken)")}
+    for kolom, standaard in (("project_id", "''"), ("project_naam", "''"), ("fabriekskantenband_randen", "'[]'")):
+        if kolom not in kolommen:
+            verbinding.execute(f"ALTER TABLE reststukken ADD COLUMN {kolom} TEXT NOT NULL DEFAULT {standaard}")
     verbinding.commit()
     return verbinding
 
@@ -46,8 +58,9 @@ def opslaan(verbinding: sqlite3.Connection, reststuk: Reststuk) -> None:
         """
         INSERT OR REPLACE INTO reststukken (
             id, materiaal_id, lengte, breedte, herkomst_project,
-            herkomst_model, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            herkomst_model, status, project_id, project_naam,
+            fabriekskantenband_randen
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             reststuk.id,
@@ -57,6 +70,9 @@ def opslaan(verbinding: sqlite3.Connection, reststuk: Reststuk) -> None:
             reststuk.herkomst_project,
             reststuk.herkomst_model,
             reststuk.status.value,
+            reststuk.project_id,
+            reststuk.project_naam,
+            json.dumps(sorted(r.value for r in reststuk.fabriekskantenband_randen)),
         ),
     )
     verbinding.commit()
@@ -76,4 +92,7 @@ def _rij_naar_reststuk(rij: sqlite3.Row) -> Reststuk:
         herkomst_project=rij["herkomst_project"],
         herkomst_model=rij["herkomst_model"],
         status=ReststukStatus(rij["status"]),
+        project_id=rij["project_id"],
+        project_naam=rij["project_naam"],
+        fabriekskantenband_randen=frozenset(Rand(v) for v in json.loads(rij["fabriekskantenband_randen"])),
     )

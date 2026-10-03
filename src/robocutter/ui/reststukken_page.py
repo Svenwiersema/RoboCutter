@@ -50,8 +50,9 @@ from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.opslag_melding import OpslagMelding
+from robocutter.ui.widgets.randen_diagram import RandenDiagram
 
-_KOLOMBREEDTES = [230, 80, 150, 200, 110, 110]
+_KOLOMBREEDTES = [230, 80, 170, 200, 130, 110]
 _SORT_OPTIES = [("naam", "Sorteren op materiaal"), ("type", "Sorteren op type"), ("status", "Sorteren op status")]
 _DRAWER_BREEDTE = 420
 _MATERIAAL_KOLOM_MIN = 200
@@ -137,6 +138,11 @@ class ReststukkenPage(QWidget):
         self._btn_beschikbaar = self._sidebar_item("recycle", "Beschikbaar")
         self._btn_beschikbaar.clicked.connect(lambda: self._zet_status_filter(ReststukStatus.BESCHIKBAAR))
         layout.addWidget(self._btn_beschikbaar)
+        # Gereserveerd: door de zaagmotor in het zaagplan van een project
+        # gebruikt, nog niet gezaagd (zie projecten/zaagplannen.py).
+        self._btn_gereserveerd = self._sidebar_item("folder", "Gereserveerd")
+        self._btn_gereserveerd.clicked.connect(lambda: self._zet_status_filter(ReststukStatus.GERESERVEERD))
+        layout.addWidget(self._btn_gereserveerd)
         self._btn_gebruikt = self._sidebar_item("archive", "Gebruikt")
         self._btn_gebruikt.clicked.connect(lambda: self._zet_status_filter(ReststukStatus.GEBRUIKT))
         layout.addWidget(self._btn_gebruikt)
@@ -325,6 +331,11 @@ class ReststukkenPage(QWidget):
         self._familie_filter = None if self._familie_filter == familie else familie
         self._ververs_alles()
 
+    def ververs(self) -> None:
+        """Publiek aanknooppunt voor main_window.py, bv. nadat een project
+        zijn reststukken naar deze bibliotheek heeft vrijgegeven."""
+        self._ververs_alles()
+
     # ------------------------------------------------------------------
     # Verversen (in-place, geen volledige herbouw — behoudt focus/scroll)
     # ------------------------------------------------------------------
@@ -340,6 +351,13 @@ class ReststukkenPage(QWidget):
         balk_count = sum(1 for r in alles if self.bibliotheek.materiaal_van(r).type == MateriaalType.BALK)
 
         self._btn_beschikbaar.setStyleSheet(self._sidebar_actief_stylesheet(self._status_filter == ReststukStatus.BESCHIKBAAR))
+        gereserveerd_count = sum(1 for r in alles if r.status == ReststukStatus.GERESERVEERD)
+        self._btn_gereserveerd.setStyleSheet(
+            self._sidebar_actief_stylesheet(self._status_filter == ReststukStatus.GERESERVEERD)
+        )
+        self._btn_gereserveerd.setText(
+            f"  Gereserveerd   ·   {gereserveerd_count}" if gereserveerd_count else "  Gereserveerd"
+        )
         self._btn_gebruikt.setStyleSheet(self._sidebar_actief_stylesheet(self._status_filter == ReststukStatus.GEBRUIKT))
         self._btn_gebruikt.setText(f"  Gebruikt   ·   {gebruikt_count}" if gebruikt_count else "  Gebruikt")
 
@@ -358,7 +376,7 @@ class ReststukkenPage(QWidget):
             )
 
         self._page_sub.setText(
-            f"{len(alles)} reststukken · {beschikbaar_count} beschikbaar · {gebruikt_count} gebruikt · "
+            f"{len(alles)} reststukken · {beschikbaar_count} beschikbaar · {gereserveerd_count} gereserveerd · {gebruikt_count} gebruikt · "
             f"{plaat_count} platen · {balk_count} balken"
         )
 
@@ -479,12 +497,19 @@ class ReststukkenPage(QWidget):
 
     def _cel_afmetingen(self, r: Reststuk, m) -> QWidget:
         cell = QWidget()
-        layout = QHBoxLayout(cell)
+        layout = QVBoxLayout(cell)
         layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(1)
+        layout.addStretch(1)
         tekst = f"{r.lengte:g} × {r.breedte:g} × {m.derde_afmeting:g} mm"
         label = QLabel(tekst)
         label.setProperty("role", "dims")
         layout.addWidget(label)
+        if r.fabriekskantenband_randen:
+            randen = QLabel("fabrieksrand " + "/".join(sorted(x.value for x in r.fabriekskantenband_randen)))
+            randen.setProperty("role", "matMeta")
+            layout.addWidget(randen)
+        layout.addStretch(1)
         return cell
 
     def _cel_herkomst(self, r: Reststuk) -> QWidget:
@@ -499,6 +524,8 @@ class ReststukkenPage(QWidget):
         return cell
 
     def _cel_status(self, r: Reststuk) -> QWidget:
+        if r.status == ReststukStatus.GERESERVEERD:
+            return self._cel_gereserveerd(r)
         is_gebruikt = r.status == ReststukStatus.GEBRUIKT
         chip = QFrame()
         chip.setProperty("chip", "archived" if is_gebruikt else "done")
@@ -514,6 +541,28 @@ class ReststukkenPage(QWidget):
         layout.addWidget(text)
 
         wrapper = QWidget()
+        wrapper_layout = QHBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(4, 4, 4, 4)
+        wrapper_layout.addWidget(chip)
+        wrapper_layout.addStretch(1)
+        return wrapper
+
+    def _cel_gereserveerd(self, r: Reststuk) -> QWidget:
+        chip = QFrame()
+        chip.setProperty("chip", "install")
+        layout = QHBoxLayout(chip)
+        layout.setContentsMargins(9, 3, 9, 3)
+        layout.setSpacing(6)
+        dot = QLabel()
+        dot.setFixedSize(7, 7)
+        dot.setStyleSheet(f"background: {self._theme.indigo}; border-radius: 3px;")
+        layout.addWidget(dot)
+        layout.addWidget(QLabel("Gereserveerd"))
+
+        wrapper = QWidget()
+        # Projectnaam als tooltip: de statuskolom is te smal voor beide.
+        if r.project_naam:
+            wrapper.setToolTip(f"Gereserveerd voor project {r.project_naam}")
         wrapper_layout = QHBoxLayout(wrapper)
         wrapper_layout.setContentsMargins(4, 4, 4, 4)
         wrapper_layout.addWidget(chip)
@@ -797,7 +846,20 @@ class ReststukkenPage(QWidget):
         kol2.addWidget(breedte_wrap)
         rij.addLayout(kol2)
         section.addLayout(rij)
+
+        # Welke randen nog de fabriekskantenband van de plaat hebben (wordt
+        # bij reststukken uit een project automatisch ingevuld).
+        section.addWidget(self._field_label("Fabriekskantenband op"))
+        self._kanten_rand_diagram = RandenDiagram(self._theme)
+        section.addWidget(self._kanten_rand_diagram)
+        self._in_lengte.valueChanged.connect(self._update_rand_diagram)
+        self._in_breedte.valueChanged.connect(self._update_rand_diagram)
         return section
+
+    def _update_rand_diagram(self) -> None:
+        lengte, breedte = self._in_lengte.value(), self._in_breedte.value()
+        if lengte > 0 and breedte > 0:
+            self._kanten_rand_diagram.set_afmetingen(lengte, breedte)
 
     def _update_materiaal_info(self) -> None:
         materiaal_id = self._in_materiaal.currentData()
@@ -830,6 +892,7 @@ class ReststukkenPage(QWidget):
         self._in_herkomst_model.clear()
         self._in_lengte.setValue(0)
         self._in_breedte.setValue(0)
+        self._kanten_rand_diagram.set_geselecteerde_randen(frozenset())
         self._update_materiaal_info()
         self._validation_banner.hide()
 
@@ -848,9 +911,16 @@ class ReststukkenPage(QWidget):
             self._in_breedte.setValue(r.breedte)
             self._in_herkomst_project.setText(r.herkomst_project)
             self._in_herkomst_model.setText(r.herkomst_model)
+            self._kanten_rand_diagram.set_geselecteerde_randen(r.fabriekskantenband_randen)
 
-            is_gebruikt = r.status == ReststukStatus.GEBRUIKT
-            self._status_chip_label.setText("Gebruikt" if is_gebruikt else "Beschikbaar")
+            is_gebruikt = r.status != ReststukStatus.BESCHIKBAAR
+            self._status_chip_label.setText(
+                {
+                    ReststukStatus.BESCHIKBAAR: "Beschikbaar",
+                    ReststukStatus.GERESERVEERD: f"Gereserveerd · {r.project_naam}" if r.project_naam else "Gereserveerd",
+                    ReststukStatus.GEBRUIKT: "Gebruikt",
+                }[r.status]
+            )
             self._status_toggle_btn.setText("Zet terug op beschikbaar" if is_gebruikt else "Markeer als gebruikt")
             if is_gebruikt:
                 self._status_toggle_action = lambda: (self._zet_beschikbaar(r.id), self._sluit_drawer())
@@ -875,6 +945,7 @@ class ReststukkenPage(QWidget):
             breedte=self._in_breedte.value(),
             herkomst_project=self._in_herkomst_project.text().strip(),
             herkomst_model=self._in_herkomst_model.text().strip(),
+            fabriekskantenband_randen=self._kanten_rand_diagram.geselecteerde_randen(),
         )
 
         fouten = valideer(kandidaat, self.materialen)
@@ -884,7 +955,9 @@ class ReststukkenPage(QWidget):
             return
 
         if self._bewerk_id:
-            kandidaat.status = self.bibliotheek.ophalen(self._bewerk_id).status
+            bestaand = self.bibliotheek.ophalen(self._bewerk_id)
+            kandidaat.status = bestaand.status
+            kandidaat.project_id, kandidaat.project_naam = bestaand.project_id, bestaand.project_naam
             self.bibliotheek.bijwerken(kandidaat)
         else:
             self.bibliotheek.toevoegen(kandidaat)

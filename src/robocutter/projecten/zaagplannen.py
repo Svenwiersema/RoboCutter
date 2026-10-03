@@ -10,6 +10,19 @@ te kunnen tonen ("Plaat 2 van 3"). Onderdelen die zelfs op een lege plaat
 niet passen (te groot voor het materiaal) komen terecht in
 ``ZaagplanResultaat.niet_geplaatst`` van de laatste plaat.
 
+Reststukken eerst (op Svens verzoek: de motor "hoort eerst reststukken te
+controleren voordat hij volle platen pakt"): krijgt deze module
+``reststukken`` uit de Reststukkenbibliotheek mee, dan probeert hij per
+materiaal eerst die stukken, kleinste eerst (zo blijven grote reststukken
+over voor grote onderdelen), zonder randafzaag (een reststuk is al recht
+gezaagd). Onderdelen met een fabriekskantenband-eis (en hun groep) gaan
+alleen op een reststuk dat zelf nog een fabrieksrand heeft
+(``Reststuk.fabriekskantenband_randen``). Elk reststuk waar iets op past
+wordt een eigen
+``PlaatZaagplan`` met ``reststuk_id``; wat overblijft gaat naar volle
+platen. Het reserveren in de bibliotheek doet de aanroeper (zie
+``ReststukkenBibliotheek.wijs_toe_aan_project``).
+
 Geen persistentie/revisiegeschiedenis hier: dat is expliciet uitgesteld
 (zie OVERDRACHT.md, "Nog niet gebouwd") zolang de motor zelf nog actief
 bijgeschaafd wordt — een gegenereerd zaagplan leeft alleen in het
@@ -20,16 +33,22 @@ geheugen van het scherm dat het opvraagt, en wordt bij elke klik op
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.modellen.models import Nerfrichting, Rand
-from robocutter.optimalisatie.engine import genereer_zaagplannen, schat_aantal_platen
+from robocutter.optimalisatie.engine import (
+    _onderdelen_voor_niet_geplaatst,
+    genereer_zaagplan,
+    genereer_zaagplannen,
+    schat_aantal_platen,
+)
 from robocutter.optimalisatie.models import Materiaal as OptMateriaal
 from robocutter.optimalisatie.models import Onderdeel as OptOnderdeel
 from robocutter.optimalisatie.models import ZaagplanResultaat
 from robocutter.projecten.models import Project
 from robocutter.projecten.zaaglijst import ZaaglijstRegel, bouw_zaaglijst
+from robocutter.reststukken.models import Reststuk
 
 __all__ = ["OnderdeelInfo", "PlaatZaagplan", "ZaagplanVoortgang", "genereer_zaagplannen_voor_project"]
 
@@ -66,6 +85,13 @@ class PlaatZaagplan:
     plaat_nummer: int = 1
     platen_totaal: int = 1
     onderdeel_info: dict[str, OnderdeelInfo] = field(default_factory=dict)
+    # Gezaagd uit dit reststuk uit de Reststukkenbibliotheek i.p.v. een
+    # volle plaat; plaat_nummer/platen_totaal tellen dan de reststukken.
+    reststuk_id: str | None = None
+
+    @property
+    def is_reststuk(self) -> bool:
+        return self.reststuk_id is not None
 
     def naam_voor(self, onderdeel_of_unit_id: str) -> str:
         """Zoekt de leesbare naam op voor een ``Plaatsing.onderdeel_id``
@@ -136,7 +162,8 @@ def genereer_zaagplannen_voor_project(
     zoek_tijdsbudget: float = 0.0,
     min_zoek_tijdsbudget: float = 0.0,
     voortgang: Callable[[ZaagplanVoortgang], None] | None = None,
-    zaagsnede: float = 4.0,
+    zaagsnede: float = 3.0,
+    reststukken: list[Reststuk] | None = None,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -157,7 +184,10 @@ def genereer_zaagplannen_voor_project(
         ``ZaagplanVoortgang`` krijgt (vanaf de thread waarop deze functie
         draait).
     :param zaagsnede: zaagsnede-breedte (mm) uit de instellingen (op Svens
-        verzoek niet meer per materiaal) — wordt de ``kerf`` van de motor."""
+        verzoek niet meer per materiaal) — wordt de ``kerf`` van de motor.
+    :param reststukken: reststukken die vóór volle platen geprobeerd worden
+        (zie de module-docstring); alleen die met hetzelfde ``materiaal_id``
+        tellen per materiaal."""
 
     per_materiaal: dict[str, list[ZaaglijstRegel]] = {}
     for regel in bouw_zaaglijst(project):
@@ -228,9 +258,61 @@ def genereer_zaagplannen_voor_project(
                 )
             )
 
+        # Onderdelen met een fabriekskantenband-eis (en hun hele groep)
+        # mogen alleen op een reststuk dat nog een fabrieksrand heeft —
+        # zonder fabrieksrand negeert de motor die eis anders stilletjes.
+        fabriek_groepen = {o.groep_id for o in opt_onderdelen if o.groep_id and o.fabriekskantenband_vereist}
+
+        def vraagt_fabrieksrand(o: OptOnderdeel) -> bool:
+            return o.fabriekskantenband_vereist or bool(o.groep_id and o.groep_id in fabriek_groepen)
+
+        resterend = list(opt_onderdelen)
+        rest_plannen: list[PlaatZaagplan] = []
+        eigen_reststukken = sorted(
+            (r for r in (reststukken or []) if r.materiaal_id == materiaal_id and r.lengte > 0 and r.breedte > 0),
+            key=lambda r: (r.lengte * r.breedte, r.id),
+        )
+        for reststuk in eigen_reststukken:
+            if not resterend:
+                break
+            rest_materiaal = replace(
+                opt_materiaal,
+                lengte=reststuk.lengte,
+                breedte=reststuk.breedte,
+                randafzaag_marge=0.0,
+                randafzaag_randen=frozenset(),
+                fabriekskantenband_randen=reststuk.fabriekskantenband_randen,
+            )
+            if reststuk.fabriekskantenband_randen:
+                proberen, overslaan = resterend, []
+            else:
+                proberen = [o for o in resterend if not vraagt_fabrieksrand(o)]
+                overslaan = [o for o in resterend if vraagt_fabrieksrand(o)]
+            if not proberen:
+                continue
+            resultaat = genereer_zaagplan(rest_materiaal, proberen, strategie=strategie)
+            if not resultaat.plaatsingen:
+                continue
+            resterend = overslaan + _onderdelen_voor_niet_geplaatst(proberen, resultaat.niet_geplaatst)
+            rest_plannen.append(
+                PlaatZaagplan(
+                    materiaal_id=materiaal_id,
+                    materiaal_naam=opt_materiaal.naam,
+                    resultaat=replace(resultaat, niet_geplaatst=[], niet_geplaatst_redenen={}),
+                    onderdeel_info=onderdeel_info,
+                    reststuk_id=reststuk.id,
+                )
+            )
+        for i, plan in enumerate(rest_plannen, start=1):
+            plan.plaat_nummer, plan.platen_totaal = i, len(rest_plannen)
+        plannen.extend(rest_plannen)
+        if not resterend:
+            platen_per_materiaal[index] = 0
+            continue
+
         resultaten = genereer_zaagplannen(
             opt_materiaal,
-            opt_onderdelen,
+            resterend,
             strategie=strategie,
             zoek_tijdsbudget=zoek_tijdsbudget,
             min_zoek_tijdsbudget=min_zoek_tijdsbudget,

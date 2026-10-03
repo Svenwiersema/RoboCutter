@@ -66,19 +66,27 @@ class ZaagplaatWidget(QWidget):
         ox = pad + (beschikbaar_w - plaat_w) / 2
         oy = pad + (beschikbaar_h - plaat_h) / 2
 
+        # De motor legt y=0 aan de rand ONDER (zie engine._werkgebied), dus
+        # y loopt hier omhoog: "onder" staat zo ook echt onderaan, net als in
+        # de randtekening bij materialen/onderdelen (op Svens verzoek; vroeger
+        # stond y=0 bovenaan en lag een onderdeel met kantenband onder
+        # getekend tegen de bovenrand).
         def px(x_mm: float, y_mm: float) -> QPointF:
-            return QPointF(ox + x_mm * schaal, oy + y_mm * schaal)
+            return QPointF(ox + x_mm * schaal, oy + (mat.breedte - y_mm) * schaal)
+
+        def rect_mm(x: float, y: float, b: float, h: float) -> QRectF:
+            return QRectF(px(x, y), px(x + b, y + h)).normalized()
 
         # Plaatrand.
         painter.setPen(QPen(QColor(t.text), 2))
         painter.setBrush(QColor(t.surface))
-        painter.drawRect(QRectF(px(0, 0), px(mat.lengte, mat.breedte)))
+        painter.drawRect(rect_mm(0, 0, mat.lengte, mat.breedte))
 
         # Reststukken (herbruikbaar).
         rest_pen = QPen(QColor(t.success), 2)
         rest_brush = QColor(t.success_soft)
         for r in self._resultaat.reststukken:
-            rect = QRectF(px(r.x, r.y), px(r.x + r.breedte, r.y + r.hoogte))
+            rect = rect_mm(r.x, r.y, r.breedte, r.hoogte)
             painter.setPen(rest_pen)
             painter.setBrush(rest_brush)
             painter.drawRoundedRect(rect, 4, 4)
@@ -88,7 +96,7 @@ class ZaagplaatWidget(QWidget):
         piece_pen = QPen(QColor(t.accent), 2)
         piece_brush = QColor(t.accent_soft)
         for i, p in enumerate(self._resultaat.plaatsingen, start=1):
-            rect = QRectF(px(p.x, p.y), px(p.x + p.breedte, p.y + p.hoogte))
+            rect = rect_mm(p.x, p.y, p.breedte, p.hoogte)
             painter.setPen(piece_pen)
             painter.setBrush(piece_brush)
             painter.drawRoundedRect(rect, 4, 4)
@@ -112,9 +120,9 @@ class ZaagplaatWidget(QWidget):
             elif rand == Rand.RECHTS:
                 painter.drawLine(px(mat.lengte, 0), px(mat.lengte, mat.breedte))
             elif rand == Rand.ONDER:
-                painter.drawLine(px(0, mat.breedte), px(mat.lengte, mat.breedte))
-            else:  # BOVEN
                 painter.drawLine(px(0, 0), px(mat.lengte, 0))
+            else:  # BOVEN
+                painter.drawLine(px(0, mat.breedte), px(mat.lengte, mat.breedte))
 
         # Zaagsnedes.
         painter.setPen(QPen(QColor(t.critical), 2.5, Qt.PenStyle.DashLine))

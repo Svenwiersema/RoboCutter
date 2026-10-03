@@ -8,14 +8,15 @@ staan, en worden ze bij sluiten ook echt vernietigd i.p.v. voor altijd
 in leven te blijven (zie ``main_window.py``).
 
 Zijbalk (216px, zelfde opzet als ``materialen_page.py``/
-``projecten_page.py``) met vijf secties: Overzicht/Samenstelling/
-Zaaglijst, en onder een "Documenten"-scheiding Labels/Zaagplannen. Beide
+``projecten_page.py``) met zes secties: Overzicht/Samenstelling/
+Zaaglijst, en onder een "Documenten"-scheiding Labels/Zaagplannen/
+Reststukken (dat laatste: zie ``projecten/project_reststukken.py``). Beide
 zijn inmiddels echt (geen placeholder meer): Zaagplannen genereert en
 bewaart een zaagplan per project (``genereer_zaagplannen_voor_project``/
 ``ZaagplannenOpslag``), en Labels (hoofdstuk 6) leidt daar op zijn beurt
 één label per fysiek geplaatst onderdeel-exemplaar uit af
 (``robocutter.projecten.labels.genereer_labels_voor_project``) — dus
-altijd "genereer eerst een zaagplan" zolang er nog geen is. De vijf
+altijd "genereer eerst een zaagplan" zolang er nog geen is. De zes
 panelen zitten in een ``QStackedWidget`` onder een gedeelde projectkop
 (breadcrumb, titel + statuschip, klant-/opdracht-/opleverdatum,
 archiveerknop).
@@ -56,8 +57,8 @@ from dataclasses import replace
 from datetime import date
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QStringListModel, QThread, QTimer, Signal
-from PySide6.QtGui import QTransform
+from PySide6.QtCore import QRectF, QSize, Qt, QStringListModel, QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QDoubleValidator, QPainter, QTransform
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
@@ -89,7 +90,7 @@ from robocutter.instellingen.models import GELDIGE_ZAAGSTRATEGIEEN
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.materialen.models import MateriaalStatus
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
-from robocutter.modellen.models import ModelOnderdeel, Nerfrichting
+from robocutter.modellen.models import ModelOnderdeel, Nerfrichting, Rand
 from robocutter.projecten.bibliotheek import (
     OnbekendModelError,
     OngeldigeStatusOvergangError,
@@ -98,9 +99,18 @@ from robocutter.projecten.bibliotheek import (
 )
 from robocutter.projecten.labels import OnderdeelLabel, genereer_labels_voor_project
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
+from robocutter.projecten.project_reststukken import (
+    AlVrijgegevenError,
+    ProjectNietAfgerondError,
+    ProjectReststuk,
+    ProjectReststukBron,
+    ProjectReststukkenBibliotheek,
+    ProjectReststukStatus,
+)
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
 from robocutter.projecten.zaagplannen import PlaatZaagplan, ZaagplanVoortgang, genereer_zaagplannen_voor_project
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
+from robocutter.reststukken.models import Reststuk
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.label_pdf import schrijf_labels_pdf
 from robocutter.ui.theme import Theme
@@ -124,7 +134,13 @@ _PANEEL_ITEMS = [("overzicht", "user", "Overzicht"), ("samenstelling", "layers",
 # Beide "Documenten"-items zijn inmiddels echt: Zaagplannen sinds de
 # vorige stap, Labels sinds deze stap (zie _build_labels_paneel) — allebei
 # leunen op een gegenereerd zaagplan van dit project.
-_DOC_ITEMS = [("labels", "tag", "Labels", False), ("zaagplannen", "document", "Zaagplannen", False)]
+# Reststukken: de tijdelijke reststukkenlijst van dit project (zie
+# projecten/project_reststukken.py), ook afgeleid van het zaagplan.
+_DOC_ITEMS = [
+    ("labels", "tag", "Labels", False),
+    ("zaagplannen", "document", "Zaagplannen", False),
+    ("reststukken", "recycle", "Reststukken", False),
+]
 _STRATEGIE_LABEL = {
     "horizontaal": "Horizontaal",
     "verticaal": "Verticaal",
@@ -214,11 +230,20 @@ class _ZaagplanWorker(QThread):
     _aantal_actief = 0
     _oorspronkelijk_interval = sys.getswitchinterval()
 
-    def __init__(self, project: Project, materialen: MaterialenBibliotheek, strategie: str, parent=None) -> None:
+    def __init__(
+        self,
+        project: Project,
+        materialen: MaterialenBibliotheek,
+        strategie: str,
+        reststukken: list[Reststuk],
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._project = project
         self._materialen = materialen
         self._strategie = strategie
+        # Losse kopieën: de bibliotheek kan intussen op de UI-thread wijzigen.
+        self._reststukken = [replace(r) for r in reststukken]
         # Hier (op de UI-thread) uitlezen, niet in run().
         instellingen = InstellingenBeheer().huidige
         self._zaagsnede = instellingen.zaagsnede
@@ -239,6 +264,7 @@ class _ZaagplanWorker(QThread):
                 min_zoek_tijdsbudget=_MIN_ZOEK_TIJDSBUDGET_SECONDEN,
                 voortgang=self.voortgang.emit,
                 zaagsnede=self._zaagsnede,
+                reststukken=self._reststukken,
             )
         finally:
             with cls._slot:
@@ -246,6 +272,98 @@ class _ZaagplanWorker(QThread):
                 if cls._aantal_actief == 0:
                     sys.setswitchinterval(cls._oorspronkelijk_interval)
         self.klaar.emit(plannen, waarschuwingen)
+
+
+class _Schakelaar(QWidget):
+    """Kleine aan/uit-schakelaar voor "Bewaren" in het Reststukken-paneel.
+    Zelf getekend: een gestylede QCheckBox oogt in dit thema niet als een
+    schakelaar, en een QPushButton als container klapt in (zie CLAUDE.md)."""
+
+    omgezet = Signal(bool)
+
+    def __init__(self, aan: bool, theme: Theme, actief: bool = True, parent=None) -> None:
+        super().__init__(parent)
+        self._aan = aan
+        self._theme = theme
+        self._actief = actief
+        self.setFixedSize(34, 20)
+        if actief:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Gaat naar de bibliotheek" if aan else "Gaat niet naar de bibliotheek")
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._actief and event.button() == Qt.MouseButton.LeftButton:
+            self._aan = not self._aan
+            self.update()
+            self.omgezet.emit(self._aan)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setOpacity(1.0 if self._actief else 0.5)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(self._theme.success if self._aan else self._theme.border))
+        p.drawRoundedRect(QRectF(0, 0, 34, 20), 10, 10)
+        p.setBrush(QColor(self._theme.surface))
+        p.drawEllipse(QRectF(16 if self._aan else 2, 2, 16, 16))
+
+
+class _MiniPlaat(QWidget):
+    """Kleine plaattekening: waar het reststuk op zijn plaat zat (zelfde
+    oriëntatie als ``ZaagplaatWidget``: y=0 = rand ONDER, onderaan). Handmatig toegevoegde stukken
+    hebben geen plaat: stippelrand met een stuk in het midden."""
+
+    BREEDTE = 54
+
+    def __init__(self, item: ProjectReststuk, theme: Theme, aan: bool, parent=None) -> None:
+        super().__init__(parent)
+        self._item = item
+        self._theme = theme
+        self._aan = aan
+        if item.plaat_lengte > 0 and item.plaat_breedte > 0:
+            hoogte = max(14, round(self.BREEDTE * item.plaat_breedte / item.plaat_lengte))
+        else:
+            hoogte = 27
+        self.setFixedSize(self.BREEDTE, hoogte)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        pen = p.pen()
+        pen.setColor(QColor(self._theme.border))
+        if self._item.plaat_nummer is None:
+            pen.setStyle(Qt.PenStyle.DashLine)
+        p.setPen(pen)
+        p.setBrush(QColor(self._theme.surface_2))
+        p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 2, 2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(self._theme.success if self._aan else self._theme.text_faint))
+        it = self._item
+        if it.plaat_nummer is None or it.plaat_lengte <= 0:
+            p.drawRect(QRectF(w / 2 - 9, h / 2 - 5, 18, 10))
+            return
+        sx, sy = w / it.plaat_lengte, h / it.plaat_breedte
+        lengte = it.oorspronkelijke_lengte or it.lengte
+        breedte = it.oorspronkelijke_breedte or it.breedte
+        rect_h = max(2.0, breedte * sy)
+        rect = QRectF(it.x * sx, h - it.y * sy - rect_h, max(2.0, lengte * sx), rect_h)
+        p.drawRect(rect)
+        # Fabrieksranden van het reststuk als dikke lijn.
+        if it.fabriekskantenband_randen:
+            pen = p.pen()
+            pen.setStyle(Qt.PenStyle.SolidLine)
+            pen.setColor(QColor(self._theme.accent))
+            pen.setWidthF(2.0)
+            p.setPen(pen)
+            lijnen = {
+                Rand.LINKS: (rect.topLeft(), rect.bottomLeft()),
+                Rand.RECHTS: (rect.topRight(), rect.bottomRight()),
+                Rand.ONDER: (rect.bottomLeft(), rect.bottomRight()),
+                Rand.BOVEN: (rect.topLeft(), rect.topRight()),
+            }
+            for rand in it.fabriekskantenband_randen:
+                p.drawLine(*lijnen[rand])
 
 
 class _ZaagplanSpinner(QLabel):
@@ -282,10 +400,12 @@ class ProjectDetailPage(QWidget):
         modellen: ModellenBibliotheek,
         materialen: MaterialenBibliotheek,
         zaagplannen_opslag: ZaagplannenOpslag,
+        project_reststukken: ProjectReststukkenBibliotheek,
         theme: Theme,
         on_gewijzigd: Callable[[], None] | None = None,
         on_open_projecten_tab: Callable[[], None] | None = None,
         on_open_modelkopie: Callable[[str, str], None] | None = None,
+        on_reststukken_gewijzigd: Callable[[], None] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -295,6 +415,9 @@ class ProjectDetailPage(QWidget):
         self._modellen = modellen
         self._materialen = materialen
         self._zaagplannen_opslag = zaagplannen_opslag
+        self._project_reststukken = project_reststukken
+        # Na vrijgeven of reserveren: Reststukkenbibliotheek-scherm verversen.
+        self._on_reststukken_gewijzigd = on_reststukken_gewijzigd
         self._theme = theme
         self._melding = OpslagMelding(self, theme)
         self._on_gewijzigd = on_gewijzigd
@@ -305,6 +428,15 @@ class ProjectDetailPage(QWidget):
         self._bewerk_los_onderdeel_id: str | None = None
         self._model_naam_naar_id: dict[str, str] = {}
         self._instanties_uitgeklapt: set[str] = set()
+        # Reststukken-paneel: welk reststuk staat in "afmeting aanpassen",
+        # en staat de "reststuk toevoegen"-regel open.
+        self._rs_bewerk_id: str | None = None
+        self._rs_toevoegen_open = False
+        self._rs_melding_timer = QTimer(self)
+        self._rs_melding_timer.setSingleShot(True)
+        self._rs_melding_timer.timeout.connect(self._rs_verberg_melding)
+        self._rs_melding: QLabel | None = None
+        self._rs_melding_tekst = ""
         # Een eerder gegenereerd zaagplan van dít project herladen (zie
         # zaagplannen_opslag.py) i.p.v. altijd leeg te beginnen — op Svens
         # verzoek ("zorg er ook voor dat zaagplannen binnen een project
@@ -448,6 +580,10 @@ class ProjectDetailPage(QWidget):
         if key == self._actief_paneel:
             return
         self._actief_paneel = key
+        if key == "reststukken":
+            # De projectstatus kan intussen elders (Overzicht, Dashboard)
+            # gewijzigd zijn — die bepaalt of vrijgeven kan.
+            self._ververs_reststukken_paneel()
         self._activeer_stack_paneel(key)
 
     def _activeer_stack_paneel(self, key: str) -> None:
@@ -493,6 +629,7 @@ class ProjectDetailPage(QWidget):
             "zaaglijst": self._build_zaaglijst_paneel(),
             "labels": self._build_labels_paneel(),
             "zaagplannen": self._build_zaagplannen_paneel(),
+            "reststukken": self._build_reststukken_paneel(),
         }
         for widget in self._paneel_widgets.values():
             self._stack.addWidget(widget)
@@ -1693,6 +1830,578 @@ class ProjectDetailPage(QWidget):
         schrijf_labels_pdf(pad, project=self._project(), labels=labels, instellingen=InstellingenBeheer().huidige)
 
     # ------------------------------------------------------------------
+    # Paneel: Reststukken (tijdelijke reststukkenlijst van dit project)
+    # ------------------------------------------------------------------
+    # Mockup: design/assets/mockups/project-reststukken-concept.html. Elke
+    # wijziging (bewaren, reden, afmeting, toevoegen) gaat meteen de opslag
+    # in — er wordt niets verwijderd, alles is terug te zetten — met een
+    # groene regel in de voettekst van de kaart.
+    def _build_reststukken_paneel(self) -> QWidget:
+        panel = QWidget()
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(14)
+        self._rs_content = QVBoxLayout()
+        self._rs_content.setSpacing(14)
+        outer.addLayout(self._rs_content)
+        # Anders rekt de kaart uit tot de paneelhoogte en zakt de voettekst weg.
+        outer.addStretch(1)
+        return panel
+
+    def _ververs_reststukken_paneel(self) -> None:
+        _clear_layout(self._rs_content)
+        self._rs_melding = None
+        # Een zaagplan van vóór dit paneel bestond: reststukken alsnog
+        # overnemen zodra de lijst nog leeg is.
+        if (
+            self._zaagplannen
+            and not self._project_reststukken.lijst(self._project_id)
+            and not self._project_reststukken.is_vrijgegeven(self._project_id)
+        ):
+            self._project_reststukken.overnemen_uit_zaagplan(self._project_id, self._zaagplannen)
+
+        items = self._project_reststukken.lijst(self._project_id)
+        if not self._zaagplannen and not items and not self._rs_toevoegen_open:
+            self._rs_content.addWidget(
+                self._build_placeholder_paneel(
+                    icon_naam="recycle",
+                    tag_tekst="Nog geen zaagplan",
+                    titel="Nog geen reststukken",
+                    tekst=(
+                        "De reststukken van dit project komen uit het zaagplan. Genereer eerst "
+                        "een zaagplan bij Zaagplannen, daarna kun je ze hier aanpassen, "
+                        "hergebruiken of afschrijven en bij Afgerond vrijgeven naar de "
+                        "Reststukkenbibliotheek."
+                    ),
+                )
+            )
+            return
+
+        project = self._project()
+        vrijgegeven = self._project_reststukken.is_vrijgegeven(self._project_id)
+        afgerond = project.status == ProjectStatus.AFGEROND
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(10)
+        titel_kolom = QVBoxLayout()
+        titel_kolom.setSpacing(2)
+        titel = QLabel("Reststukken")
+        titel.setProperty("role", "matName")
+        titel_kolom.addWidget(titel)
+        sub = QLabel(
+            "De reststukken die dit project oplevert, los van de Reststukkenbibliotheek: "
+            "aan te passen, te hergebruiken of af te schrijven."
+        )
+        sub.setProperty("role", "matMeta")
+        sub.setWordWrap(True)
+        titel_kolom.addWidget(sub)
+        toolbar.addLayout(titel_kolom, 1)
+        toevoegen_btn = QPushButton("  Reststuk toevoegen")
+        toevoegen_btn.setProperty("role", "ghost")
+        toevoegen_btn.setIcon(icon("plus", self._theme.text, 13))
+        toevoegen_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        toevoegen_btn.setEnabled(not vrijgegeven)
+        toevoegen_btn.clicked.connect(self._rs_open_toevoegen)
+        toolbar.addWidget(toevoegen_btn, 0, Qt.AlignmentFlag.AlignTop)
+        vrijgeven_btn = QPushButton("  Vrijgeven naar bibliotheek")
+        vrijgeven_btn.setProperty("role", "primary")
+        vrijgeven_btn.setIcon(icon("recycle", "#12141B", 13))
+        vrijgeven_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        vrijgeven_btn.setEnabled(afgerond and not vrijgegeven)
+        if vrijgegeven:
+            vrijgeven_btn.setToolTip("Al vrijgegeven")
+        elif not afgerond:
+            vrijgeven_btn.setToolTip("Kan pas als het project Afgerond is")
+        vrijgeven_btn.clicked.connect(self._rs_vrijgeven)
+        toolbar.addWidget(vrijgeven_btn, 0, Qt.AlignmentFlag.AlignTop)
+        self._rs_content.addLayout(toolbar)
+
+        bewaren = sum(1 for r in items if r.status == ProjectReststukStatus.BEWAREN)
+        if vrijgegeven:
+            datum = self._project_reststukken.vrijgegeven_op(self._project_id)
+            self._rs_content.addWidget(
+                self._rs_banner(
+                    f"<b>Vrijgegeven op {_datum_tekst(datum)}.</b> {bewaren} "
+                    f"{'reststuk staat' if bewaren == 1 else 'reststukken staan'} nu in de "
+                    f"Reststukkenbibliotheek met herkomst “{project.naam}”. Deze lijst is vanaf nu "
+                    "alleen nog ter informatie.",
+                    succes=True,
+                )
+            )
+        elif afgerond:
+            self._rs_content.addWidget(
+                self._rs_banner(
+                    "<b>Het project is afgerond.</b> Controleer de lijst en klik op “Vrijgeven naar "
+                    f"bibliotheek”. Alleen de {bewaren} {'reststuk' if bewaren == 1 else 'reststukken'} "
+                    "met <i>Bewaren</i> aan gaan mee."
+                )
+            )
+        else:
+            self._rs_content.addWidget(
+                self._rs_banner(
+                    "Pas bij <b>Afgerond</b> kun je deze reststukken vrijgeven naar de bibliotheek. "
+                    "Opnieuw genereren vervangt de reststukken uit het zaagplan; handmatig "
+                    "toegevoegde blijven staan."
+                )
+            )
+
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        kaart_layout = QVBoxLayout(kaart)
+        kaart_layout.setContentsMargins(0, 0, 0, 0)
+        kaart_layout.setSpacing(0)
+        if items:
+            kaart_layout.addWidget(self._rs_bouw_tabel(items, vrijgegeven))
+        if self._rs_toevoegen_open and not vrijgegeven:
+            kaart_layout.addWidget(self._rs_bouw_toevoegen())
+
+        voet = QFrame()
+        voet.setStyleSheet(f"QFrame {{ border-top: 1px solid {self._theme.border}; }} QLabel {{ border: none; }}")
+        voet_layout = QHBoxLayout(voet)
+        voet_layout.setContentsMargins(16, 12, 16, 12)
+        voet_layout.setSpacing(14)
+        for status, tekst in (
+            (ProjectReststukStatus.BEWAREN, "bewaren"),
+            (ProjectReststukStatus.HERGEBRUIKT, "hergebruikt"),
+            (ProjectReststukStatus.AFGESCHREVEN, "afgeschreven"),
+        ):
+            aantal = sum(1 for r in items if r.status == status)
+            label = QLabel(f"<b style='color:{self._theme.text}'>{aantal}</b> {tekst}")
+            label.setStyleSheet(f"color: {self._theme.text_muted}; font-size: 12px;")
+            voet_layout.addWidget(label)
+        voet_layout.addStretch(1)
+        self._rs_melding = QLabel()
+        self._rs_melding.setStyleSheet(f"color: {self._theme.success_ink}; font-size: 12px; font-weight: 600;")
+        self._rs_melding.setVisible(self._rs_melding_timer.isActive())
+        self._rs_melding.setText(self._rs_melding_tekst)
+        voet_layout.addWidget(self._rs_melding)
+        kaart_layout.addWidget(voet)
+        self._rs_content.addWidget(kaart)
+
+    def _rs_banner(self, html: str, succes: bool = False) -> QFrame:
+        banner = QFrame()
+        banner.setObjectName("RsBanner")
+        if succes:
+            achter, rand, inkt, icoon = self._theme.success_soft, self._theme.success_soft, self._theme.success_ink, "check"
+        else:
+            achter, rand, inkt, icoon = self._theme.accent_soft, self._theme.accent_soft_border, self._theme.accent_text, "warning"
+        banner.setStyleSheet(
+            f"QFrame#RsBanner {{ background: {achter}; border: 1px solid {rand}; border-radius: 10px; }}"
+            f"QFrame#RsBanner QLabel {{ background: transparent; color: {inkt}; font-size: 12.5px; }}"
+        )
+        layout = QHBoxLayout(banner)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
+        icon_label = QLabel()
+        icon_label.setPixmap(icon_pixmap(icoon, inkt, 15))
+        layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignTop)
+        tekst = QLabel(html)
+        tekst.setTextFormat(Qt.TextFormat.RichText)
+        tekst.setWordWrap(True)
+        layout.addWidget(tekst, 1)
+        return banner
+
+    def _rs_bouw_tabel(self, items: list[ProjectReststuk], vrijgegeven: bool) -> QTableWidget:
+        per_materiaal: dict[str, list[ProjectReststuk]] = {}
+        for item in items:
+            per_materiaal.setdefault(item.materiaal_id, []).append(item)
+
+        def materiaal_naam(materiaal_id: str) -> str:
+            try:
+                return self._materialen.ophalen(materiaal_id).naam
+            except KeyError:
+                return "Onbekend materiaal"
+
+        groepen = sorted(per_materiaal.items(), key=lambda kv: materiaal_naam(kv[0]).lower())
+        aantal_rijen = sum(1 + len(g) for _, g in groepen)
+
+        tabel = QTableWidget(aantal_rijen, 6)
+        tabel.setObjectName("LibraryTable")
+        tabel.setHorizontalHeaderLabels(["Bewaren", "Reststuk", "Afmeting (l × b)", "Status", "Herkomst", ""])
+        tabel.verticalHeader().setVisible(False)
+        tabel.setShowGrid(False)
+        tabel.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        tabel.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        tabel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tabel.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tabel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = tabel.horizontalHeader()
+        header.setStretchLastSection(True)
+        for col, breedte in enumerate([84, 200, 260, 220, 120]):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            tabel.setColumnWidth(col, breedte)
+
+        groep_hoogte, rij_hoogte = 38, 52
+        hoogte_rijen = 0
+        row = 0
+        for materiaal_id, groep in groepen:
+            tabel.setSpan(row, 0, 1, 6)
+            tabel.setRowHeight(row, groep_hoogte)
+            hoogte_rijen += groep_hoogte
+            groep_cel = QWidget()
+            groep_layout = QHBoxLayout(groep_cel)
+            groep_layout.setContentsMargins(12, 10, 12, 4)
+            groep_layout.setSpacing(8)
+            naam = QLabel(materiaal_naam(materiaal_id))
+            naam.setStyleSheet(f"color: {self._theme.text}; font-size: 12px; font-weight: 700;")
+            groep_layout.addWidget(naam)
+            # Plaatmaat van een volle plaat, niet van een bibliotheek-reststuk.
+            volle_plaat = next(
+                (r for r in groep if r.plaat_lengte > 0 and not r.uit_bibliotheek_reststuk), None
+            )
+            extra = f"{len(groep)} {'reststuk' if len(groep) == 1 else 'reststukken'}"
+            if volle_plaat is not None:
+                extra += f" · plaat {volle_plaat.plaat_lengte:g} × {volle_plaat.plaat_breedte:g} mm"
+            meta = QLabel(extra)
+            meta.setStyleSheet(f"color: {self._theme.text_faint}; font-size: 12px; font-weight: 600;")
+            groep_layout.addWidget(meta)
+            groep_layout.addStretch(1)
+            tabel.setCellWidget(row, 0, groep_cel)
+            row += 1
+
+            for item in groep:
+                tabel.setRowHeight(row, rij_hoogte)
+                hoogte_rijen += rij_hoogte
+                self._rs_vul_rij(tabel, row, item, vrijgegeven)
+                row += 1
+
+        tabel.setFixedHeight(header.sizeHint().height() + hoogte_rijen + 4)
+
+        # Zie _bouw_onderdelen_tabel: de echte (gestylede) headerhoogte is
+        # pas na het tonen bekend.
+        def _herstel_hoogte(tabel=tabel, hoogte_rijen=hoogte_rijen) -> None:
+            tabel.setFixedHeight(tabel.horizontalHeader().height() + hoogte_rijen + 4)
+
+        QTimer.singleShot(0, _herstel_hoogte)
+        return tabel
+
+    def _rs_vul_rij(self, tabel: QTableWidget, row: int, item: ProjectReststuk, vrijgegeven: bool) -> None:
+        aan = item.status == ProjectReststukStatus.BEWAREN
+        uit_kleur = self._theme.text_faint
+
+        # Bewaren
+        cel = QWidget()
+        layout = QHBoxLayout(cel)
+        layout.setContentsMargins(14, 0, 4, 0)
+        schakelaar = _Schakelaar(aan, self._theme, actief=not vrijgegeven)
+        schakelaar.omgezet.connect(lambda nieuw, i=item.id: self._rs_zet_bewaren(i, nieuw))
+        layout.addWidget(schakelaar)
+        layout.addStretch(1)
+        tabel.setCellWidget(row, 0, cel)
+
+        # Reststuk: plaattekening + code + plaat
+        cel = QWidget()
+        layout = QHBoxLayout(cel)
+        layout.setContentsMargins(10, 4, 4, 4)
+        layout.setSpacing(10)
+        layout.addWidget(_MiniPlaat(item, self._theme, aan))
+        tekst_kolom = QVBoxLayout()
+        tekst_kolom.setSpacing(1)
+        code = QLabel(item.code)
+        code.setStyleSheet(f"color: {self._theme.text if aan else uit_kleur}; font-size: 13px; font-weight: 700;")
+        tekst_kolom.addWidget(code)
+        if item.plaat_nummer is not None and item.uit_bibliotheek_reststuk:
+            plaat_tekst = "Uit reststuk"
+        elif item.plaat_nummer is not None:
+            plaat_tekst = f"Plaat {item.plaat_nummer} van {item.platen_totaal}"
+        else:
+            plaat_tekst = "Niet uit het zaagplan"
+        if item.fabriekskantenband_randen:
+            plaat_tekst += " · fabrieksrand"
+        plaat = QLabel(plaat_tekst)
+        plaat.setStyleSheet(f"color: {self._theme.text_muted}; font-size: 11.5px;")
+        if item.fabriekskantenband_randen:
+            plaat.setToolTip(
+                "Fabriekskantenband op: " + ", ".join(sorted(r.value for r in item.fabriekskantenband_randen))
+            )
+        tekst_kolom.addWidget(plaat)
+        layout.addLayout(tekst_kolom)
+        layout.addStretch(1)
+        tabel.setCellWidget(row, 1, cel)
+
+        # Afmeting (of de twee invoervelden bij "aanpassen")
+        cel = QWidget()
+        layout = QHBoxLayout(cel)
+        layout.setContentsMargins(10, 4, 4, 4)
+        layout.setSpacing(6)
+        if self._rs_bewerk_id == item.id and not vrijgegeven:
+            self._rs_in_lengte = self._rs_maatveld(item.lengte)
+            self._rs_in_breedte = self._rs_maatveld(item.breedte)
+            layout.addWidget(self._rs_in_lengte)
+            maal = QLabel("×")
+            maal.setStyleSheet(f"color: {uit_kleur};")
+            layout.addWidget(maal)
+            layout.addWidget(self._rs_in_breedte)
+            mm = QLabel("mm")
+            mm.setStyleSheet(f"color: {uit_kleur};")
+            layout.addWidget(mm)
+            self._rs_in_lengte.returnPressed.connect(lambda i=item.id: self._rs_afmeting_opslaan(i))
+            self._rs_in_breedte.returnPressed.connect(lambda i=item.id: self._rs_afmeting_opslaan(i))
+            QTimer.singleShot(0, self._rs_in_lengte.setFocus)
+        else:
+            afm = QLabel(f"{item.lengte:g} × {item.breedte:g} mm")
+            stijl = f"color: {self._theme.text if aan else uit_kleur}; font-size: 13px;"
+            if not aan:
+                stijl += " text-decoration: line-through;"
+            afm.setStyleSheet(stijl)
+            layout.addWidget(afm)
+            if item.is_aangepast:
+                was = QLabel(f"{item.oorspronkelijke_lengte:g} × {item.oorspronkelijke_breedte:g}")
+                was.setStyleSheet(f"color: {uit_kleur}; font-size: 11.5px; text-decoration: line-through;")
+                layout.addWidget(was)
+                chip = QLabel("aangepast")
+                chip.setStyleSheet(
+                    f"background: {self._theme.warning_soft}; color: {self._theme.warning_ink}; border-radius: 8px;"
+                    " padding: 1px 7px; font-size: 10.5px; font-weight: 700;"
+                )
+                layout.addWidget(chip)
+        layout.addStretch(1)
+        tabel.setCellWidget(row, 2, cel)
+
+        # Status
+        cel = QWidget()
+        layout = QHBoxLayout(cel)
+        layout.setContentsMargins(10, 4, 8, 4)
+        if vrijgegeven:
+            if aan:
+                layout.addWidget(self._rs_pil("In bibliotheek", self._theme.accent_soft, self._theme.accent_text, self._theme.accent))
+            else:
+                tekst = "Hergebruikt in project" if item.status == ProjectReststukStatus.HERGEBRUIKT else "Afgeschreven"
+                label = QLabel(tekst)
+                label.setStyleSheet(f"color: {uit_kleur}; font-size: 12px; font-weight: 600;")
+                layout.addWidget(label)
+        elif aan:
+            layout.addWidget(self._rs_pil("Bewaren", self._theme.success_soft, self._theme.success_ink, self._theme.success))
+        else:
+            combo = QComboBox()
+            combo.setProperty("role", "field")
+            combo.addItem("Hergebruikt in project", ProjectReststukStatus.HERGEBRUIKT.value)
+            combo.addItem("Afgeschreven", ProjectReststukStatus.AFGESCHREVEN.value)
+            combo.setCurrentIndex(combo.findData(item.status.value))
+            combo.currentIndexChanged.connect(
+                lambda _i, c=combo, i=item.id: self._rs_zet_reden(i, ProjectReststukStatus(c.currentData()))
+            )
+            layout.addWidget(combo)
+        layout.addStretch(1)
+        tabel.setCellWidget(row, 3, cel)
+
+        # Herkomst
+        tabel.setCellWidget(row, 4, self._cel_herkomst("Zaagplan" if item.bron == ProjectReststukBron.ZAAGPLAN else "Handmatig"))
+
+        # Acties
+        if not vrijgegeven:
+            cel = QWidget()
+            layout = QHBoxLayout(cel)
+            layout.setContentsMargins(4, 0, 10, 0)
+            layout.setSpacing(2)
+            layout.addStretch(1)
+            if self._rs_bewerk_id == item.id:
+                ok = self._rs_actieknop("check", "Opslaan")
+                ok.clicked.connect(lambda _c=False, i=item.id: self._rs_afmeting_opslaan(i))
+                layout.addWidget(ok)
+                annuleer = self._rs_actieknop("close", "Annuleren")
+                annuleer.clicked.connect(self._rs_annuleer_bewerken)
+                layout.addWidget(annuleer)
+            else:
+                potlood = self._rs_actieknop("pencil", "Afmeting aanpassen")
+                potlood.clicked.connect(lambda _c=False, i=item.id: self._rs_start_bewerken(i))
+                layout.addWidget(potlood)
+            tabel.setCellWidget(row, 5, cel)
+
+    def _rs_pil(self, tekst: str, achter: str, inkt: str, stip: str) -> QLabel:
+        pil = QLabel(f"<span style='color:{stip}'>●</span>&nbsp;{tekst}")
+        pil.setTextFormat(Qt.TextFormat.RichText)
+        pil.setStyleSheet(
+            f"background: {achter}; color: {inkt}; border-radius: 10px; padding: 3px 9px;"
+            " font-size: 11.5px; font-weight: 700;"
+        )
+        return pil
+
+    def _rs_actieknop(self, icon_naam: str, tip: str) -> QToolButton:
+        knop = QToolButton()
+        knop.setProperty("role", "rowAction")
+        knop.setIcon(icon(icon_naam, self._theme.text_muted, 15))
+        knop.setIconSize(QSize(15, 15))
+        knop.setFixedSize(28, 28)
+        knop.setToolTip(tip)
+        knop.setCursor(Qt.CursorShape.PointingHandCursor)
+        return knop
+
+    def _rs_maatveld(self, waarde: float | None = None, placeholder: str = "") -> QLineEdit:
+        veld = QLineEdit(f"{waarde:g}" if waarde is not None else "")
+        veld.setProperty("role", "field")
+        veld.setPlaceholderText(placeholder)
+        validator = QDoubleValidator(0.0, 100000.0, 1, veld)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        veld.setValidator(validator)
+        veld.setFixedWidth(84)
+        return veld
+
+    def _rs_bouw_toevoegen(self) -> QFrame:
+        regel = QFrame()
+        regel.setStyleSheet(
+            f"QFrame#RsToevoegen {{ background: {self._theme.surface_2}; border-top: 1px solid {self._theme.border}; }}"
+        )
+        regel.setObjectName("RsToevoegen")
+        regel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QHBoxLayout(regel)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(12)
+
+        def met_label(tekst: str, veld: QWidget) -> QVBoxLayout:
+            kolom = QVBoxLayout()
+            kolom.setSpacing(5)
+            kolom.addWidget(self._field_label(tekst))
+            kolom.addWidget(veld)
+            return kolom
+
+        self._rs_in_materiaal = QComboBox()
+        self._rs_in_materiaal.setProperty("role", "field")
+        # Materialen uit dit project eerst, daarna de rest van de actieve materialen.
+        in_project = {item.materiaal_id for item in self._project_reststukken.lijst(self._project_id)}
+        in_project |= {plan.materiaal_id for plan in (self._zaagplannen or [])}
+        materialen = self._materialen.lijst(status=MateriaalStatus.ACTIEF)
+        materialen.sort(key=lambda m: (m.id not in in_project, m.naam.lower()))
+        for m in materialen:
+            self._rs_in_materiaal.addItem(m.naam, m.id)
+        self._rs_in_materiaal.setMinimumWidth(240)
+        layout.addLayout(met_label("Materiaal", self._rs_in_materiaal))
+        self._rs_in_nieuw_lengte = self._rs_maatveld(placeholder="bv. 800")
+        layout.addLayout(met_label("Lengte (mm)", self._rs_in_nieuw_lengte))
+        self._rs_in_nieuw_breedte = self._rs_maatveld(placeholder="bv. 400")
+        layout.addLayout(met_label("Breedte (mm)", self._rs_in_nieuw_breedte))
+
+        ok = QPushButton("Toevoegen")
+        ok.setProperty("role", "primary")
+        ok.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok.clicked.connect(self._rs_toevoegen)
+        layout.addWidget(ok, 0, Qt.AlignmentFlag.AlignBottom)
+        annuleer = QPushButton("Annuleren")
+        annuleer.setProperty("role", "ghost")
+        annuleer.setCursor(Qt.CursorShape.PointingHandCursor)
+        annuleer.clicked.connect(self._rs_sluit_toevoegen)
+        layout.addWidget(annuleer, 0, Qt.AlignmentFlag.AlignBottom)
+        self._rs_toevoegen_fout = QLabel()
+        self._rs_toevoegen_fout.setProperty("role", "validationText")
+        self._rs_toevoegen_fout.setWordWrap(True)
+        layout.addWidget(self._rs_toevoegen_fout, 1, Qt.AlignmentFlag.AlignBottom)
+        QTimer.singleShot(0, self._rs_in_nieuw_lengte.setFocus)
+        return regel
+
+    @staticmethod
+    def _rs_getal(veld: QLineEdit) -> float:
+        try:
+            return float(veld.text().replace(",", "."))
+        except ValueError:
+            return 0.0
+
+    # -- acties --------------------------------------------------------
+    def _rs_meld(self, tekst: str) -> None:
+        self._rs_melding_tekst = f"✓  {tekst}"
+        self._rs_melding_timer.start(3000)
+        if self._rs_melding is not None:
+            self._rs_melding.setText(self._rs_melding_tekst)
+            self._rs_melding.show()
+
+    def _rs_verberg_melding(self) -> None:
+        self._rs_melding_tekst = ""
+        if self._rs_melding is not None:
+            self._rs_melding.hide()
+
+    def _rs_na_wijziging(self, melding: str) -> None:
+        self._ververs_reststukken_paneel()
+        self._rs_meld(melding)
+
+    def _rs_zet_bewaren(self, reststuk_id: str, aan: bool) -> None:
+        status = ProjectReststukStatus.BEWAREN if aan else ProjectReststukStatus.AFGESCHREVEN
+        try:
+            item = self._project_reststukken.zet_status(reststuk_id, status)
+        except AlVrijgegevenError:
+            self._ververs_reststukken_paneel()
+            return
+        # Uitgestelde herbouw: de schakelaar die dit signaal geeft, wordt
+        # anders midden in zijn eigen muisafhandeling verwijderd.
+        QTimer.singleShot(
+            0, lambda: self._rs_na_wijziging(f"{item.code} {'wordt bewaard' if aan else 'afgeschreven'}")
+        )
+
+    def _rs_zet_reden(self, reststuk_id: str, status: ProjectReststukStatus) -> None:
+        try:
+            item = self._project_reststukken.zet_status(reststuk_id, status)
+        except AlVrijgegevenError:
+            self._ververs_reststukken_paneel()
+            return
+        tekst = "hergebruikt in project" if status == ProjectReststukStatus.HERGEBRUIKT else "afgeschreven"
+        QTimer.singleShot(0, lambda: self._rs_na_wijziging(f"{item.code}: {tekst}"))
+
+    def _rs_start_bewerken(self, reststuk_id: str) -> None:
+        self._rs_bewerk_id = reststuk_id
+        self._ververs_reststukken_paneel()
+
+    def _rs_annuleer_bewerken(self) -> None:
+        self._rs_bewerk_id = None
+        self._ververs_reststukken_paneel()
+
+    def _rs_afmeting_opslaan(self, reststuk_id: str) -> None:
+        lengte, breedte = self._rs_getal(self._rs_in_lengte), self._rs_getal(self._rs_in_breedte)
+        try:
+            item = self._project_reststukken.wijzig_afmeting(reststuk_id, lengte, breedte)
+        except ValueError:
+            # Ongeldige maat (0 of leeg): veld blijft open, rood omrand.
+            for veld, waarde in ((self._rs_in_lengte, lengte), (self._rs_in_breedte, breedte)):
+                if waarde <= 0:
+                    veld.setStyleSheet(f"border-color: {self._theme.critical};")
+            return
+        except AlVrijgegevenError:
+            self._rs_bewerk_id = None
+            self._ververs_reststukken_paneel()
+            return
+        self._rs_bewerk_id = None
+        QTimer.singleShot(
+            0, lambda: self._rs_na_wijziging(f"{item.code} aangepast naar {item.lengte:g} × {item.breedte:g} mm")
+        )
+
+    def _rs_open_toevoegen(self) -> None:
+        self._rs_toevoegen_open = True
+        self._ververs_reststukken_paneel()
+
+    def _rs_sluit_toevoegen(self) -> None:
+        self._rs_toevoegen_open = False
+        self._ververs_reststukken_paneel()
+
+    def _rs_toevoegen(self) -> None:
+        materiaal_id = self._rs_in_materiaal.currentData()
+        lengte, breedte = self._rs_getal(self._rs_in_nieuw_lengte), self._rs_getal(self._rs_in_nieuw_breedte)
+        try:
+            item = self._project_reststukken.toevoegen_handmatig(self._project_id, materiaal_id or "", lengte, breedte)
+        except ValueError as fout:
+            self._rs_toevoegen_fout.setText(str(fout).replace("; ", "\n"))
+            return
+        except AlVrijgegevenError:
+            self._rs_sluit_toevoegen()
+            return
+        self._rs_toevoegen_open = False
+        QTimer.singleShot(0, lambda: self._rs_na_wijziging(f"{item.code} toegevoegd"))
+
+    def _rs_vrijgeven(self) -> None:
+        try:
+            nieuw = self._project_reststukken.vrijgeven(self._project())
+        except (ProjectNietAfgerondError, AlVrijgegevenError):
+            self._ververs_reststukken_paneel()
+            return
+        self._rs_bewerk_id = None
+        self._rs_toevoegen_open = False
+        if self._on_reststukken_gewijzigd is not None:
+            self._on_reststukken_gewijzigd()
+        aantal = len(nieuw)
+        QTimer.singleShot(
+            0,
+            lambda: self._rs_na_wijziging(
+                f"{aantal} {'reststuk' if aantal == 1 else 'reststukken'} vrijgegeven naar de bibliotheek"
+            ),
+        )
+
+    # ------------------------------------------------------------------
     # Paneel: Zaagplannen
     # ------------------------------------------------------------------
     def _build_zaagplannen_paneel(self) -> QWidget:
@@ -1733,7 +2442,12 @@ class ProjectDetailPage(QWidget):
             return
         self._zaagplan_voortgang = None
         self._zaagplan_starttijd = time.monotonic()
-        self._zaagplan_worker = _ZaagplanWorker(self._project(), self._materialen, self._zaagplan_strategie, self)
+        # Reststukken eerst: alle beschikbare stukken uit de bibliotheek, plus
+        # wat een eerder zaagplan van dit project al gereserveerd had.
+        kandidaten = self._project_reststukken.reststukken.kandidaten_voor_project(self._project_id)
+        self._zaagplan_worker = _ZaagplanWorker(
+            self._project(), self._materialen, self._zaagplan_strategie, kandidaten, self
+        )
         self._zaagplan_worker.voortgang.connect(self._op_zaagplan_voortgang)
         self._zaagplan_worker.klaar.connect(self._op_zaagplannen_klaar)
         self._ververs_zaagplannen_paneel()
@@ -1783,8 +2497,26 @@ class ProjectDetailPage(QWidget):
         # sluit of de app herstart (zie zaagplannen_opslag.py) — "opnieuw
         # genereren" overschrijft gewoon de eerder opgeslagen stand.
         self._zaagplannen_opslag.opslaan(self._project_id, plannen, waarschuwingen, self._zaagplan_strategie)
+        # Gebruikte bibliotheek-reststukken reserveren voor dit project (of
+        # meteen "gebruikt" als het al in productie is); niet meer gebruikte
+        # komen weer beschikbaar.
+        project = self._project()
+        self._project_reststukken.reststukken.wijs_toe_aan_project(
+            self._project_id,
+            project.naam,
+            {plan.reststuk_id for plan in plannen if plan.reststuk_id},
+            verbruikt=project.status != ProjectStatus.WERKVOORBEREIDING,
+        )
+        if self._on_reststukken_gewijzigd is not None:
+            self._on_reststukken_gewijzigd()
+        # Reststukken uit het nieuwe zaagplan overnemen (handmatig toegevoegde
+        # blijven staan); na vrijgeven ligt de projectlijst vast.
+        if not self._project_reststukken.is_vrijgegeven(self._project_id):
+            self._project_reststukken.overnemen_uit_zaagplan(self._project_id, plannen)
+            self._rs_bewerk_id = None
         self._ververs_zaagplannen_paneel()
         self._ververs_labels_paneel()
+        self._ververs_reststukken_paneel()
 
     def _bouw_zaagplan_bezig(self) -> QWidget:
         kaart = QFrame()
@@ -2014,7 +2746,12 @@ class ProjectDetailPage(QWidget):
         naam_label.setProperty("role", "docMetaStrong")
         head_layout.addWidget(naam_label)
         afmeting_tekst = f"{mat.lengte:g} × {mat.breedte:g} mm"
-        if plan.platen_totaal > 1:
+        if plan.is_reststuk:
+            tag.setText("RESTSTUK")
+            afmeting_tekst += "  ·  Reststuk uit de bibliotheek"
+            if plan.platen_totaal > 1:
+                afmeting_tekst += f" ({plan.plaat_nummer} van {plan.platen_totaal})"
+        elif plan.platen_totaal > 1:
             afmeting_tekst += f"  ·  Plaat {plan.plaat_nummer} van {plan.platen_totaal}"
         afmeting_label = QLabel(afmeting_tekst)
         afmeting_label.setProperty("role", "docMeta")
@@ -2251,3 +2988,4 @@ class ProjectDetailPage(QWidget):
         self._ververs_zaaglijst_paneel()
         self._ververs_zaagplannen_paneel()
         self._ververs_labels_paneel()
+        self._ververs_reststukken_paneel()

@@ -126,11 +126,63 @@ class ReststukkenBibliotheek:
 
     def zet_beschikbaar(self, reststuk_id: str) -> Reststuk:
         reststuk = self._reststukken[reststuk_id]
-        if reststuk.status != ReststukStatus.GEBRUIKT:
-            raise OngeldigeStatusOvergangError("Alleen gebruikte reststukken kunnen weer beschikbaar gezet worden.")
+        if reststuk.status == ReststukStatus.BESCHIKBAAR:
+            raise OngeldigeStatusOvergangError("Dit reststuk is al beschikbaar.")
         reststuk.status = ReststukStatus.BESCHIKBAAR
+        reststuk.project_id = ""
+        reststuk.project_naam = ""
         self._persisteer(reststuk)
         return reststuk
+
+    # -- reserveren door de zaagmotor (zie projecten/zaagplannen.py) ------
+    def kandidaten_voor_project(self, project_id: str) -> list[Reststuk]:
+        """Reststukken die de zaagmotor voor dit project mag gebruiken: alle
+        beschikbare, plus de stukken die al aan dit project hangen (een
+        eerder zaagplan van hetzelfde project)."""
+
+        return [
+            r
+            for r in self._reststukken.values()
+            if r.status == ReststukStatus.BESCHIKBAAR
+            or (r.project_id == project_id and r.status in (ReststukStatus.GERESERVEERD, ReststukStatus.GEBRUIKT))
+        ]
+
+    def wijs_toe_aan_project(
+        self, project_id: str, project_naam: str, reststuk_ids: set[str], verbruikt: bool = False
+    ) -> None:
+        """Na het genereren van een zaagplan: ``reststuk_ids`` hangen aan
+        dit project (Gereserveerd, of Gebruikt als het project al In
+        productie is); stukken die er eerder aan hingen maar nu niet meer in
+        het zaagplan zitten, worden weer beschikbaar."""
+
+        for r in self._reststukken.values():
+            hing_eraan = r.project_id == project_id and r.status in (
+                ReststukStatus.GERESERVEERD,
+                ReststukStatus.GEBRUIKT,
+            )
+            if r.id in reststuk_ids:
+                if r.status == ReststukStatus.BESCHIKBAAR or not hing_eraan:
+                    r.status = ReststukStatus.GEBRUIKT if verbruikt else ReststukStatus.GERESERVEERD
+                elif verbruikt:
+                    r.status = ReststukStatus.GEBRUIKT
+                r.project_id, r.project_naam = project_id, project_naam
+                self._persisteer(r)
+            elif hing_eraan:
+                r.status = ReststukStatus.BESCHIKBAAR
+                r.project_id = r.project_naam = ""
+                self._persisteer(r)
+
+    def verbruik_reserveringen(self, project_id: str) -> list[Reststuk]:
+        """Het project gaat In productie: zijn gereserveerde reststukken
+        worden echt gebruikt."""
+
+        verbruikt: list[Reststuk] = []
+        for r in self._reststukken.values():
+            if r.project_id == project_id and r.status == ReststukStatus.GERESERVEERD:
+                r.status = ReststukStatus.GEBRUIKT
+                self._persisteer(r)
+                verbruikt.append(r)
+        return verbruikt
 
     def verwijderen(self, reststuk_id: str) -> None:
         del self._reststukken[reststuk_id]

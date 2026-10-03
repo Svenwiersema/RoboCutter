@@ -13,14 +13,19 @@ herkomst en status.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+
+from robocutter.optimalisatie.models import Rand
 
 __all__ = ["ReststukStatus", "Reststuk"]
 
 
 class ReststukStatus(str, Enum):
     BESCHIKBAAR = "beschikbaar"
+    # De zaagmotor heeft dit reststuk in het zaagplan van een project
+    # gebruikt; wordt "gebruikt" zodra dat project In productie gaat.
+    GERESERVEERD = "gereserveerd"
     GEBRUIKT = "gebruikt"
 
 
@@ -38,3 +43,12 @@ class Reststuk:
     herkomst_project: str = ""
     herkomst_model: str = ""
     status: ReststukStatus = ReststukStatus.BESCHIKBAAR
+    # Bij Gereserveerd (en Gebruikt via een zaagplan): voor welk project.
+    # De naam is een momentopname, alleen voor de weergave.
+    project_id: str = ""
+    project_naam: str = ""
+    # Randen die nog de fabriekskantenband van de oorspronkelijke plaat
+    # hebben (zelfde oriëntatie als het materiaal: lengte = x, ONDER = y 0).
+    # De zaagmotor plaatst onderdelen met een fabriekskantenband-eis
+    # alleen op een reststuk dat zo'n rand heeft.
+    fabriekskantenband_randen: frozenset[Rand] = field(default_factory=frozenset)

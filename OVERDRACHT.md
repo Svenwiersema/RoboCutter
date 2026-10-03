@@ -2834,6 +2834,135 @@ houden.
     controle en scherm). Zaagplan-voettekst/PDF: "Zaagsnede".
   - `scripts/demo_render.py`: stroken weg, CNC als `demo_cnc.png`. 210 tests.
 
+- **Zaagsnede standaard 3 mm.** Sven: "zaagsnede is standaard 3mm" —
+  `Instellingen.zaagsnede` en de standaard van
+  `genereer_zaagplannen_voor_project` staan nu op 3,0 (was 4,0). Een
+  bestaande instellingen.json met een eigen waarde houdt die waarde.
+
+- **Reststukken per project: een tijdelijke reststukkenbibliotheek.**
+  Sven: "restukken lijst in een project is eigenlijk een tijdelijke
+  bibliotheek gekoppeld aan het project en die nog niet in het algemene
+  bibliotheek staat zodat je nog kan aanpassen of hergebruiken of
+  wegschrijven, want een project verloopt nooit perfect", en per reststuk
+  aan/uit kunnen zetten. Mockup goedgekeurd ("ziet er goed uit"):
+  `design/assets/mockups/project-reststukken-concept.html`.
+  - Backend: `projecten/project_reststukken.py`
+    (`ProjectReststukkenBibliotheek`, `ProjectReststuk`, statussen
+    Bewaren/Hergebruikt/Afgeschreven, bron Zaagplan/Handmatig) +
+    `project_reststukken_opslag.py` (tabel `project_reststukken` in
+    hetzelfde db-bestand). Lengte = x/lengte-as van de plaat, breedte = y.
+    Geen verwijderen: afschrijven is omkeerbaar.
+  - Vullen: na elke zaagplan-generatie (`_op_zaagplannen_klaar`)
+    vervangen de reststukken uit het zaagplan de vorige; handmatig
+    toegevoegde blijven staan en schuiven in de nummering (R1, R2, ...)
+    achteraan. Aanpassingen aan zaagplan-stukken gaan bij opnieuw genereren
+    dus verloren (zo in de mockup getoond; nog geen waarschuwing). Een
+    project met een al bestaand zaagplan krijgt de lijst bij het openen
+    van het paneel.
+  - Vrijgeven: knop "Vrijgeven naar bibliotheek", alleen bij Afgerond.
+    Alleen Bewaren-stukken gaan als beschikbaar `Reststuk` de
+    Reststukkenbibliotheek in (herkomst = projectnaam); daarna is de lijst
+    vergrendeld (`AlVrijgegevenError`). Gekozen volgens de mockup (knop, niet
+    automatisch bij Afgerond; elke wijziging meteen opgeslagen met groene
+    regel in de voettekst van de kaart) — Sven gaf daar geen expliciet
+    ander antwoord op.
+  - UI: paneel "Reststukken" onder Documenten in `ProjectDetailPage`
+    (schakelaar `_Schakelaar` en plaattekening `_MiniPlaat` zelf
+    getekend). `MainWindow` opent de verbinding en ververst na vrijgeven
+    de Reststukken-pagina (nieuwe publieke `ReststukkenPage.ververs()`).
+  - Niet gedaan: reststuk-labels, en de lijst opruimen bij definitief
+    verwijderen van een project (`verwijder_project` bestaat, maar wordt
+    nog nergens aangeroepen — net als bij de opgeslagen zaagplannen).
+  - Tests: `tests/test_project_reststukken.py` (8). Offscreen rookproef
+    met alleen in-memory bibliotheken: genereren, schakelen, reden,
+    afmeting aanpassen, toevoegen (met foutmelding), opnieuw genereren,
+    vrijgeven geweigerd vóór Afgerond en gelukt erna; screenshots licht/
+    donker. 218 tests.
+
+- **Zaagmotor gebruikt eerst reststukken uit de bibliotheek.** Sven: de
+  motor "hoort eerst reststukken te controleren voordat hij volle platen
+  pakt" — deed hij nog helemaal niet. Keuzes van Sven (vooraf gevraagd):
+  **gereserveerd voor het project** (pas "gebruikt" bij In productie),
+  **kleinste eerst**, en **geen randafzaag** op een reststuk.
+  - `projecten/zaagplannen.py`: per materiaal eerst de meegegeven
+    reststukken (zelfde `materiaal_id`, oplopend op oppervlak), elk als
+    één plaat via `engine.genereer_zaagplan` met de reststukmaat en zonder
+    randafzaag/fabrieksranden; elk stuk waar iets op past wordt een
+    `PlaatZaagplan` met `reststuk_id` (opgeslagen in de zaagplan-JSON). Wat
+    overblijft gaat naar volle platen. **Onderdelen met een
+    fabriekskantenband-eis (en hun hele groep) gaan nooit op een
+    reststuk**: zonder fabrieksrand negeert de motor die eis anders
+    stilletjes. De reststuk-pogingen gebruiken geen zoekbudget (snel,
+    deterministisch). De motor zelf is niet aangepast (wel
+    `_onderdelen_voor_niet_geplaatst` geïmporteerd).
+  - `reststukken/`: nieuwe status `GERESERVEERD` en velden
+    `project_id`/`project_naam` (kolommen worden aan bestaande databases
+    toegevoegd). `kandidaten_voor_project` (beschikbaar + al aan dit
+    project gekoppeld), `wijs_toe_aan_project` (na genereren; niet meer
+    gebruikte stukken komen weer vrij) en `verbruik_reserveringen`.
+    `zet_beschikbaar` kan nu ook vanuit Gereserveerd en wist de koppeling.
+  - UI: na genereren reserveert `ProjectDetailPage` de gebruikte stukken
+    (meteen "gebruikt" als het project al voorbij Werkvoorbereiding is);
+    `MainWindow._on_project_gewijzigd` zet reserveringen op "gebruikt"
+    zodra een project In productie of verder staat. Zaagplan-kop (scherm
+    en PDF) toont "RESTSTUK … Reststuk uit de bibliotheek". Reststukken-
+    bibliotheek: filter "Gereserveerd" met teller, paarse chip (project in
+    de tooltip). Projectreststukken die van een bibliotheek-reststuk komen
+    tonen "Uit reststuk" (`ProjectReststuk.uit_bibliotheek_reststuk`).
+  - Testdata: `scripts/maak_test_reststukken.py` zet 11 reststukken
+    (herkomst "Testreststuk (script)") voor de materialen van Keuken
+    Jansen in de échte bibliotheek; opnieuw draaien vervangt ze. Proef op
+    een db-kopie: Keuken Jansen 10 volle platen i.p.v. 11, 7 reststukken
+    gebruikt, de te kleine blijven liggen. Het MDF-stuk 650×450 blijft ook
+    liggen: Front 1/2 zijn een groep (594×835).
+  - Bekende beperkingen: twee projecten die tegelijk genereren kunnen
+    hetzelfde beschikbare stuk kiezen (de laatste wint); "kleinste eerst"
+    is greedy (geen optimale verdeling over reststukken); wordt een
+    gereserveerd stuk handmatig vrijgegeven of verwijderd, dan klopt het
+    opgeslagen zaagplan niet meer tot opnieuw genereren. Gezien maar niet
+    aangepast: de niet-geplaatst-reden zegt "past qua afmeting wel" bij een
+    onderdeel dat door een korte-zijde-nerfeis juist níet past. 225 tests.
+
+- **Reststukken onthouden hun fabriekskantenband.** Sven, bij wit
+  meubelpaneel (fabrieksrand boven en onder): de motor hield bij
+  reststukken geen rekening met de fabriekskantenband, "dit moet hij
+  eigenlijk wel onthouden".
+  - `Reststuk.fabriekskantenband_randen` (en kolom, met migratie);
+    instelbaar in het bewerkpaneel van de Reststukkenbibliotheek met
+    hetzelfde `RandenDiagram` als bij materialen; in de tabel als tweede
+    regel onder de afmeting ("fabrieksrand boven/onder").
+  - Automatisch afgeleid voor projectreststukken
+    (`project_reststukken._fabrieksranden_van`): een reststuk dat tot aan
+    een fabrieksrand van zijn plaat loopt, heeft die rand nog (fabrieks-
+    randen worden nooit afgezaagd, zie `engine._werkgebied`). Gaat bij
+    vrijgeven mee naar de bibliotheek. In het projectpaneel: "·
+    fabrieksrand" achter de plaattekst en een blauwe lijn in de
+    plaattekening.
+  - Motor: een bibliotheek-reststuk krijgt zijn eigen fabrieksranden mee;
+    onderdelen met een fabriekskantenband-eis (en hun groep) worden alleen
+    nog overgeslagen op reststukken **zonder** fabrieksrand.
+  - `scripts/maak_test_reststukken.py`: de stukken Meubelpaneel wit hebben
+    nu fabrieksrand boven/onder (volle breedte 600) of alleen onder.
+    Opnieuw gedraaid op de echte database (de vorige reserveringen van
+    Keuken Jansen zijn daarmee weg — opnieuw genereren). Proef op een
+    db-kopie: fabrieksrand-onderdelen (Zijkant, Dwarsbalk vooraan, Bodem &
+    Bovensteplank) komen nu op de reststukken. 228 tests.
+
+- **Zaagplantekening omgedraaid: "onder" staat nu echt onderaan.** Sven:
+  op een reststuk met alleen een fabrieksrand onder lag Bodem &
+  Bovensteplank (kantenband onder) "zo op de plaat dat hij geen
+  kantenband heeft". De motor deed het goed (onderdeel op y=0, tegen
+  `Rand.ONDER`), maar `ZaagplaatWidget` en `zaagplan_pdf.py` tekenden y=0
+  bovenaan terwijl de fabrieksrandlijn ONDER onderaan stond — bij volle
+  platen wit meubelpaneel (fabrieksrand boven én onder) viel dat nooit op.
+  Sven koos (vooraf gevraagd) voor omdraaien i.p.v. alleen de lijn
+  verplaatsen: y loopt nu omhoog in scherm en PDF (`px` spiegelt,
+  `rect_mm` normaliseert), ONDER/BOVEN-lijnen en PDF-labels aangepast, het
+  nummerbolletje van een verticale snede blijft aan de onderkant
+  (`min` i.p.v. `max`). Zichtbaar gevolg: rijen beginnen nu onderaan de
+  plaat. Ook de kleine plaattekening in het Reststukken-paneel volgt dit.
+  Bestaande opgeslagen zaagplannen tonen meteen goed (alleen tekening).
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

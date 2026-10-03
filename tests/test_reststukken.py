@@ -187,3 +187,71 @@ def test_sqlite_opslag_overleeft_herstart(tmp_path):
     derde_reststukken = ReststukkenBibliotheek(herstarte_materialen, derde_rest_verbinding)
     assert derde_reststukken.lijst() == []
     derde_rest_verbinding.close()
+
+
+def test_reserveren_door_zaagplan_en_verbruiken_bij_productie(tmp_path):
+    db_pad = tmp_path / "rest.db"
+    verbinding = open_verbinding(db_pad)
+    materialen = MaterialenBibliotheek()
+    materiaal = materialen.toevoegen(_materiaal())
+    reststukken = ReststukkenBibliotheek(materialen, verbinding)
+    a = reststukken.toevoegen(_reststuk(materiaal.id))
+    b = reststukken.toevoegen(_reststuk(materiaal.id))
+    c = reststukken.toevoegen(_reststuk(materiaal.id))
+
+    reststukken.wijs_toe_aan_project("p1", "Keuken", {a.id, b.id})
+    assert a.status == ReststukStatus.GERESERVEERD and a.project_naam == "Keuken"
+    # Een ander project ziet gereserveerde stukken van p1 niet als kandidaat.
+    assert {r.id for r in reststukken.kandidaten_voor_project("p2")} == {c.id}
+    assert {r.id for r in reststukken.kandidaten_voor_project("p1")} == {a.id, b.id, c.id}
+
+    # Opnieuw genereren gebruikt b niet meer: b komt weer vrij.
+    reststukken.wijs_toe_aan_project("p1", "Keuken", {a.id})
+    assert b.status == ReststukStatus.BESCHIKBAAR and b.project_id == ""
+
+    assert [r.id for r in reststukken.verbruik_reserveringen("p1")] == [a.id]
+    assert a.status == ReststukStatus.GEBRUIKT and a.project_id == "p1"
+    assert reststukken.verbruik_reserveringen("p1") == []
+
+    # In productie opnieuw genereren met een nieuw stuk: meteen gebruikt.
+    reststukken.wijs_toe_aan_project("p1", "Keuken", {a.id, c.id}, verbruikt=True)
+    assert c.status == ReststukStatus.GEBRUIKT
+
+    # Handmatig terugzetten wist de koppeling.
+    reststukken.zet_beschikbaar(c.id)
+    assert c.project_id == ""
+    verbinding.close()
+
+    herladen = ReststukkenBibliotheek(materialen, open_verbinding(db_pad)).ophalen(a.id)
+    assert (herladen.status, herladen.project_id, herladen.project_naam) == (ReststukStatus.GEBRUIKT, "p1", "Keuken")
+
+
+def test_oude_database_krijgt_projectkolommen(tmp_path):
+    import sqlite3
+
+    db_pad = tmp_path / "oud.db"
+    oud = sqlite3.connect(db_pad)
+    oud.execute(
+        "CREATE TABLE reststukken (id TEXT PRIMARY KEY, materiaal_id TEXT NOT NULL, lengte REAL NOT NULL, "
+        "breedte REAL NOT NULL, herkomst_project TEXT NOT NULL, herkomst_model TEXT NOT NULL, status TEXT NOT NULL)"
+    )
+    oud.execute("INSERT INTO reststukken VALUES ('x', 'm', 800, 400, '', '', 'beschikbaar')")
+    oud.commit()
+    oud.close()
+
+    from robocutter.reststukken import opslag
+
+    herladen = opslag.laad_alles(open_verbinding(db_pad))
+    assert herladen[0].project_id == "" and herladen[0].status == ReststukStatus.BESCHIKBAAR
+
+
+def test_fabrieksranden_worden_bewaard(tmp_path):
+    from robocutter.optimalisatie.models import Rand
+
+    db_pad = tmp_path / "r.db"
+    materialen = MaterialenBibliotheek()
+    materiaal = materialen.toevoegen(_materiaal())
+    reststukken = ReststukkenBibliotheek(materialen, open_verbinding(db_pad))
+    r = reststukken.toevoegen(_reststuk(materiaal.id, fabriekskantenband_randen=frozenset({Rand.BOVEN, Rand.ONDER})))
+    herladen = ReststukkenBibliotheek(materialen, open_verbinding(db_pad)).ophalen(r.id)
+    assert herladen.fabriekskantenband_randen == {Rand.BOVEN, Rand.ONDER}

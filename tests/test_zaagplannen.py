@@ -185,3 +185,129 @@ def test_zaagsnede_komt_uit_de_instellingen():
     plannen, _ = genereer_zaagplannen_voor_project(project, materialen, strategie="guillotine", zaagsnede=3)
 
     assert plannen[0].resultaat.materiaal.kerf == 3
+
+
+# ---------------------------------------------------------------------------
+# Reststukken uit de bibliotheek eerst, kleinste eerst, zonder randafzaag
+# ---------------------------------------------------------------------------
+
+
+def _reststuk(materiaal_id: str, rid: str, lengte: float, breedte: float):
+    from robocutter.reststukken.models import Reststuk
+
+    return Reststuk(id=rid, materiaal_id=materiaal_id, lengte=lengte, breedte=breedte)
+
+
+def test_reststukken_gaan_voor_volle_platen_kleinste_eerst():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal(randafzaag_marge=10))
+    ander = materialen.toevoegen(_materiaal(naam="MDF"))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[_onderdeel(hout.id, naam="Plankje", breedte=400, hoogte=300, aantal=2)],
+        )
+    )
+    reststukken = [
+        _reststuk(hout.id, "groot", 1200, 800),
+        _reststuk(hout.id, "klein", 900, 320),
+        _reststuk(ander.id, "ander-materiaal", 450, 350),
+    ]
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=reststukken)
+
+    # Beide plankjes passen naast elkaar op het kleine reststuk: geen volle
+    # plaat en het grote reststuk blijft liggen.
+    assert [p.reststuk_id for p in plannen] == ["klein"]
+    plan = plannen[0]
+    assert plan.is_reststuk
+    assert (plan.resultaat.materiaal.lengte, plan.resultaat.materiaal.breedte) == (900, 320)
+    assert plan.resultaat.materiaal.randafzaag_marge == 0
+    assert len(plan.resultaat.plaatsingen) == 2
+
+
+def test_wat_niet_op_reststukken_past_gaat_naar_een_volle_plaat():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(hout.id, naam="Klein", breedte=400, hoogte=300, aantal=1),
+                _onderdeel(hout.id, naam="Groot", breedte=2000, hoogte=600, aantal=1),
+            ],
+        )
+    )
+    reststukken = [_reststuk(hout.id, "r1", 500, 400), _reststuk(hout.id, "te-klein", 200, 200)]
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=reststukken)
+
+    assert [p.reststuk_id for p in plannen] == ["r1", None]
+    assert plannen[0].onderdeel_info[plannen[0].resultaat.plaatsingen[0].onderdeel_id].naam == "Klein"
+    volle = plannen[1]
+    assert not volle.is_reststuk and volle.plaat_nummer == 1 and volle.platen_totaal == 1
+    assert [volle.naam_voor(p.onderdeel_id) for p in volle.resultaat.plaatsingen] == ["Groot"]
+    assert not volle.resultaat.niet_geplaatst
+
+
+def test_zonder_reststukken_ongewijzigd():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(
+        Project(id="", naam="Test", klant="Test", losse_onderdelen=[_onderdeel(hout.id, aantal=3)])
+    )
+    met_leeg, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=[])
+    zonder, _ = genereer_zaagplannen_voor_project(project, materialen)
+    assert [p.reststuk_id for p in met_leeg] == [None] * len(zonder)
+    assert [len(p.resultaat.plaatsingen) for p in met_leeg] == [len(p.resultaat.plaatsingen) for p in zonder]
+
+
+def test_onderdeel_met_fabrieksrand_gaat_nooit_op_een_reststuk():
+    from robocutter.modellen.models import Rand
+
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal(fabriekskantenband_randen=frozenset({Rand.ONDER})))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(hout.id, naam="Fabriek", breedte=400, hoogte=300, fabriekskantenband_vereist=True),
+                _onderdeel(hout.id, naam="Groep A", breedte=400, hoogte=200, groep_id="g", groep_volgorde=1),
+                _onderdeel(hout.id, naam="Groep B", breedte=400, hoogte=200, groep_id="g", groep_volgorde=2,
+                           fabriekskantenband_vereist=True),
+                _onderdeel(hout.id, naam="Gewoon", breedte=400, hoogte=300),
+            ],
+        )
+    )
+    plannen, _ = genereer_zaagplannen_voor_project(
+        project, materialen, reststukken=[_reststuk(hout.id, "r", 1500, 1000)]
+    )
+    rest = [p for p in plannen if p.is_reststuk]
+    assert len(rest) == 1
+    assert {rest[0].naam_voor(p.onderdeel_id) for p in rest[0].resultaat.plaatsingen} == {"Gewoon"}
+    volle = [p for p in plannen if not p.is_reststuk]
+    assert {volle[0].naam_voor(p.onderdeel_id) for p in volle[0].resultaat.plaatsingen} == {"Fabriek", "Groep A", "Groep B"}
+
+
+def test_reststuk_met_fabrieksrand_neemt_fabrieksrand_onderdeel_aan():
+    from robocutter.modellen.models import Rand
+
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal(fabriekskantenband_randen=frozenset({Rand.ONDER, Rand.BOVEN})))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(hout.id, naam="Fabriek", breedte=400, hoogte=300, fabriekskantenband_vereist=True),
+            ],
+        )
+    )
+    met_rand = _reststuk(hout.id, "met-rand", 1500, 1000)
+    met_rand.fabriekskantenband_randen = frozenset({Rand.ONDER})
+    zonder_rand = _reststuk(hout.id, "zonder-rand", 600, 500)  # kleiner, dus eerst geprobeerd
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=[zonder_rand, met_rand])
+
+    assert [p.reststuk_id for p in plannen] == ["met-rand"]
+    plaatsing = plannen[0].resultaat.plaatsingen[0]
+    assert plaatsing.y == 0  # tegen de fabrieksrand ONDER

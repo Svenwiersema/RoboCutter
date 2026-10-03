@@ -402,7 +402,11 @@ def _kantenband_tekst(info) -> str:
 def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) -> None:
     mat = plan.resultaat.materiaal
     afmeting = f"{mat.lengte:g} × {mat.breedte:g} mm"
-    regel2 = f"{mat.naam}  ·  Plaat {plan.plaat_nummer} van {plan.platen_totaal}  ·  strategie {strategie_label}"
+    if plan.is_reststuk:
+        plaat_tekst = f"Reststuk uit de bibliotheek {plan.plaat_nummer} van {plan.platen_totaal}"
+    else:
+        plaat_tekst = f"Plaat {plan.plaat_nummer} van {plan.platen_totaal}"
+    regel2 = f"{mat.naam}  ·  {plaat_tekst}  ·  strategie {strategie_label}"
     kop_onder = _teken_kop(ctx, regel2)
 
     # Groepeer plaatsingen per onderdeel-id (zelfde als het scherm) voor
@@ -501,17 +505,22 @@ def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zo
     ox = marge + (beschikbaar_w - plaat_w) / 2
     oy = zone_top_mm + marge + (beschikbaar_h - plaat_h) / 2
 
+    # y loopt omhoog: de motor legt y=0 aan de rand ONDER, zelfde
+    # oriëntatie als ZaagplaatWidget (zie daar).
     def px(x_stuk: float, y_stuk: float) -> QPointF:
-        return ctx.px(ox + x_stuk * schaal_mm_per_mm, oy + y_stuk * schaal_mm_per_mm)
+        return ctx.px(ox + x_stuk * schaal_mm_per_mm, oy + (mat.breedte - y_stuk) * schaal_mm_per_mm)
+
+    def rect_mm(x: float, y: float, b: float, h: float) -> QRectF:
+        return QRectF(px(x, y), px(x + b, y + h)).normalized()
 
     # Plaatrand.
     p.setPen(QPen(_LINE, ctx.mm(0.4)))
     p.setBrush(_WHITE)
-    p.drawRect(QRectF(px(0, 0), px(mat.lengte, mat.breedte)))
+    p.drawRect(rect_mm(0, 0, mat.lengte, mat.breedte))
 
     # Reststukken (herbruikbaar) — groen.
     for i, r in enumerate(resultaat.reststukken, start=1):
-        rect = QRectF(px(r.x, r.y), px(r.x + r.breedte, r.y + r.hoogte))
+        rect = rect_mm(r.x, r.y, r.breedte, r.hoogte)
         p.setPen(QPen(_OFFCUT_LINE, ctx.mm(0.25)))
         p.setBrush(_OFFCUT_FILL)
         p.drawRect(rect)
@@ -519,7 +528,7 @@ def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zo
 
     # Geplaatste onderdelen — neutraal grijsblauw, groen nummerbolletje.
     for i, pl in enumerate(resultaat.plaatsingen, start=1):
-        rect = QRectF(px(pl.x, pl.y), px(pl.x + pl.breedte, pl.y + pl.hoogte))
+        rect = rect_mm(pl.x, pl.y, pl.breedte, pl.hoogte)
         p.setPen(QPen(_PART_LINE, ctx.mm(0.25)))
         p.setBrush(_PART_FILL)
         p.drawRect(rect)
@@ -545,7 +554,7 @@ def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zo
         if s.richting == "verticaal":
             # Badge aan de onderkant van dit sneden-segment (het punt waar
             # de snede "aankomt"), zelfde regel als de goedgekeurde mockup.
-            badge_x, badge_y = s.positie, max(s.start, s.einde)
+            badge_x, badge_y = s.positie, min(s.start, s.einde)  # y loopt omhoog
         else:
             # Horizontale snede: badge aan de linkerkant van het segment.
             badge_x, badge_y = min(s.start, s.einde), s.positie
@@ -572,18 +581,20 @@ def _teken_fabrieksrand(ctx: _Ctx, rand: Rand, px, mat) -> None:
     label = "FABRIEKSKANTENBAND — NIET AFZAGEN"
     label_font = _font(_SANS, 5.5, bold=True)
 
+    # px() heeft y omhoog: y = mat.breedte is de bovenrand op papier.
+    boven, onder = mat.breedte, 0.0
     if rand == Rand.LINKS:
-        p.drawLine(px(0, 0) + QPointF(-ctx.mm(afstand), 0), px(0, mat.breedte) + QPointF(-ctx.mm(afstand), 0))
-        label_rect = QRectF(px(0, 0) + QPointF(0, -ctx.mm(5.5)), px(mat.lengte, 0) + QPointF(0, -ctx.mm(1.5)))
+        p.drawLine(px(0, onder) + QPointF(-ctx.mm(afstand), 0), px(0, boven) + QPointF(-ctx.mm(afstand), 0))
+        label_rect = QRectF(px(0, boven) + QPointF(0, -ctx.mm(5.5)), px(mat.lengte, boven) + QPointF(0, -ctx.mm(1.5)))
     elif rand == Rand.RECHTS:
-        p.drawLine(px(mat.lengte, 0) + QPointF(ctx.mm(afstand), 0), px(mat.lengte, mat.breedte) + QPointF(ctx.mm(afstand), 0))
-        label_rect = QRectF(px(0, 0) + QPointF(0, -ctx.mm(5.5)), px(mat.lengte, 0) + QPointF(0, -ctx.mm(1.5)))
+        p.drawLine(px(mat.lengte, onder) + QPointF(ctx.mm(afstand), 0), px(mat.lengte, boven) + QPointF(ctx.mm(afstand), 0))
+        label_rect = QRectF(px(0, boven) + QPointF(0, -ctx.mm(5.5)), px(mat.lengte, boven) + QPointF(0, -ctx.mm(1.5)))
     elif rand == Rand.ONDER:
-        p.drawLine(px(0, mat.breedte) + QPointF(0, ctx.mm(afstand)), px(mat.lengte, mat.breedte) + QPointF(0, ctx.mm(afstand)))
-        label_rect = QRectF(px(0, mat.breedte) + QPointF(0, ctx.mm(afstand + 1)), px(mat.lengte, mat.breedte) + QPointF(0, ctx.mm(afstand + 5)))
+        p.drawLine(px(0, onder) + QPointF(0, ctx.mm(afstand)), px(mat.lengte, onder) + QPointF(0, ctx.mm(afstand)))
+        label_rect = QRectF(px(0, onder) + QPointF(0, ctx.mm(afstand + 1)), px(mat.lengte, onder) + QPointF(0, ctx.mm(afstand + 5)))
     else:  # BOVEN
-        p.drawLine(px(0, 0) + QPointF(0, -ctx.mm(afstand)), px(mat.lengte, 0) + QPointF(0, -ctx.mm(afstand)))
-        label_rect = QRectF(px(0, 0) + QPointF(0, -ctx.mm(5.5)), px(mat.lengte, 0) + QPointF(0, -ctx.mm(1.5)))
+        p.drawLine(px(0, boven) + QPointF(0, -ctx.mm(afstand)), px(mat.lengte, boven) + QPointF(0, -ctx.mm(afstand)))
+        label_rect = QRectF(px(0, boven) + QPointF(0, -ctx.mm(5.5)), px(mat.lengte, boven) + QPointF(0, -ctx.mm(1.5)))
 
     p.setPen(QPen(_FACTORY_EDGE))
     p.setFont(label_font)

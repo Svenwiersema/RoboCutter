@@ -243,6 +243,7 @@ def _plan_naar_dict(p: PlaatZaagplan) -> dict:
         "plaat_nummer": p.plaat_nummer,
         "platen_totaal": p.platen_totaal,
         "onderdeel_info": {k: _onderdeel_info_naar_dict(v) for k, v in p.onderdeel_info.items()},
+        "reststuk_id": p.reststuk_id,
     }
 
 
@@ -254,4 +255,5 @@ def _dict_naar_plan(d: dict) -> PlaatZaagplan:
         plaat_nummer=d["plaat_nummer"],
         platen_totaal=d["platen_totaal"],
         onderdeel_info={k: _dict_naar_onderdeel_info(v) for k, v in d["onderdeel_info"].items()},
+        reststuk_id=d.get("reststuk_id"),
     )

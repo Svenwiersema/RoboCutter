@@ -73,7 +73,7 @@ class Instellingen:
     standaard_zaagstrategie: str = "horizontaal"
     # Op Svens verzoek centraal i.p.v. per materiaal: de ruimte die het
     # zaagblad tussen twee onderdelen wegneemt (zie projecten/zaagplannen.py).
-    zaagsnede: float = 4.0  # mm
+    zaagsnede: float = 3.0  # mm
     werkvoorbereider_naam: str = ""
     # Hoofdstuk 6 (Labels & identificatie): de optionele labelvelden zijn
     # bewust app-brede instellingen, geen keuze per printactie.

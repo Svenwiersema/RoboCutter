@@ -104,7 +104,9 @@ from PySide6.QtWidgets import (
 )
 
 from robocutter.instellingen.beheer import InstellingenBeheer
-from robocutter.projecten.models import Project
+from robocutter.projecten.models import Project, ProjectStatus
+from robocutter.projecten.project_reststukken import ProjectReststukkenBibliotheek
+from robocutter.projecten.project_reststukken_opslag import open_verbinding as open_project_reststukken_verbinding
 from robocutter.projecten.zaaglijst import bouw_zaaglijst
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.projecten.zaagplannen_opslag import open_verbinding as open_zaagplannen_verbinding
@@ -334,6 +336,13 @@ class MainWindow(QMainWindow):
         zaagplannen_db_pad.parent.mkdir(parents=True, exist_ok=True)
         self._zaagplannen_db = open_zaagplannen_verbinding(zaagplannen_db_pad)
         self._zaagplannen_opslag = ZaagplannenOpslag(self._zaagplannen_db)
+        # Zelfde reden voor de reststukkenlijst per project (zie
+        # projecten/project_reststukken.py); vrijgeven schrijft in de
+        # bibliotheek van de Reststukken-pagina.
+        self._project_reststukken_db = open_project_reststukken_verbinding(zaagplannen_db_pad)
+        self._project_reststukken = ProjectReststukkenBibliotheek(
+            self._materialen_page.bibliotheek, self._reststukken_page.bibliotheek, self._project_reststukken_db
+        )
         # Eén losse, sluitbare ProjectDetailPage per geopend project
         # (tabsleutel f"project:{project_id}") — anders dan de
         # bibliotheekschermen hierboven kunnen hier meerdere tegelijk open
@@ -587,10 +596,12 @@ class MainWindow(QMainWindow):
                 self._modellen_page.bibliotheek,
                 self._materialen_page.bibliotheek,
                 self._zaagplannen_opslag,
+                self._project_reststukken,
                 self._theme,
                 on_gewijzigd=self._on_project_gewijzigd,
                 on_open_projecten_tab=lambda: self._open_tab("projecten"),
                 on_open_modelkopie=self._open_tab_projectmodel,
+                on_reststukken_gewijzigd=self._on_reststukken_gewijzigd,
             )
         if key not in self._open_tabs:
             self._open_tabs.append(key)
@@ -687,6 +698,12 @@ class MainWindow(QMainWindow):
         self._modellen_page.ververs()
         self._rebuild_content()
 
+    def _on_reststukken_gewijzigd(self) -> None:
+        # Vrijgegeven of door een zaagplan gereserveerd: lijst en
+        # dashboardteller bijwerken.
+        self._reststukken_page.ververs()
+        self._rebuild_content()
+
     def _dashboard_status_wijzigen(self, project_id: str, status) -> None:
         # Op Svens verzoek: status snel kunnen wijzigen vanaf een
         # Dashboard-kaart zelf, zonder het project eerst te hoeven openen.
@@ -699,6 +716,14 @@ class MainWindow(QMainWindow):
         # verversen, niet alleen de chrome/tabbladen (die haalt haar data pas
         # weer op bij de volgende _rebuild_content-aanroep, hierna).
         self._projecten_page.ververs()
+        # Een project dat In productie (of verder) staat, zaagt zijn
+        # gereserveerde reststukken echt: die worden "gebruikt".
+        verbruikt = False
+        for project in self._projecten_page.bibliotheek.lijst():
+            if project.status != ProjectStatus.WERKVOORBEREIDING:
+                verbruikt |= bool(self._reststukken_page.bibliotheek.verbruik_reserveringen(project.id))
+        if verbruikt:
+            self._reststukken_page.ververs()
         # Een open modelkopie-tabblad volgt wijzigingen vanuit het project
         # (bv. "bijwerken naar laatste versie" of het model verwijderen).
         for pagina in self._projectmodel_pages.values():
@@ -958,6 +983,7 @@ class MainWindow(QMainWindow):
         self._materialen_page.sluit_verbinding()
         self._projecten_page.sluit_verbinding()
         self._zaagplannen_db.close()
+        self._project_reststukken_db.close()
         super().closeEvent(event)
 
     def _rebuild_content(self) -> None:
