@@ -14,6 +14,11 @@ projectnummer, afmeting) plus de optionele velden die
 kantenband-indicatie, nerfrichting-pijl) — één algemene instelling,
 geen keuze per printactie.
 
+Reststuk-labels (``ReststukLabel``) gebruiken hetzelfde vel en dezelfde
+opbouw, met "Reststuk R2" als naam en zonder projectregel (hoofdstuk 6);
+de fabrieksranden staan op de kantenband-regel en de nerfpijl loopt
+langs de lengte (eerste maat) als het materiaal nerf heeft.
+
 De scancode wordt zelf getekend (geen plaatje/afbeeldingsbestand):
 een QR-code via ``qrcode``'s ``get_matrix()`` (geeft een boolean-
 rooster, geen Pillow-afhankelijkheid nodig) en een 1D-barcode via
@@ -32,7 +37,7 @@ from PySide6.QtPrintSupport import QPrinter
 
 from robocutter.instellingen.models import Instellingen
 from robocutter.modellen.models import Nerfrichting
-from robocutter.projecten.labels import OnderdeelLabel
+from robocutter.projecten.labels import OnderdeelLabel, ReststukLabel
 from robocutter.projecten.models import Project
 
 __all__ = ["schrijf_labels_pdf"]
@@ -79,7 +84,11 @@ def _elide(painter: QPainter, font: QFont, tekst: str, breedte_px: float) -> str
     return painter.fontMetrics().elidedText(tekst, Qt.TextElideMode.ElideRight, int(breedte_px))
 
 
-def _kantenband_tekst(label: OnderdeelLabel) -> str:
+def _kantenband_tekst(label: OnderdeelLabel | ReststukLabel) -> str:
+    if isinstance(label, ReststukLabel):
+        if label.fabriekskantenband_randen:
+            return "Fabrieksrand: " + ", ".join(sorted(r.value for r in label.fabriekskantenband_randen))
+        return ""
     if label.fabriekskantenband_vereist:
         return "Fabrieksrand"
     if label.kantenband_randen:
@@ -87,7 +96,9 @@ def _kantenband_tekst(label: OnderdeelLabel) -> str:
     return ""
 
 
-def schrijf_labels_pdf(pad: str, project: Project, labels: list[OnderdeelLabel], instellingen: Instellingen) -> None:
+def schrijf_labels_pdf(
+    pad: str, project: Project | None, labels: list[OnderdeelLabel | ReststukLabel], instellingen: Instellingen
+) -> None:
     """Schrijft ``labels`` als een rooster labels naar één PDF op
     ``pad`` (A4 staand, meerdere pagina's zodra het rooster vol is)."""
 
@@ -129,7 +140,15 @@ def schrijf_labels_pdf(pad: str, project: Project, labels: list[OnderdeelLabel],
     painter.end()
 
 
-def _teken_label(ctx: _Ctx, x_mm: float, y_mm: float, project: Project, label: OnderdeelLabel, instellingen: Instellingen) -> None:
+def _teken_label(
+    ctx: _Ctx,
+    x_mm: float,
+    y_mm: float,
+    project: Project | None,
+    label: OnderdeelLabel | ReststukLabel,
+    instellingen: Instellingen,
+) -> None:
+    is_reststuk = isinstance(label, ReststukLabel)
     p = ctx.painter
     rect = QRectF(ctx.px(x_mm, y_mm), ctx.px(x_mm + _LABEL_W_MM, y_mm + _LABEL_H_MM))
 
@@ -148,7 +167,7 @@ def _teken_label(ctx: _Ctx, x_mm: float, y_mm: float, project: Project, label: O
     naam_font = _font(_SANS, 9.0, bold=True)
     naam_rect = QRectF(ctx.px(x_mm + pad, y_mm + pad), QPointF(ctx.mm(x_mm + pad + tekst_breedte), ctx.mm(y_mm + pad + 4.5)))
     p.setPen(QPen(_INK))
-    p.drawText(naam_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, naam_font, label.onderdeel_naam, naam_rect.width()))
+    p.drawText(naam_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, naam_font, f"Reststuk {label.code}" if is_reststuk else label.onderdeel_naam, naam_rect.width()))
 
     mat_font = _font(_SANS, 7.0)
     mat_rect = QRectF(ctx.px(x_mm + pad, y_mm + pad + 4.8), QPointF(ctx.mm(x_mm + pad + tekst_breedte), ctx.mm(y_mm + pad + 8.3)))
@@ -164,8 +183,9 @@ def _teken_label(ctx: _Ctx, x_mm: float, y_mm: float, project: Project, label: O
     proj_font = _font(_SANS, 6.5)
     proj_rect = QRectF(ctx.px(x_mm + pad, y_mm + pad + 15.4), QPointF(ctx.mm(x_mm + pad + tekst_breedte), ctx.mm(y_mm + pad + 18.4)))
     p.setPen(QPen(_MUTED))
-    proj_tekst = f"Project: {label.projectnummer}" if label.projectnummer else f"Project: {project.naam}"
-    p.drawText(proj_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, proj_font, proj_tekst, proj_rect.width()))
+    if not is_reststuk:  # reststuk-label: bewust geen projectregel (hoofdstuk 6)
+        proj_tekst = f"Project: {label.projectnummer or (project.naam if project else '')}"
+        p.drawText(proj_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, proj_font, proj_tekst, proj_rect.width()))
 
     onder_y = y_mm + _LABEL_H_MM - pad - 4.0
 
@@ -178,8 +198,13 @@ def _teken_label(ctx: _Ctx, x_mm: float, y_mm: float, project: Project, label: O
         p.drawText(kant_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, kant_font, kant_tekst, kant_rect.width()))
 
     # Optionele nerfrichting-pijl, rechtsonder in de tekstzone.
-    if instellingen.label_nerfrichting_pijl and label.nerfrichting_vereist != Nerfrichting.GEEN:
-        _teken_nerf_pijl(ctx, x_mm + tekst_breedte + pad - 9.0, onder_y + 2.0, label.nerfrichting_vereist)
+    if is_reststuk:
+        nerf = Nerfrichting.LANGE_ZIJDE if label.nerf_langs_lengte else Nerfrichting.GEEN
+    else:
+        nerf = label.nerfrichting_vereist
+    if instellingen.label_nerfrichting_pijl and nerf != Nerfrichting.GEEN:
+        # Midden op de hoogte van de kantenband-regel, binnen de labelrand.
+        _teken_nerf_pijl(ctx, x_mm + tekst_breedte + pad - 9.0, onder_y - 1.5, nerf)
 
     # Optionele scancode: QR rechtsboven (vierkant), of barcode als
     # volle-breedte strook onderaan (verdringt dan de kantenband-/

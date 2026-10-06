@@ -226,6 +226,30 @@ def test_reserveren_door_zaagplan_en_verbruiken_bij_productie(tmp_path):
     assert (herladen.status, herladen.project_id, herladen.project_naam) == (ReststukStatus.GEBRUIKT, "p1", "Keuken")
 
 
+def test_verwijderd_project_geeft_reserveringen_vrij(tmp_path):
+    db_pad = tmp_path / "rest.db"
+    verbinding = open_verbinding(db_pad)
+    materialen = MaterialenBibliotheek()
+    materiaal = materialen.toevoegen(_materiaal())
+    reststukken = ReststukkenBibliotheek(materialen, verbinding)
+    gereserveerd = reststukken.toevoegen(_reststuk(materiaal.id))
+    gebruikt = reststukken.toevoegen(_reststuk(materiaal.id))
+    ander = reststukken.toevoegen(_reststuk(materiaal.id))
+    reststukken.wijs_toe_aan_project("p1", "Keuken", {gereserveerd.id, gebruikt.id})
+    gebruikt.status = ReststukStatus.GEBRUIKT  # dit stuk is al verzaagd
+    reststukken.wijs_toe_aan_project("p2", "Kast", {ander.id})
+
+    assert [r.id for r in reststukken.geef_reserveringen_vrij("p1")] == [gereserveerd.id]
+    assert (gereserveerd.status, gereserveerd.project_id) == (ReststukStatus.BESCHIKBAAR, "")
+    # Echt verzaagd blijft verzaagd; reserveringen van andere projecten blijven staan.
+    assert gebruikt.status == ReststukStatus.GEBRUIKT
+    assert ander.status == ReststukStatus.GERESERVEERD
+    verbinding.close()
+
+    herladen = ReststukkenBibliotheek(materialen, open_verbinding(db_pad)).ophalen(gereserveerd.id)
+    assert (herladen.status, herladen.project_id) == (ReststukStatus.BESCHIKBAAR, "")
+
+
 def test_oude_database_krijgt_projectkolommen(tmp_path):
     import sqlite3
 

@@ -172,6 +172,15 @@ def _reden_niet_geplaatst(eenheid: _Eenheid, materiaal: Materiaal) -> str:
     hoogte_beschikbaar = y1 - y0
     b, h = eenheid.breedte, eenheid.hoogte
     is_groep = len(eenheid.leden) > 1
+    # Een nerf-eis legt de stand vast (zie _kies_afmeting): een onderdeel
+    # van 800×300 met "korte zijde langs de nerf" staat op de plaat als
+    # 300×800. Toets dus die stand, niet de ingevoerde breedte×hoogte —
+    # anders zegt de reden "past qua afmeting wel" terwijl het onderdeel
+    # in de verplichte stand juist niet past.
+    nerf_eis = None
+    if not is_groep and not eenheid.mag_roteren:
+        nerf_eis = eenheid.leden[0][0].nerfrichting_vereist
+        nb, nh, _ = _kies_afmeting(eenheid, None)
     omschrijving = (
         f"deze groep ({len(eenheid.leden)} onderdelen, samen {b:.0f}×{h:.0f}mm gestapeld)"
         if is_groep
@@ -180,6 +189,25 @@ def _reden_niet_geplaatst(eenheid: _Eenheid, materiaal: Materiaal) -> str:
 
     fabriek_randen_geraakt = eenheid.kantenband_randen & materiaal.fabriekskantenband_randen
     mag_roteren_hier = eenheid.mag_roteren and not fabriek_randen_geraakt
+
+    if nerf_eis is not None and nerf_eis != Nerfrichting.GEEN and not fabriek_randen_geraakt:
+        past_nerf = nb <= breedte_beschikbaar + 1e-9 and nh <= hoogte_beschikbaar + 1e-9
+        if not past_nerf:
+            knelpunten = []
+            if nb > breedte_beschikbaar + 1e-9:
+                knelpunten.append(f"lengte {nb:.0f}mm > beschikbare {breedte_beschikbaar:.0f}mm")
+            if nh > hoogte_beschikbaar + 1e-9:
+                knelpunten.append(f"breedte {nh:.0f}mm > beschikbare {hoogte_beschikbaar:.0f}mm")
+            zijde = "korte" if nerf_eis == Nerfrichting.KORTE_ZIJDE else "lange"
+            past_gedraaid = nh <= breedte_beschikbaar + 1e-9 and nb <= hoogte_beschikbaar + 1e-9
+            return (
+                f"{omschrijving.capitalize()} moet met de {zijde} zijde langs de nerf van {materiaal.naam} "
+                f"liggen, dus als {nb:.0f}×{nh:.0f}mm op de plaat — zo past het niet "
+                f"({'; '.join(knelpunten)})."
+                + (" Gedraaid zou het wel passen, maar dan loopt de nerf de verkeerde kant op." if past_gedraaid else "")
+                + " Dit lost een extra plaat niet op: elke plaat van dit materiaal heeft dezelfde afmeting."
+            )
+        b, h = nb, nh
 
     past_normaal = b <= breedte_beschikbaar and h <= hoogte_beschikbaar
     past_geroteerd = h <= breedte_beschikbaar and b <= hoogte_beschikbaar

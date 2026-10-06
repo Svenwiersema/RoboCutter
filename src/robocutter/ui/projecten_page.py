@@ -140,10 +140,14 @@ class ProjectenPage(QWidget):
         materialen: MaterialenBibliotheek,
         theme: Theme,
         on_open_project=None,
+        on_project_verwijderd=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._theme = theme
+        # Na definitief verwijderen ruimt MainWindow de rest van het project
+        # op (projectreststukken, opgeslagen zaagplan, reserveringen, tabs).
+        self._on_project_verwijderd = on_project_verwijderd
         self._melding = OpslagMelding(self, theme)
         self._materialen = materialen
         # Op Svens verzoek opent het potlood-icoon in een rij nu het losse
@@ -631,12 +635,16 @@ class ProjectenPage(QWidget):
         self._ververs_tabel()
 
     def _verwijder_definitief(self, project_id: str) -> None:
+        verwijderd = False
         try:
             self.bibliotheek.verwijderen_definitief(project_id)
+            verwijderd = True
         except OngeldigeStatusOvergangError:
             pass
         self._confirm_delete_id = None
         self._ververs_alles()
+        if verwijderd and self._on_project_verwijderd is not None:
+            self._on_project_verwijderd(project_id)
 
     # ------------------------------------------------------------------
     # Toevoegen/bewerken-paneel (drawer)

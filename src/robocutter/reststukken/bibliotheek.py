@@ -108,6 +108,9 @@ class ReststukkenBibliotheek:
     def ophalen(self, reststuk_id: str) -> Reststuk:
         return self._reststukken[reststuk_id]
 
+    def bestaat(self, reststuk_id: str) -> bool:
+        return reststuk_id in self._reststukken
+
     def materiaal_van(self, reststuk: Reststuk) -> Materiaal:
         try:
             return self._materialen.ophalen(reststuk.materiaal_id)
@@ -183,6 +186,20 @@ class ReststukkenBibliotheek:
                 self._persisteer(r)
                 verbruikt.append(r)
         return verbruikt
+
+    def geef_reserveringen_vrij(self, project_id: str) -> list[Reststuk]:
+        """Het project wordt definitief verwijderd: zijn gereserveerde
+        reststukken zijn nooit gezaagd en worden weer beschikbaar. Al
+        gebruikte stukken blijven gebruikt (die zijn echt verzaagd)."""
+
+        vrij: list[Reststuk] = []
+        for r in self._reststukken.values():
+            if r.project_id == project_id and r.status == ReststukStatus.GERESERVEERD:
+                r.status = ReststukStatus.BESCHIKBAAR
+                r.project_id = r.project_naam = ""
+                self._persisteer(r)
+                vrij.append(r)
+        return vrij
 
     def verwijderen(self, reststuk_id: str) -> None:
         del self._reststukken[reststuk_id]

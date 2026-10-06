@@ -1,0 +1,335 @@
+<title>Labels Keuken Jansen</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: app-chrome (header + tabbalk) boven, projectzijbalk links, Labels-paneel rechts
+     met een segmentschakelaar Onderdelen/Reststukken; onder de tabel een voorbeeld van het
+     geprinte label op ware verhouding (64×38 mm). Tokens = theme.py (LICHT/DONKER). */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF; --accent-soft-border:#CDD6FF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --neutral-dot:#9297A8; --indigo:#7B6FE0; --indigo-soft:#EFEDFB;
+    --chrome-bg:#16171D; --chrome-bg-raised:#1D1F27; --chrome-text:#E7E8EE;
+    --chrome-text-muted:#8B8FA3; --chrome-border:#2B2D37; --chrome-active-bg:rgba(95,127,255,0.18);
+    --paper:#FFFFFF; --paper-ink:#1a1a1a; --paper-muted:#5b6470; --paper-line:#c7ccd3;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .app{display:flex;flex-direction:column;min-height:100vh;}
+
+  .header{height:52px;background:var(--chrome-bg);border-bottom:1px solid var(--chrome-border);display:flex;align-items:center;gap:24px;padding:0 18px;}
+  .brand{color:var(--chrome-text);font-size:15px;font-weight:800;}
+  .brand span{color:#8CA0FF;}
+  .nav{display:flex;gap:2px;flex-wrap:wrap;}
+  .nav-btn{padding:7px 13px;border-radius:7px;font-weight:600;color:var(--chrome-text-muted);}
+  .nav-btn.active{background:var(--chrome-active-bg);color:#C7D3FF;}
+  .tabstrip{height:38px;background:var(--chrome-bg-raised);border-bottom:1px solid var(--chrome-border);display:flex;padding:0 6px;}
+  .tab{display:flex;align-items:center;padding:0 16px;color:var(--chrome-text-muted);font-weight:500;}
+  .tab.active{background:var(--bg);color:var(--text);font-weight:600;}
+
+  .workspace{flex:1;display:flex;min-height:0;}
+  .sidebar{width:216px;flex:0 0 auto;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;}
+  .sidebar-label{color:var(--text-faint);font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;font-weight:500;color:var(--text-muted);}
+  .sidebar-item.active{background:var(--accent-soft);color:var(--accent-text);font-weight:600;}
+  .sidebar-item svg{width:16px;height:16px;flex:0 0 auto;}
+  .divider{height:1px;background:var(--border);margin:8px 0;}
+
+  .view{flex:1;min-width:0;padding:24px 28px 40px;}
+  .inner{max-width:1120px;display:flex;flex-direction:column;gap:16px;}
+  .crumb{font-size:12px;color:var(--text-faint);font-weight:600;}
+  .title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .title{font-size:22px;font-weight:800;text-wrap:balance;margin:0;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:var(--accent-soft);color:var(--accent-text);}
+  .chip .dot{width:7px;height:7px;border-radius:3px;background:var(--accent);}
+
+  .toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;}
+  .toolbar .grow{flex:1;min-width:200px;display:flex;flex-direction:column;gap:2px;}
+  .mat-name{font-size:15px;font-weight:700;}
+  .mat-meta{color:var(--text-muted);font-size:12.5px;}
+
+  .segmented{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px;}
+  .seg{border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:600;color:var(--text-muted);padding:7px 14px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:7px;}
+  .seg:hover{color:var(--text);}
+  .seg.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,0.08);}
+  .seg .count{font-size:11px;font-weight:700;background:var(--surface-2);color:var(--text-faint);border-radius:8px;padding:1px 6px;font-variant-numeric:tabular-nums;}
+  .seg.active .count{background:var(--accent-soft);color:var(--accent-text);}
+  .seg:focus-visible,.btn:focus-visible,.check:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;}
+  .btn svg{width:14px;height:14px;}
+  .btn-primary{background:var(--accent);color:#12141B;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+  .btn:disabled{opacity:0.45;cursor:default;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;min-width:640px;}
+  th{text-align:left;font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text-faint);padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+  td{padding:0 14px;height:42px;border-bottom:1px solid var(--border);}
+  tr:last-child td{border-bottom:none;}
+  tbody tr:hover td{background:var(--surface-hover);}
+  tbody tr.sel td{background:var(--accent-soft);}
+  .col-check{width:44px;}
+  .check{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;}
+  .mono{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;}
+  .code{font-family:var(--mono);font-weight:700;color:var(--accent-text);}
+  .muted{color:var(--text-muted);}
+  .fab{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);}
+  .fab i{display:inline-block;width:14px;height:3px;border-radius:2px;background:var(--accent);}
+  .card-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 14px;border-top:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);font-size:12.5px;}
+  .card-foot .grow{flex:1;min-width:200px;}
+  .linkbtn{border:none;background:none;color:var(--accent-text);font:inherit;font-weight:600;cursor:pointer;padding:0;}
+
+  .note{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:10px 14px;color:var(--text-muted);font-size:12.5px;line-height:1.5;}
+  .note b{color:var(--text);}
+
+  .preview{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;}
+  .preview-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0;}
+  .preview-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
+  .section-label{color:var(--text-faint);font-size:10.5px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
+  .preview-card ul{margin:0;padding-left:18px;color:var(--text-muted);font-size:12.5px;line-height:1.6;}
+
+  /* Het label zelf: wit papier in beide thema's, 64×38 mm op 5 px/mm. */
+  .label{width:320px;max-width:100%;aspect-ratio:64/38;background:var(--paper);color:var(--paper-ink);border:1px dashed var(--paper-line);border-radius:3px;position:relative;padding:12px 12px 10px;display:flex;gap:10px;font-family:"Segoe UI",var(--sans);}
+  .label .txt{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .label .l-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .label .l-mat{font-size:11px;color:var(--paper-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .label .l-afm{font-family:Consolas,var(--mono);font-size:17px;font-weight:700;margin-top:8px;}
+  .label .l-proj{font-size:10px;color:var(--paper-muted);margin-top:4px;}
+  .label .l-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .label .l-kant{font-size:10px;font-weight:700;color:var(--paper-muted);}
+  .label canvas{width:75px;height:75px;flex:0 0 auto;image-rendering:pixelated;}
+  .label .badge{position:absolute;left:12px;bottom:-9px;}
+
+  @media (max-width:760px){
+    .sidebar{display:none;}
+    .view{padding:18px 16px 32px;}
+    .header{gap:12px;}
+  }
+</style>
+
+<div class="app">
+  <div class="header">
+    <div class="brand">Robo<span>Cutter</span></div>
+    <div class="nav"><div class="nav-btn active">Projecten</div><div class="nav-btn">Modellen</div><div class="nav-btn">Materialen</div><div class="nav-btn">Reststukken</div></div>
+  </div>
+  <div class="tabstrip"><div class="tab">Projecten</div><div class="tab active">Keuken Jansen</div></div>
+
+  <div class="workspace">
+    <nav class="sidebar" aria-label="Project">
+      <div class="sidebar-label">Project</div>
+      <div class="sidebar-item">Overzicht</div>
+      <div class="sidebar-item">Samenstelling</div>
+      <div class="sidebar-item">Zaaglijst</div>
+      <div class="divider"></div>
+      <div class="sidebar-label">Documenten</div>
+      <div class="sidebar-item">Zaagplannen</div>
+      <div class="sidebar-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+        Labels
+      </div>
+      <div class="sidebar-item">Reststukken</div>
+    </nav>
+
+    <main class="view">
+      <div class="inner">
+        <div>
+          <div class="crumb">Projecten › Keuken Jansen</div>
+          <div class="title-row"><h1 class="title">Keuken Jansen</h1><span class="chip"><span class="dot"></span>In productie</span></div>
+        </div>
+
+        <div class="toolbar">
+          <div class="grow">
+            <div class="mat-name">Labels</div>
+            <div class="mat-meta" id="sub">24 labels · één per gezaagd onderdeel-exemplaar</div>
+          </div>
+          <div class="segmented" role="tablist" aria-label="Soort label">
+            <button class="seg active" role="tab" id="seg-onderdelen" aria-selected="true" data-tab="onderdelen">Onderdelen <span class="count">24</span></button>
+            <button class="seg" role="tab" id="seg-reststukken" aria-selected="false" data-tab="reststukken">Reststukken <span class="count">4</span></button>
+          </div>
+          <button class="btn btn-ghost" id="btn-selectie" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>
+            <span>Selectie als PDF</span>
+          </button>
+          <button class="btn btn-primary" id="btn-alles">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>
+            <span>Alle labels als PDF</span>
+          </button>
+        </div>
+
+        <!-- Onderdelen -->
+        <section class="card" id="panel-onderdelen">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th class="col-check"><input type="checkbox" class="check" id="all-onderdelen" aria-label="Alles selecteren"></th><th>Onderdeel</th><th>Materiaal</th><th>Afmeting</th><th>Kantenband</th><th>Nerfrichting</th></tr></thead>
+              <tbody id="rows-onderdelen"></tbody>
+            </table>
+          </div>
+          <div class="card-foot"><span class="grow" id="foot-onderdelen">Niets geselecteerd · vink labels aan om alleen die opnieuw te printen</span></div>
+        </section>
+
+        <!-- Reststukken -->
+        <section class="card" id="panel-reststukken" hidden>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th class="col-check"><input type="checkbox" class="check" id="all-reststukken" aria-label="Alles selecteren"></th><th>Code</th><th>Materiaal</th><th>Afmeting</th><th>Fabrieksrand</th><th>Herkomst</th></tr></thead>
+              <tbody id="rows-reststukken"></tbody>
+            </table>
+          </div>
+          <div class="card-foot">
+            <span class="grow" id="foot-reststukken">Niets geselecteerd</span>
+            <span>2 reststukken zonder label (1 hergebruikt, 1 afgeschreven) · <button class="linkbtn" type="button">naar Reststukken</button></span>
+          </div>
+        </section>
+
+        <div class="note" id="note-reststukken" hidden>
+          <span>ⓘ</span>
+          <span>Alleen reststukken die op <b>Bewaren</b> staan krijgen een label. Zonder projectnummer (hoofdstuk 6): het stuk hoort na vrijgeven niet meer bij dit project. De scancode blijft na vrijgeven geldig, het reststuk houdt in de bibliotheek hetzelfde nummer.</span>
+        </div>
+
+        <div class="preview">
+          <div class="preview-card">
+            <div class="preview-head"><span class="section-label">Voorbeeld reststuk-label</span><span class="mat-meta">64 × 38 mm, A4-vel</span></div>
+            <div class="label" aria-label="Voorbeeld reststuk-label R2">
+              <div class="txt">
+                <div class="l-name">Reststuk R2</div>
+                <div class="l-mat">Meubelpaneel wit 18 mm</div>
+                <div class="l-afm">1240 × 600 mm</div>
+                <div class="l-foot">
+                  <span class="l-kant">Fabrieksrand: onder, boven</span>
+                  <svg width="34" height="12" viewBox="0 0 34 12" fill="none" stroke="#1a1a1a" stroke-width="1.6" stroke-linecap="round" aria-label="nerf langs de lengte"><path d="M2 6h30M2 6l4-3M2 6l4 3M32 6l-4-3M32 6l-4 3"/></svg>
+                </div>
+              </div>
+              <canvas data-seed="7" width="25" height="25"></canvas>
+            </div>
+            <ul>
+              <li>Code (R2), materiaal en afmeting: lengte × breedte zoals in de Reststukken-lijst, inclusief aangepaste maat.</li>
+              <li>Geen projectregel.</li>
+              <li>Fabrieksrand, nerfpijl en QR/barcode volgen de label-instellingen bij Opties. De nerfpijl staat er alleen bij materiaal met nerf.</li>
+            </ul>
+          </div>
+          <div class="preview-card">
+            <div class="preview-head"><span class="section-label">Ter vergelijking: onderdeel-label</span><span class="mat-meta">blijft zoals nu</span></div>
+            <div class="label" aria-label="Voorbeeld onderdeel-label">
+              <div class="txt">
+                <div class="l-name">Zijkant</div>
+                <div class="l-mat">Meubelpaneel wit 18 mm</div>
+                <div class="l-afm">720 × 560 mm</div>
+                <div class="l-proj">Project: 2026-041</div>
+                <div class="l-foot"><span class="l-kant">Fabrieksrand</span></div>
+              </div>
+              <canvas data-seed="3" width="25" height="25"></canvas>
+            </div>
+            <ul>
+              <li>Onderdelen-tab krijgt dezelfde vinkjes: alles printen, of alleen de aangevinkte labels (bijv. één beschadigd label).</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  const onderdelen = [
+    ["Zijkant","Meubelpaneel wit 18 mm","720 × 560 mm","Fabrieksrand","—"],
+    ["Zijkant","Meubelpaneel wit 18 mm","720 × 560 mm","Fabrieksrand","—"],
+    ["Bodem & Bovensteplank","Meubelpaneel wit 18 mm","564 × 560 mm","onder","—"],
+    ["Dwarsbalk vooraan","Meubelpaneel wit 18 mm","564 × 100 mm","onder","—"],
+    ["Front 1","MDF 19 mm gegrond","594 × 835 mm","—","Lange zijde"],
+    ["Front 2","MDF 19 mm gegrond","594 × 835 mm","—","Lange zijde"],
+    ["Rugwand","HDF 3 mm","716 × 596 mm","—","—"],
+  ];
+  const reststukken = [
+    ["R1","Meubelpaneel wit 18 mm","1240 × 600 mm","onder, boven","Volle plaat 1"],
+    ["R2","Meubelpaneel wit 18 mm","1240 × 600 mm","onder, boven","Volle plaat 2"],
+    ["R4","MDF 19 mm gegrond","812 × 455 mm","—","Volle plaat 1"],
+    ["R6","Eiken multiplex 18 mm","650 × 410 mm","—","Handmatig toegevoegd"],
+  ];
+  const state = {tab:"onderdelen", sel:{onderdelen:new Set(), reststukken:new Set()}};
+
+  function rows(kind){
+    const data = kind === "onderdelen" ? onderdelen : reststukken;
+    const body = document.getElementById("rows-"+kind);
+    body.innerHTML = data.map((r,i)=>{
+      const cells = kind === "onderdelen"
+        ? `<td>${r[0]}</td><td class="muted">${r[1]}</td><td class="mono">${r[2]}</td><td class="muted">${r[3]}</td><td class="muted">${r[4]}</td>`
+        : `<td class="code">${r[0]}</td><td class="muted">${r[1]}</td><td class="mono">${r[2]}</td><td>${r[3]==="—"?'<span class="muted">—</span>':`<span class="fab"><i></i>${r[3]}</span>`}</td><td class="muted">${r[4]}</td>`;
+      return `<tr data-i="${i}"><td><input type="checkbox" class="check" id="${kind}-${i}" aria-label="Selecteer"></td>${cells}</tr>`;
+    }).join("");
+    body.querySelectorAll("input").forEach((cb,i)=>cb.addEventListener("change",()=>{
+      cb.checked ? state.sel[kind].add(i) : state.sel[kind].delete(i); refresh();
+    }));
+    document.getElementById("all-"+kind).addEventListener("change",e=>{
+      state.sel[kind] = new Set(e.target.checked ? data.map((_,i)=>i) : []);
+      body.querySelectorAll("input").forEach((cb,i)=>cb.checked = state.sel[kind].has(i));
+      refresh();
+    });
+  }
+
+  function refresh(){
+    const k = state.tab, n = state.sel[k].size;
+    const totaal = k === "onderdelen" ? 24 : reststukken.length;
+    document.querySelectorAll("#rows-"+k+" tr").forEach((tr,i)=>tr.classList.toggle("sel", state.sel[k].has(i)));
+    const all = document.getElementById("all-"+k);
+    all.checked = n > 0 && n === (k === "onderdelen" ? onderdelen.length : reststukken.length);
+    all.indeterminate = n > 0 && !all.checked;
+    const sb = document.getElementById("btn-selectie");
+    sb.disabled = n === 0;
+    sb.querySelector("span").textContent = n ? `${n} ${n===1?"label":"labels"} als PDF` : "Selectie als PDF";
+    document.getElementById("foot-"+k).textContent = n
+      ? `${n} van ${totaal} geselecteerd`
+      : (k === "onderdelen" ? "Niets geselecteerd · vink labels aan om alleen die opnieuw te printen" : "Niets geselecteerd");
+    document.getElementById("sub").textContent = k === "onderdelen"
+      ? "24 labels · één per gezaagd onderdeel-exemplaar"
+      : "4 labels · één per reststuk dat je bewaart";
+  }
+
+  document.querySelectorAll(".seg").forEach(b=>b.addEventListener("click",()=>{
+    state.tab = b.dataset.tab;
+    document.querySelectorAll(".seg").forEach(s=>{const on=s===b; s.classList.toggle("active",on); s.setAttribute("aria-selected",on);});
+    document.getElementById("panel-onderdelen").hidden = state.tab !== "onderdelen";
+    document.getElementById("panel-reststukken").hidden = state.tab !== "reststukken";
+    document.getElementById("note-reststukken").hidden = state.tab !== "reststukken";
+    refresh();
+  }));
+
+  // Nep-QR (alleen voor de mockup): vinderpatronen + deterministische ruis.
+  document.querySelectorAll("canvas[data-seed]").forEach(c=>{
+    const g = c.getContext("2d"), n = 25; let s = +c.dataset.seed;
+    const rnd = ()=> (s = (s*9301+49297)%233280)/233280;
+    g.fillStyle = "#ffffff"; g.fillRect(0,0,n,n); g.fillStyle = "#1a1a1a";
+    const finder=(x,y)=>{g.fillRect(x,y,7,7);g.fillStyle="#ffffff";g.fillRect(x+1,y+1,5,5);g.fillStyle="#1a1a1a";g.fillRect(x+2,y+2,3,3);};
+    for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+      const inF=(x<8&&y<8)||(x>n-9&&y<8)||(x<8&&y>n-9);
+      if(!inF && rnd()>0.52) g.fillRect(x,y,1,1);
+    }
+    finder(0,0); finder(n-7,0); finder(0,n-7);
+  });
+
+  rows("onderdelen"); rows("reststukken"); refresh();
+</script>

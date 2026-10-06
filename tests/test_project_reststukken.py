@@ -251,3 +251,29 @@ def test_fabrieksranden_gaan_mee_naar_projectlijst_en_bibliotheek(tmp_path):
     project = projecten.zet_status(project.id, ProjectStatus.AFGEROND)
     nieuw = bib.vrijgeven(project)
     assert {r.fabriekskantenband_randen for r in nieuw} == {r.fabriekskantenband_randen for r in lijst}
+
+
+def test_reststuk_labels_alleen_voor_bewaren_en_scancode_blijft_geldig_na_vrijgeven():
+    from robocutter.projecten.labels import genereer_reststuk_labels
+
+    bib, projecten, reststukken, project, plannen, hout = _opzet()
+    bib.overnemen_uit_zaagplan(project.id, plannen)
+    bewaren = bib.toevoegen_handmatig(project.id, hout.id, 900, 450)
+    weg = bib.toevoegen_handmatig(project.id, hout.id, 600, 300)
+    bib.zet_status(weg.id, ProjectReststukStatus.AFGESCHREVEN)
+    bib.wijzig_afmeting(bewaren.id, 880, 440)
+
+    labels = genereer_reststuk_labels(bib.lijst(project.id), bib._materialen)
+
+    codes = {label.code for label in labels}
+    assert bewaren.code in codes and weg.code not in codes
+    label = next(label for label in labels if label.reststuk_id == bewaren.id)
+    assert label.scancode_waarde == f"RC:reststuk:{bewaren.id}"
+    assert label.afmeting_tekst == "880 × 440 mm"
+    assert label.materiaal_naam == "Eiken multiplex 18mm"
+    assert label.nerf_langs_lengte is False
+
+    project = projecten.zet_status(project.id, ProjectStatus.AFGEROND)
+    bib.vrijgeven(project)
+    # Hetzelfde id in de bibliotheek: de geprinte scancode wijst ernaar.
+    assert reststukken.ophalen(bewaren.id).lengte == 880

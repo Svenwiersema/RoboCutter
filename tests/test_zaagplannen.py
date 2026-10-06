@@ -311,3 +311,63 @@ def test_reststuk_met_fabrieksrand_neemt_fabrieksrand_onderdeel_aan():
     assert [p.reststuk_id for p in plannen] == ["met-rand"]
     plaatsing = plannen[0].resultaat.plaatsingen[0]
     assert plaatsing.y == 0  # tegen de fabrieksrand ONDER
+
+
+def test_verdeling_gebruikt_een_groot_stuk_als_kleinste_eerst_er_twee_verbruikt():
+    # Kleinste eerst: het kleine stuk krijgt één plank, het grote de
+    # andere -- twee stukken weg. Het grote stuk alleen past beide planken
+    # en laat het kleine liggen: zelfde geplaatste oppervlakte, minder
+    # reststuk verbruikt.
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[_onderdeel(hout.id, naam="Plank", breedte=600, hoogte=400, aantal=2)],
+        )
+    )
+    reststukken = [_reststuk(hout.id, "klein", 650, 450), _reststuk(hout.id, "groot", 1250, 450)]
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=reststukken, zaagsnede=3)
+
+    assert [p.reststuk_id for p in plannen] == ["groot"]
+    assert len(plannen[0].resultaat.plaatsingen) == 2
+
+
+def test_verdeling_houdt_kleinste_eerst_bij_gelijke_stand():
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[_onderdeel(hout.id, naam="Plank", breedte=600, hoogte=400, aantal=1)],
+        )
+    )
+    reststukken = [_reststuk(hout.id, "groot", 1250, 450), _reststuk(hout.id, "klein", 650, 450)]
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=reststukken, zaagsnede=3)
+
+    assert [p.reststuk_id for p in plannen] == ["klein"]
+
+
+def test_controle_meldt_veranderde_reststukken_uit_het_zaagplan():
+    from dataclasses import replace
+
+    from robocutter.projecten.zaagplannen import controleer_reststukken_in_zaagplan
+    from robocutter.reststukken.models import ReststukStatus
+
+    materialen, projecten = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    project = projecten.toevoegen(
+        Project(id="", naam="Test", klant="Test", losse_onderdelen=[_onderdeel(hout.id, breedte=400, hoogte=300)])
+    )
+    stuk = _reststuk(hout.id, "r1", 500, 400)
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen, reststukken=[stuk])
+    gereserveerd = replace(stuk, status=ReststukStatus.GERESERVEERD, project_id=project.id)
+
+    assert controleer_reststukken_in_zaagplan(plannen, project.id, [gereserveerd]) == []
+    assert "niet meer in de Reststukkenbibliotheek" in controleer_reststukken_in_zaagplan(plannen, project.id, [])[0]
+    vrij = replace(stuk, status=ReststukStatus.BESCHIKBAAR, project_id="")
+    assert "niet meer voor dit project gereserveerd" in controleer_reststukken_in_zaagplan(plannen, project.id, [vrij])[0]
+    kleiner = replace(gereserveerd, lengte=450)
+    assert "450 × 400 mm" in controleer_reststukken_in_zaagplan(plannen, project.id, [kleiner])[0]

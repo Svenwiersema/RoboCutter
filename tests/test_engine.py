@@ -703,8 +703,8 @@ def test_niet_geplaatst_reden_meldt_dat_nerfrichting_roteren_blokkeert():
     resultaat = genereer_zaagplan(mat, onderdelen, strategie="cnc")
     assert resultaat.niet_geplaatst == ["vast_om#1"]
     reden = resultaat.niet_geplaatst_redenen["vast_om#1"]
-    assert "alleen geroteerd" in reden
-    assert "nerfrichting" in reden
+    assert "lange zijde langs de nerf" in reden
+    assert "Gedraaid zou het wel passen" in reden
 
 
 def test_niet_geplaatst_reden_meldt_dat_groep_te_groot_is():
@@ -763,6 +763,30 @@ def test_niet_geplaatst_reden_meldt_fabriekskantenband_blokkeert_rotatie():
     assert "nooit roteren" in reden.lower()
     assert "600mm" in reden
     assert "past qua afmeting wel" not in reden.lower()
+
+
+@pytest.mark.parametrize(
+    "nerf, breedte, hoogte",
+    [(Nerfrichting.KORTE_ZIJDE, 800, 300), (Nerfrichting.LANGE_ZIJDE, 300, 800)],
+)
+def test_niet_geplaatst_reden_toetst_de_stand_die_de_nerf_afdwingt(nerf, breedte, hoogte):
+    # Ingevoerd als 800x300 past het qua afmeting op een 2800x600-plaat,
+    # maar "korte zijde langs de nerf" dwingt de stand 300x800 af -- en
+    # die past niet. De reden mag dan niet "past qua afmeting wel" zeggen.
+    mat = _standaard_materiaal(lengte=2800, breedte=600, kerf=3, min_reststukgrootte=0)
+    onderdelen = [Onderdeel(id="paneel", breedte=breedte, hoogte=hoogte, aantal=1, nerfrichting_vereist=nerf)]
+    resultaat = genereer_zaagplan(mat, onderdelen, strategie="horizontaal")
+    if nerf == Nerfrichting.LANGE_ZIJDE:
+        # Lange zijde langs de nerf = 800x300 op de plaat: past gewoon.
+        assert resultaat.niet_geplaatst == []
+        return
+    assert resultaat.niet_geplaatst == ["paneel#1"]
+    reden = resultaat.niet_geplaatst_redenen["paneel#1"]
+    assert "past qua afmeting wel" not in reden.lower()
+    assert "korte zijde langs de nerf" in reden
+    assert "300×800mm" in reden
+    assert "breedte 800mm > beschikbare 600mm" in reden
+    assert "Gedraaid zou het wel passen" in reden
 
 
 @pytest.mark.parametrize("strategie", ["cnc", "guillotine"])

@@ -2963,6 +2963,116 @@ houden.
   plaat. Ook de kleine plaattekening in het Reststukken-paneel volgt dit.
   Bestaande opgeslagen zaagplannen tonen meteen goed (alleen tekening).
 
+- **Opruimen bij verwijderen, bevestiging bij opnieuw genereren, één
+  generatie tegelijk, betere niet-geplaatst-reden.** Vier losse punten van
+  Sven:
+  - *Project definitief verwijderd* ("dan zijn er geen reststukken
+    geproduceerd"): `ProjectenPage` roept nu `on_project_verwijderd` aan,
+    `MainWindow._on_project_verwijderd` wist de projectreststukken
+    (`verwijder_project`, eindelijk aangeroepen), het opgeslagen zaagplan
+    en geeft gereserveerde bibliotheek-reststukken weer vrij (nieuw:
+    `ReststukkenBibliotheek.geef_reserveringen_vrij`). Al *gebruikte*
+    stukken blijven gebruikt (echt verzaagd) en al vrijgegeven stukken
+    blijven in de bibliotheek. Open project- en modelkopie-tabbladen van
+    dat project gaan dicht.
+  - *Waarschuwing vóór opnieuw genereren*: zijn er zaagplan-reststukken
+    aangepast (andere status of afmeting), dan verschijnt eerst een gele
+    balk boven het zaagplan met de codes (R1, R3, ...) en "Annuleren" /
+    "Toch opnieuw genereren" — geen pop-up. Handmatig toegevoegde stukken
+    blijven sowieso staan, dus die tellen niet mee; na vrijgeven ook niet.
+    Geen aparte mockup: klein inline-element op een bestaand scherm.
+  - *Maar één zaagplan tegelijk*: `_ZaagplanWorker.lopend` houdt de ene
+    lopende generatie bij; een tweede project krijgt een gele balk "Er
+    wordt al een zaagplan gegenereerd voor project ... — wacht tot dat
+    klaar is". Daarmee is ook de bekende beperking "twee projecten kiezen
+    hetzelfde reststuk" weg. De worker hangt niet meer aan het
+    projecttabblad (geen parent): sluit je het tabblad of verwijder je het
+    project tijdens het genereren, dan loopt de thread netjes af en
+    vervalt het resultaat (voorheen kon Qt een nog lopende thread
+    vernietigen). `_op_zaagplannen_klaar` slaat niets op als het project
+    intussen niet meer bestaat.
+  - *Niet-geplaatst-reden*: `engine._reden_niet_geplaatst` toetst bij een
+    nerf-eis nu de stand die de nerf afdwingt (`_kies_afmeting`), niet de
+    ingevoerde breedte×hoogte. Een onderdeel 800×300 met "korte zijde
+    langs de nerf" op een plaat van 600 breed kreeg eerst "past qua
+    afmeting wel ... probeer opnieuw"; nu: "moet met de korte zijde langs
+    de nerf liggen, dus als 300×800mm — zo past het niet (breedte 800mm >
+    beschikbare 600mm). Gedraaid zou het wel passen, maar dan loopt de
+    nerf de verkeerde kant op." De oude "past alleen geroteerd"-tekst
+    geldt nu alleen nog voor groepen.
+  - Tests: nerf-reden (2), `geef_reserveringen_vrij` (1); offscreen
+    rookproef met in-memory bibliotheken (bezet-melding, bevestigen/
+    annuleren, tabblad sluiten tijdens genereren). 231 tests.
+
+- **Reststuk-labels, Labels-tab opgesplitst in Onderdelen | Reststukken.**
+  Mockup goedgekeurd ("dit ziet er goed uit"):
+  `design/assets/mockups/labels-reststukken-concept.html`. Keuzes van Sven
+  (vooraf gevraagd): **alleen Bewaren**-stukken krijgen een label,
+  **inhoud zoals hoofdstuk 6** (geen projectregel), en **los printen via
+  vinkjes in beide tabs**.
+  - Backend: `labels.ReststukLabel` + `genereer_reststuk_labels(items,
+    materialen)` (code R#, materiaal, lengte × breedte zoals in de
+    projectlijst incl. aangepaste maat, fabrieksranden, nerfpijl langs de
+    lengte als het materiaal nerf heeft). Scancode `RC:reststuk:<id>`;
+    `ProjectReststukkenBibliotheek.vrijgeven` geeft het bibliotheek-
+    reststuk nu hetzelfde id als het projectreststuk (nieuw:
+    `ReststukkenBibliotheek.bestaat`), zodat een geplakt label na
+    vrijgeven blijft kloppen.
+  - `label_pdf.schrijf_labels_pdf` tekent beide soorten: "Reststuk R2"
+    als naam, geen projectregel, "Fabrieksrand: onder, boven" op de
+    kantenband-regel. De nerfpijl staat nu iets hoger (raakte de
+    onderrand, ook bij onderdeel-labels).
+  - UI (`project_detail_page.py`): schakelaar Onderdelen/Reststukken met
+    aantallen, zelfgetekend `_Vinkje` per regel (klik op de regel werkt
+    ook) en in de kop (alles/half), "N labels als PDF" naast "Alle labels
+    als PDF", voettekst met selectie-aantal en bij reststukken hoeveel
+    stukken geen label krijgen + "naar Reststukken". Selectie wordt per
+    soort op scancode bewaard; het paneel ververst bij openen (volgt de
+    Reststukken-lijst). PDF opslaan geeft nu een `OpslagMelding`. De
+    regelmarkering uit de mockup is weggelaten: de `::item`-stijl van
+    `LibraryTable` negeert een achtergrond per cel; tekstkleur van de
+    cellen staat nu expliciet (anders donker op donker in het donkere
+    thema).
+  - Tests: `test_labels.py` (+1), `test_project_reststukken.py` (+1).
+    Offscreen rookproef met in-memory bibliotheken: tellingen, selectie,
+    alles/half, wisselen met behoud van selectie, PDF van de selectie
+    (gerenderd ter controle), "naar Reststukken", licht/donker. 233 tests.
+  - Niet gedaan: labels vanuit de Reststukkenbibliotheek zelf (los
+    herprinten van een al vrijgegeven stuk).
+
+- **Drie kleinere punten: labels uit de bibliotheek, verouderd-melding,
+  betere verdeling over reststukken.**
+  - *Labels vanuit de Reststukkenbibliotheek* (keuzes van Sven: vinkjes
+    zoals in het project; naam "Reststuk + nummer"): vinkjeskolom +
+    kop-vinkje (zichtbare regels), knop "N labels als PDF" naast
+    "Reststuk toevoegen". `labels.genereer_bibliotheek_reststuk_labels`
+    geeft "Reststuk 3F9A21C0" (het id uit de scancode, in hoofdletters);
+    `schrijf_labels_pdf` accepteert nu `project=None`. Selectie blijft
+    over filters heen staan; verwijderde stukken vallen eruit.
+  - *Verouderd zaagplan door bibliotheekwijzigingen*:
+    `zaagplannen.controleer_reststukken_in_zaagplan` meldt reststukken uit
+    een opgeslagen zaagplan die verwijderd zijn, niet meer aan het project
+    hangen of een andere maat hebben. Gele tekst boven het zaagplan
+    ("Genereer het zaagplan opnieuw"); `ProjectDetailPage.showEvent`
+    controleert opnieuw bij terugkeer naar het tabblad (herbouwt alleen
+    als de melding verandert). In de bibliotheek vraagt terugzetten op
+    beschikbaar van een stuk dat aan een project hangt eerst bevestiging
+    ("Vrijgeven?"), en bij verwijderen/vrijgeven van zo'n stuk staat een
+    uitleg boven de tabel. Een maatwijziging in het bewerkpaneel geeft
+    (nog) geen vooraf-uitleg, maar wel de melding in het project.
+  - *Verdeling over reststukken* (`_verdeel_over_reststukken`): probeert
+    kleinste eerst, grootste eerst en per stap het stuk waar het meeste op
+    past; kiest de meeste geplaatste oppervlakte, dan het minste verbruikte
+    reststuk-oppervlak, dan de minste stukken. Bij gelijke stand blijft
+    kleinste eerst (Svens oorspronkelijke keuze). Voorbeeld uit de test:
+    twee planken 600×400 gingen eerst op twee stukken (650×450 en
+    1250×450), nu samen op het grote en het kleine blijft liggen. Snel:
+    30 reststukken ≈ 0,04 s.
+  - Tests: +3 in `test_zaagplannen.py`, +1 in `test_labels.py`. Offscreen
+    rookproef met een db in de scratchpad (`effectieve_db_pad`
+    omgeleid): reservering → bevestigen/annuleren → vrijgeven → melding
+    in het project; labels aanvinken (half/alles) en PDF. 237 tests.
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

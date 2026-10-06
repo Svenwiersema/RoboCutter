@@ -325,6 +325,7 @@ class MainWindow(QMainWindow):
             self._materialen_page.bibliotheek,
             self._theme,
             on_open_project=self._open_tab_project,
+            on_project_verwijderd=self._on_project_verwijderd,
         )
         self._instellingen_page = InstellingenPage(self._instellingen, self._theme, self._on_instellingen_gewijzigd)
         # Eén gedeelde opslag voor het laatst gegenereerde zaagplan per
@@ -728,6 +729,21 @@ class MainWindow(QMainWindow):
         # (bv. "bijwerken naar laatste versie" of het model verwijderen).
         for pagina in self._projectmodel_pages.values():
             pagina.herlaad_als_gewijzigd()
+        self._rebuild_content()
+
+    def _on_project_verwijderd(self, project_id: str) -> None:
+        # Een verwijderd project heeft geen reststukken opgeleverd (Sven):
+        # zijn tijdelijke reststukkenlijst en opgeslagen zaagplan gaan weg,
+        # en reststukken die het alleen gereserveerd had komen weer
+        # beschikbaar. Al vrijgegeven of echt verzaagde stukken in de
+        # bibliotheek blijven zoals ze zijn.
+        self._project_reststukken.verwijder_project(project_id)
+        self._zaagplannen_opslag.verwijderen(project_id)
+        if self._reststukken_page.bibliotheek.geef_reserveringen_vrij(project_id):
+            self._reststukken_page.ververs()
+        for key in list(self._open_tabs):
+            if key == f"project:{project_id}" or key.startswith(f"projectmodel:{project_id}:"):
+                self._close_tab(key)
         self._rebuild_content()
 
     def _close_tab(self, key: str) -> None:

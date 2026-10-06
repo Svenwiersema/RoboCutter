@@ -282,7 +282,9 @@ class ProjectReststukkenBibliotheek:
                 nieuw.append(
                     self._reststukken.toevoegen(
                         Reststuk(
-                            id="",
+                            # Zelfde id als in de projectlijst: de scancode op
+                            # een al geprint reststuk-label blijft geldig.
+                            id=item.id if not self._reststukken.bestaat(item.id) else "",
                             materiaal_id=item.materiaal_id,
                             lengte=item.lengte,
                             breedte=item.breedte,

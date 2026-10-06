@@ -109,3 +109,33 @@ def test_geen_zaagplannen_geeft_geen_labels():
     _, projecten = _bibliotheken()
     project = projecten.toevoegen(Project(id="", naam="Leeg project", klant="Test"))
     assert genereer_labels_voor_project(project, []) == []
+
+
+def test_reststuk_label_nerfpijl_volgt_het_materiaal():
+    from robocutter.projecten.labels import genereer_reststuk_labels
+    from robocutter.projecten.project_reststukken import ProjectReststuk
+
+    materialen, _ = _bibliotheken()
+    eiken = materialen.toevoegen(_materiaal(nerfrichting=Nerfrichting.LANGE_ZIJDE))
+    item = ProjectReststuk(
+        id="abc12345", project_id="p1", volgnummer=3, materiaal_id=eiken.id, lengte=1240, breedte=600,
+        fabriekskantenband_randen=frozenset({Rand.ONDER}),
+    )
+    [label] = genereer_reststuk_labels([item], materialen)
+    assert label.code == "R3"
+    assert label.nerf_langs_lengte is True
+    assert label.fabriekskantenband_randen == frozenset({Rand.ONDER})
+
+
+def test_bibliotheek_reststuk_label_heeft_het_vaste_nummer_als_naam():
+    from robocutter.projecten.labels import genereer_bibliotheek_reststuk_labels
+    from robocutter.reststukken.models import Reststuk
+
+    materialen, _ = _bibliotheken()
+    hout = materialen.toevoegen(_materiaal())
+    [label] = genereer_bibliotheek_reststuk_labels(
+        [Reststuk(id="3f9a21c0", materiaal_id=hout.id, lengte=1124, breedte=594)], materialen
+    )
+    assert label.code == "3F9A21C0"
+    assert label.scancode_waarde == "RC:reststuk:3f9a21c0"
+    assert label.afmeting_tekst == "1124 × 594 mm"

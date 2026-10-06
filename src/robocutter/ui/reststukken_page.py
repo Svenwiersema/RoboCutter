@@ -19,11 +19,13 @@ zelfde databasebestand als Materialen — de locatie is instelbaar via
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -44,15 +46,19 @@ from robocutter.reststukken.bibliotheek import (
     ReststukkenBibliotheek,
     valideer,
 )
+from robocutter.projecten.labels import genereer_bibliotheek_reststuk_labels
 from robocutter.reststukken.models import Reststuk, ReststukStatus
 from robocutter.reststukken.opslag import open_verbinding
 from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
+from robocutter.ui.label_pdf import schrijf_labels_pdf
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.opslag_melding import OpslagMelding
 from robocutter.ui.widgets.randen_diagram import RandenDiagram
 
-_KOLOMBREEDTES = [230, 80, 170, 200, 130, 110]
+# Kolom 0: vinkje voor "labels als PDF"; kolom 1 (Materiaal) rekt mee.
+_KOLOMBREEDTES = [44, 230, 80, 170, 200, 130, 130]
+_MATERIAAL_KOLOM = 1
 _SORT_OPTIES = [("naam", "Sorteren op materiaal"), ("type", "Sorteren op type"), ("status", "Sorteren op status")]
 _DRAWER_BREEDTE = 420
 _MATERIAAL_KOLOM_MIN = 200
@@ -66,6 +72,50 @@ def _clear_layout(layout) -> None:
             widget.deleteLater()
         elif item.layout() is not None:
             _clear_layout(item.layout())
+
+
+class _Vinkje(QWidget):
+    """Selectievakje voor labels, zelf getekend (zelfde als in
+    project_detail_page.py: een QCheckBox krijgt in dit thema geen nette
+    indicator). ``half`` = een deel van de regels is aangevinkt."""
+
+    omgezet = Signal(bool)
+
+    def __init__(self, aan: bool, theme: Theme, parent=None) -> None:
+        super().__init__(parent)
+        self._aan = aan
+        self._half = False
+        self._theme = theme
+        self.setFixedSize(16, 16)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def zet(self, aan: bool, half: bool = False) -> None:
+        self._aan, self._half = aan, half and not aan
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.zet(not self._aan)
+            self.omgezet.emit(self._aan)
+
+    def paintEvent(self, event) -> None:
+        t = self._theme
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        gevuld = self._aan or self._half
+        p.setPen(QPen(QColor(t.accent if gevuld else t.text_faint), 1.4))
+        p.setBrush(QColor(t.accent if gevuld else t.surface))
+        p.drawRoundedRect(QRectF(0.7, 0.7, 14.6, 14.6), 3.5, 3.5)
+        if not gevuld:
+            return
+        pen = QPen(QColor("#FFFFFF"), 2.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        if self._aan:
+            p.drawPolyline([QPointF(4.0, 8.3), QPointF(6.9, 11.0), QPointF(12.0, 5.2)])
+        else:
+            p.drawLine(QPointF(4.5, 8.0), QPointF(11.5, 8.0))
 
 
 class ReststukkenPage(QWidget):
@@ -86,6 +136,12 @@ class ReststukkenPage(QWidget):
         self._zoekterm = ""
         self._sort = "naam"
         self._confirm_delete_id: str | None = None
+        # Terugzetten op beschikbaar van een stuk dat aan een project hangt:
+        # eerst bevestigen (het zaagplan van dat project klopt daarna niet meer).
+        self._confirm_vrij_id: str | None = None
+        # Aangevinkt voor "labels als PDF" (reststuk-ids).
+        self._label_selectie: set[str] = set()
+        self._label_vinkjes: dict[str, _Vinkje] = {}
         self._alle_families_tonen = False
         self._bewerk_id: str | None = None
 
@@ -255,6 +311,14 @@ class ReststukkenPage(QWidget):
         self._search.textChanged.connect(self._zoekterm_gewijzigd)
         head.addWidget(self._search)
 
+        self._labels_btn = QPushButton()
+        self._labels_btn.setProperty("role", "ghost")
+        self._labels_btn.setIcon(icon("download", self._theme.text, 13))
+        self._labels_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._labels_btn.setToolTip("Vink reststukken aan om hun label (opnieuw) te printen")
+        self._labels_btn.clicked.connect(self._exporteer_labels_pdf)
+        head.addWidget(self._labels_btn)
+
         add_btn = QPushButton("  Reststuk toevoegen")
         add_btn.setProperty("role", "primary")
         add_btn.setIcon(icon("plus", "#12141B", 14))
@@ -274,15 +338,22 @@ class ReststukkenPage(QWidget):
         toolbar.addWidget(self._sort_btn)
         layout.addLayout(toolbar)
 
+        # Uitleg bij een bevestiging voor een stuk dat aan een project hangt.
+        self._koppeling_melding = QLabel()
+        self._koppeling_melding.setProperty("role", "warningText")
+        self._koppeling_melding.setWordWrap(True)
+        self._koppeling_melding.hide()
+        layout.addWidget(self._koppeling_melding)
+
         table_card = QFrame()
         table_card.setObjectName("TableCard")
         card_layout = QVBoxLayout(table_card)
         card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(0)
 
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, len(_KOLOMBREEDTES))
         self._table.setObjectName("LibraryTable")
-        self._table.setHorizontalHeaderLabels(["Materiaal", "Type", "Afmetingen", "Herkomst", "Status", ""])
+        self._table.setHorizontalHeaderLabels(["", "Materiaal", "Type", "Afmetingen", "Herkomst", "Status", ""])
         self._table.verticalHeader().setVisible(False)
         self._table.setShowGrid(False)
         self._table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
@@ -295,8 +366,12 @@ class ReststukkenPage(QWidget):
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
         for col, breedte in enumerate(_KOLOMBREEDTES):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed if col == 0 else QHeaderView.ResizeMode.Interactive)
             self._table.setColumnWidth(col, breedte)
+        # "Alles selecteren" (de zichtbare regels) in de kop van de vinkjeskolom.
+        self._kop_vinkje = _Vinkje(False, self._theme, header)
+        self._kop_vinkje.omgezet.connect(self._labels_alles_selecteren)
+        header.installEventFilter(self)
         self._table.installEventFilter(self)
         card_layout.addWidget(self._table)
 
@@ -320,7 +395,7 @@ class ReststukkenPage(QWidget):
 
     def _zet_status_filter(self, status: ReststukStatus) -> None:
         self._status_filter = status
-        self._confirm_delete_id = None
+        self._confirm_delete_id = self._confirm_vrij_id = None
         self._ververs_alles()
 
     def _zet_type_filter(self, waarde: MateriaalType | None) -> None:
@@ -440,18 +515,28 @@ class ReststukkenPage(QWidget):
     def eventFilter(self, obj, event) -> bool:
         if obj is self._table and event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self._herbereken_materiaal_kolom)
+        elif obj is self._table.horizontalHeader() and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            QTimer.singleShot(0, self._plaats_kop_vinkje)
         return super().eventFilter(obj, event)
 
+    def _plaats_kop_vinkje(self) -> None:
+        header = self._table.horizontalHeader()
+        self._kop_vinkje.move((_KOLOMBREEDTES[0] - 16) // 2, max(0, (header.height() - 16) // 2))
+        self._kop_vinkje.show()
+
     def _herbereken_materiaal_kolom(self) -> None:
-        andere_kolommen_breedte = sum(_KOLOMBREEDTES[1:])
+        andere_kolommen_breedte = sum(b for i, b in enumerate(_KOLOMBREEDTES) if i != _MATERIAAL_KOLOM)
         beschikbaar = self._table.viewport().width() - andere_kolommen_breedte
-        self._table.setColumnWidth(0, max(_MATERIAAL_KOLOM_MIN, beschikbaar))
+        self._table.setColumnWidth(_MATERIAAL_KOLOM, max(_MATERIAAL_KOLOM_MIN, beschikbaar))
 
     def _ververs_tabel(self) -> None:
         label, _ = next(o for o in _SORT_OPTIES if o[0] == self._sort)
         self._sort_btn.setText(label)
 
         rijen = self._zichtbare_rijen()
+        # Verwijderde stukken vallen uit de labelselectie.
+        self._label_selectie &= {r.id for r in self.bibliotheek.lijst()}
+        self._label_vinkjes = {}
         self._table.clearContents()
         self._table.setRowCount(len(rijen))
         self._table.setVisible(bool(rijen))
@@ -460,12 +545,85 @@ class ReststukkenPage(QWidget):
         for row_index, reststuk in enumerate(rijen):
             materiaal = self.bibliotheek.materiaal_van(reststuk)
             self._table.setRowHeight(row_index, 56)
-            self._table.setCellWidget(row_index, 0, self._cel_materiaal(reststuk, materiaal))
-            self._table.setCellWidget(row_index, 1, self._cel_type(materiaal))
-            self._table.setCellWidget(row_index, 2, self._cel_afmetingen(reststuk, materiaal))
-            self._table.setCellWidget(row_index, 3, self._cel_herkomst(reststuk))
-            self._table.setCellWidget(row_index, 4, self._cel_status(reststuk))
-            self._table.setCellWidget(row_index, 5, self._cel_acties(reststuk))
+            self._table.setCellWidget(row_index, 0, self._cel_vinkje(reststuk))
+            self._table.setCellWidget(row_index, 1, self._cel_materiaal(reststuk, materiaal))
+            self._table.setCellWidget(row_index, 2, self._cel_type(materiaal))
+            self._table.setCellWidget(row_index, 3, self._cel_afmetingen(reststuk, materiaal))
+            self._table.setCellWidget(row_index, 4, self._cel_herkomst(reststuk))
+            self._table.setCellWidget(row_index, 5, self._cel_status(reststuk))
+            self._table.setCellWidget(row_index, 6, self._cel_acties(reststuk))
+        self._werk_koppeling_melding_bij()
+        self._werk_label_selectie_bij()
+
+    # ------------------------------------------------------------------
+    # Labels (hoofdstuk 6): los (opnieuw) printen vanuit de bibliotheek
+    # ------------------------------------------------------------------
+    def _cel_vinkje(self, r: Reststuk) -> QWidget:
+        vinkje = _Vinkje(r.id in self._label_selectie, self._theme)
+        vinkje.omgezet.connect(lambda aan, rid=r.id: self._labels_zet_selectie(rid, aan))
+        self._label_vinkjes[r.id] = vinkje
+        cel = QWidget()
+        layout = QHBoxLayout(cel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(vinkje, 0, Qt.AlignmentFlag.AlignCenter)
+        return cel
+
+    def _labels_zet_selectie(self, reststuk_id: str, aan: bool) -> None:
+        if aan:
+            self._label_selectie.add(reststuk_id)
+        else:
+            self._label_selectie.discard(reststuk_id)
+        self._werk_label_selectie_bij()
+
+    def _labels_alles_selecteren(self, aan: bool) -> None:
+        zichtbaar = set(self._label_vinkjes)
+        if aan:
+            self._label_selectie |= zichtbaar
+        else:
+            self._label_selectie -= zichtbaar
+        self._werk_label_selectie_bij()
+
+    def _werk_label_selectie_bij(self) -> None:
+        for rid, vinkje in self._label_vinkjes.items():
+            vinkje.zet(rid in self._label_selectie)
+        zichtbaar_aan = sum(1 for rid in self._label_vinkjes if rid in self._label_selectie)
+        self._kop_vinkje.zet(
+            bool(self._label_vinkjes) and zichtbaar_aan == len(self._label_vinkjes), half=zichtbaar_aan > 0
+        )
+        n = len(self._label_selectie)
+        self._labels_btn.setEnabled(n > 0)
+        self._labels_btn.setText(f"  {n} {'label' if n == 1 else 'labels'} als PDF" if n else "  Labels als PDF")
+
+    def _exporteer_labels_pdf(self) -> None:
+        stukken = [r for r in self.bibliotheek.lijst() if r.id in self._label_selectie]
+        if not stukken:
+            return
+        pad, _ = QFileDialog.getSaveFileName(self, "Labels opslaan als PDF", "Reststuklabels.pdf", "PDF-bestanden (*.pdf)")
+        if not pad:
+            return
+        labels = genereer_bibliotheek_reststuk_labels(stukken, self.materialen)
+        schrijf_labels_pdf(pad, project=None, labels=labels, instellingen=InstellingenBeheer().huidige)
+        n = len(labels)
+        self._melding.toon(f"{n} {'label' if n == 1 else 'labels'} opgeslagen als PDF", pad)
+
+    # ------------------------------------------------------------------
+    # Stukken die aan een project hangen: eerst uitleggen, dan bevestigen
+    # ------------------------------------------------------------------
+    def _werk_koppeling_melding_bij(self) -> None:
+        bevestig_id = self._confirm_vrij_id or self._confirm_delete_id
+        r = next((x for x in self.bibliotheek.lijst() if x.id == bevestig_id), None)
+        if r is None or not r.project_id:
+            self._koppeling_melding.hide()
+            return
+        hoe = "gereserveerd voor" if r.status == ReststukStatus.GERESERVEERD else "gebruikt in"
+        actie = "Verwijderen" if bevestig_id == self._confirm_delete_id else "Terugzetten op beschikbaar"
+        materiaal = self.bibliotheek.materiaal_van(r).naam
+        self._koppeling_melding.setText(
+            f"{materiaal} {r.lengte:g} × {r.breedte:g} mm is {hoe} project {r.project_naam or '(onbekend)'}. "
+            f"{actie} haalt het uit het zaagplan van dat project: dat zaagplan klopt daarna niet meer "
+            "tot je het daar opnieuw genereert."
+        )
+        self._koppeling_melding.show()
 
     def _cel_materiaal(self, r: Reststuk, m) -> QWidget:
         cell = QWidget()
@@ -581,9 +739,27 @@ class ReststukkenPage(QWidget):
         edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         edit_btn.setToolTip("Bewerken")
         edit_btn.clicked.connect(lambda: self._open_drawer(r.id))
-        layout.addWidget(edit_btn)
+        # Tijdens een bevestiging geen potlood: anders past de vraag niet.
+        if r.id not in (self._confirm_vrij_id, self._confirm_delete_id):
+            layout.addWidget(edit_btn)
 
-        if self._confirm_delete_id == r.id:
+        if self._confirm_vrij_id == r.id:
+            label = QLabel("Vrijgeven?")
+            label.setProperty("role", "confirmDeleteLabel")
+            layout.addWidget(label)
+            yes_btn = QToolButton()
+            yes_btn.setProperty("role", "confirmYes")
+            yes_btn.setIcon(icon("check", "#FFFFFF", 11))
+            yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            yes_btn.clicked.connect(lambda: self._zet_beschikbaar(r.id, bevestigd=True))
+            layout.addWidget(yes_btn)
+            no_btn = QToolButton()
+            no_btn.setProperty("role", "confirmNo")
+            no_btn.setIcon(icon("close", self._theme.text_muted, 11))
+            no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            no_btn.clicked.connect(self._annuleer_verwijderen)
+            layout.addWidget(no_btn)
+        elif self._confirm_delete_id == r.id:
             label = QLabel("Verwijderen?")
             label.setProperty("role", "confirmDeleteLabel")
             layout.addWidget(label)
@@ -638,7 +814,12 @@ class ReststukkenPage(QWidget):
             pass
         self._ververs_alles()
 
-    def _zet_beschikbaar(self, reststuk_id: str) -> None:
+    def _zet_beschikbaar(self, reststuk_id: str, bevestigd: bool = False) -> None:
+        if not bevestigd and self.bibliotheek.ophalen(reststuk_id).project_id:
+            self._confirm_vrij_id, self._confirm_delete_id = reststuk_id, None
+            self._ververs_tabel()
+            return
+        self._confirm_vrij_id = None
         try:
             self.bibliotheek.zet_beschikbaar(reststuk_id)
         except OngeldigeStatusOvergangError:
@@ -646,11 +827,11 @@ class ReststukkenPage(QWidget):
         self._ververs_alles()
 
     def _vraag_verwijder_bevestiging(self, reststuk_id: str) -> None:
-        self._confirm_delete_id = reststuk_id
+        self._confirm_delete_id, self._confirm_vrij_id = reststuk_id, None
         self._ververs_tabel()
 
     def _annuleer_verwijderen(self) -> None:
-        self._confirm_delete_id = None
+        self._confirm_delete_id = self._confirm_vrij_id = None
         self._ververs_tabel()
 
     def _verwijderen(self, reststuk_id: str) -> None:
