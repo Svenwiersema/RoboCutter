@@ -39,6 +39,9 @@ from robocutter.projecten.bibliotheek import ProjectenBibliotheek
 from robocutter.projecten.models import Project
 
 
+ONBEKENDE_HERKOMST = "Onbekend op welke samenstelling dit zaagplan gebaseerd is. Genereer het opnieuw."
+
+
 class GeenWijzigingenError(Exception):
     """Vastleggen terwijl er sinds de vorige revisie niets veranderd is."""
 
@@ -270,6 +273,14 @@ class ProjectRevisiesBibliotheek:
         """Wat er in de samenstelling veranderd is sinds een zaagplan uit
         ``bron`` gegenereerd werd (leeg = zaagplan klopt nog)."""
         return samenstelling_wijzigingen(bron, self._projecten.ophalen(project_id), self._materiaal_naam)
+
+    def zaagplan_controle(self, project_id: str, bron: Project | None) -> list[str]:
+        """Waarom een zaagplan "Niet gecontroleerd" is (leeg = gecontroleerd).
+        Een zaagplan zonder ``bron`` (van vóór deze functie) weet niet waar
+        het op gebaseerd is en telt ook als niet gecontroleerd."""
+        if bron is None:
+            return [ONBEKENDE_HERKOMST]
+        return self.zaagplan_wijzigingen(project_id, bron)
 
     def wijzigingen_van(self, revisie_id: str) -> list[str]:
         """Wat deze revisie veranderde t.o.v. de revisie ervoor (de

@@ -55,6 +55,7 @@ import math
 import sys
 import threading
 import time
+from copy import deepcopy
 from dataclasses import replace
 from datetime import date
 from typing import Callable
@@ -115,7 +116,7 @@ from robocutter.projecten.project_reststukken import (
     ProjectReststukkenBibliotheek,
     ProjectReststukStatus,
 )
-from robocutter.projecten.revisies import GeenWijzigingenError, ProjectRevisiesBibliotheek
+from robocutter.projecten.revisies import ONBEKENDE_HERKOMST, GeenWijzigingenError, ProjectRevisiesBibliotheek
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
 from robocutter.projecten.zaagplannen import (
     PlaatZaagplan,
@@ -580,6 +581,16 @@ class ProjectDetailPage(QWidget):
             self._zaagplan_waarschuwingen = []
             self._zaagplan_strategie = self._standaard_zaagstrategie()
         self._zaagplan_worker: _ZaagplanWorker | None = None
+        # "Niet gecontroleerd" (mockup niet-gecontroleerd-concept.html): van
+        # welke samenstelling + revisie het opgeslagen zaagplan gemaakt is,
+        # de momentopname waarmee een lopende generatie begon, en welke
+        # export (zaagplan / onderdeel-labels) op bevestiging wacht.
+        self._zaagplan_herkomst = self._zaagplannen_opslag.laad_herkomst(self._project_id)
+        self._zaagplan_bron: tuple[Project, str] | None = None
+        self._zp_export_bevestig: str | None = None  # "zaagplan", "labels-alles", "labels-selectie"
+        self._zp_chip_box: QHBoxLayout | None = None
+        self._zp_controle_box: QVBoxLayout | None = None
+        self._lb_controle_box: QVBoxLayout | None = None
         # Inline meldingen boven het zaagplan: een ander project is al aan
         # het genereren, of opnieuw genereren zou aanpassingen aan de
         # projectreststukken overschrijven (eerst bevestigen).
@@ -1516,6 +1527,7 @@ class ProjectDetailPage(QWidget):
         self._ververs_vastleg_paneel()
         self._ververs_revisies_paneel()
         self._ververs_rv_voorstel()
+        self._ververs_zaagplan_controle()
 
     # ------------------------------------------------------------------
     # Project opslaan als nieuw model (hoofdstuk 4, "Project → Model").
@@ -2850,6 +2862,7 @@ class ProjectDetailPage(QWidget):
     def _ververs_labels_paneel(self) -> None:
         _clear_layout(self._labels_content)
         self._labels_vinkjes: dict[str, _Vinkje] = {}
+        self._lb_controle_box = None
         # Zelfde aanvulling als in het Reststukken-paneel: een zaagplan van
         # vóór de reststukkenlijst bestond, levert alsnog zijn reststukken.
         if (
@@ -2934,6 +2947,10 @@ class ProjectDetailPage(QWidget):
         alles_btn.clicked.connect(lambda: self._exporteer_labels_pdf(alleen_selectie=False))
         toolbar.addWidget(alles_btn)
         layout.addLayout(toolbar)
+
+        if not is_rest:
+            self._lb_controle_box = self._controle_box(layout)
+            self._ververs_zaagplan_controle()
 
         self._labels_kop_vinkje = None
         self._labels_voet_label = None
@@ -3174,19 +3191,33 @@ class ProjectDetailPage(QWidget):
         self._labels_selectie_btn.setEnabled(n > 0)
         self._labels_selectie_btn.setText(f"  {n} {'label' if n == 1 else 'labels'} als PDF" if n else "  Selectie als PDF")
 
-    def _exporteer_labels_pdf(self, alleen_selectie: bool) -> None:
+    def _exporteer_labels_pdf(self, alleen_selectie: bool, bevestigd: bool = False) -> None:
         labels = list(self._huidige_labels())
         if alleen_selectie:
             selectie = self._labels_selectie[self._labels_soort]
             labels = [label for label in labels if label.scancode_waarde in selectie]
         if not labels:
             return
+        # Alleen onderdeel-labels hangen aan het zaagplan; reststuk-labels
+        # krijgen geen revisie en geen watermerk.
+        onderdelen = self._labels_soort == "onderdelen"
+        niet_gecontroleerd = onderdelen and bool(self._zaagplan_controle())
+        if niet_gecontroleerd and not bevestigd:
+            self._vraag_export_bevestiging("labels-selectie" if alleen_selectie else "labels-alles")
+            return
         naam = self._project().naam
         standaard_naam = f"Reststuklabels {naam}.pdf" if self._labels_soort == "reststukken" else f"Labels {naam}.pdf"
         pad, _ = QFileDialog.getSaveFileName(self, "Labels opslaan als PDF", standaard_naam, "PDF-bestanden (*.pdf)")
         if not pad:
             return
-        schrijf_labels_pdf(pad, project=self._project(), labels=labels, instellingen=InstellingenBeheer().huidige)
+        schrijf_labels_pdf(
+            pad,
+            project=self._project(),
+            labels=labels,
+            instellingen=InstellingenBeheer().huidige,
+            revisie=self._zaagplan_revisie() if onderdelen else "",
+            niet_gecontroleerd=niet_gecontroleerd,
+        )
         n = len(labels)
         self._melding.toon(f"{n} {'label' if n == 1 else 'labels'} opgeslagen als PDF", pad)
 
@@ -3846,9 +3877,12 @@ class ProjectDetailPage(QWidget):
         # Reststukken eerst: alle beschikbare stukken uit de bibliotheek, plus
         # wat een eerder zaagplan van dit project al gereserveerd had.
         kandidaten = self._project_reststukken.reststukken.kandidaten_voor_project(self._project_id)
-        self._zaagplan_worker = _ZaagplanWorker(
-            self._project(), self._materialen, self._zaagplan_strategie, kandidaten
-        )
+        # Momentopname van de samenstelling + revisie van nu: daarmee wordt
+        # het zaagplan gemaakt én later gecontroleerd ("Niet gecontroleerd").
+        bron = deepcopy(self._project())
+        self._zaagplan_bron = (bron, self._revisies.huidige_revisie_label(self._project_id))
+        self._zp_export_bevestig = None
+        self._zaagplan_worker = _ZaagplanWorker(bron, self._materialen, self._zaagplan_strategie, kandidaten)
         self._zaagplan_worker.voortgang.connect(self._op_zaagplan_voortgang)
         self._zaagplan_worker.klaar.connect(self._op_zaagplannen_klaar)
         self._ververs_zaagplannen_paneel()
@@ -3901,7 +3935,12 @@ class ProjectDetailPage(QWidget):
         # Meteen opslaan zodat dit zaagplan overleeft als je het project
         # sluit of de app herstart (zie zaagplannen_opslag.py) — "opnieuw
         # genereren" overschrijft gewoon de eerder opgeslagen stand.
-        self._zaagplannen_opslag.opslaan(self._project_id, plannen, waarschuwingen, self._zaagplan_strategie)
+        bron, revisie = self._zaagplan_bron if self._zaagplan_bron is not None else (None, "")
+        self._zaagplan_bron = None
+        self._zaagplannen_opslag.opslaan(
+            self._project_id, plannen, waarschuwingen, self._zaagplan_strategie, bron=bron, revisie=revisie
+        )
+        self._zaagplan_herkomst = self._zaagplannen_opslag.laad_herkomst(self._project_id)
         # Gebruikte bibliotheek-reststukken reserveren voor dit project (of
         # meteen "gebruikt" als het al in productie is); niet meer gebruikte
         # komen weer beschikbaar.
@@ -4024,10 +4063,14 @@ class ProjectDetailPage(QWidget):
         super().showEvent(event)
         if self._zaagplan_worker is None and self._controleer_zaagplan_reststukken() != self._zaagplan_rs_meldingen:
             self._ververs_zaagplannen_paneel()
+        else:
+            # De samenstelling kan in een ander tabblad (modelkopie) veranderd zijn.
+            self._ververs_zaagplan_controle()
 
     def _ververs_zaagplannen_paneel(self) -> None:
         _clear_layout(self._zaagplannen_content)
         self._zaagplan_balk = self._zaagplan_status = self._zaagplan_eta = None
+        self._zp_chip_box = self._zp_controle_box = None
         if self._zaagplan_worker is not None:
             self._zaagplannen_content.addWidget(self._bouw_zaagplan_bezig())
         elif self._zaagplannen is None:
@@ -4036,10 +4079,176 @@ class ProjectDetailPage(QWidget):
             self._zaagplannen_content.addWidget(self._bouw_zaagplan_resultaat())
 
     # ------------------------------------------------------------------
+    # "Niet gecontroleerd" (mockup niet-gecontroleerd-concept.html): het
+    # zaagplan onthoudt de samenstelling + revisie waaruit het gemaakt is;
+    # wijkt de samenstelling nu af, dan een rode balk in Zaagplannen en
+    # Labels, een bevestiging bij exporteren en een watermerk op de PDF's.
+    # ------------------------------------------------------------------
+    def _zaagplan_controle(self) -> list[str]:
+        """Waarom het zaagplan niet gecontroleerd is (leeg = in orde)."""
+        if not self._zaagplannen:
+            return []
+        bron = self._zaagplan_herkomst.bron if self._zaagplan_herkomst is not None else None
+        return self._revisies.zaagplan_controle(self._project_id, bron)
+
+    def _zaagplan_revisie(self) -> str:
+        return self._zaagplan_herkomst.revisie if self._zaagplan_herkomst is not None else ""
+
+    def _controle_box(self, layout: QVBoxLayout) -> QVBoxLayout:
+        """Houder voor de rode balk + exportbevestiging, los te verversen
+        zonder het (zware) paneel opnieuw op te bouwen."""
+        houder = QWidget()
+        box = QVBoxLayout(houder)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(10)
+        layout.addWidget(houder)
+        return box
+
+    def _ververs_zaagplan_controle(self) -> None:
+        controle = self._zaagplan_controle()
+        if not controle:
+            self._zp_export_bevestig = None
+        if self._zp_chip_box is not None:
+            _clear_layout(self._zp_chip_box)
+            revisie = self._zaagplan_revisie()
+            if revisie:
+                self._zp_chip_box.addWidget(self._bouw_zaagplan_rev_tag(revisie))
+            self._zp_chip_box.addWidget(self._bouw_controle_status(bool(controle)))
+        for box, soort in ((self._zp_controle_box, "zaagplan"), (self._lb_controle_box, "labels")):
+            if box is None:
+                continue
+            _clear_layout(box)
+            box.parentWidget().setVisible(bool(controle))
+            if controle:
+                box.addWidget(self._bouw_controle_balk(controle))
+                if self._zp_export_bevestig is not None and self._zp_export_bevestig.startswith(soort):
+                    box.addWidget(self._bouw_export_bevestiging())
+
+    def _bouw_zaagplan_rev_tag(self, revisie: str) -> QLabel:
+        t = self._theme
+        tag = QLabel(revisie)
+        tag.setToolTip(
+            "Revisie waarvan dit zaagplan gemaakt is"
+            + (" (* met niet-vastgelegde wijzigingen)" if revisie.endswith("*") else "")
+        )
+        tag.setStyleSheet(
+            f"color: {t.text}; background: {t.surface}; border: 1px solid {t.border}; border-radius: 8px;"
+            " padding: 2px 8px; font-family: Consolas; font-size: 11px; font-weight: 700;"
+        )
+        return tag
+
+    def _bouw_controle_status(self, niet_gecontroleerd: bool) -> QFrame:
+        t = self._theme
+        achtergrond, inkt, stip = (
+            (t.critical_soft, t.critical_ink, t.critical) if niet_gecontroleerd else (t.success_soft, t.success_ink, t.success)
+        )
+        chip = QFrame()
+        chip.setObjectName("ControleStatus")
+        chip.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        chip.setStyleSheet(f"QFrame#ControleStatus {{ background: {achtergrond}; border-radius: 10px; }}")
+        rij = QHBoxLayout(chip)
+        rij.setContentsMargins(9, 3, 9, 3)
+        rij.setSpacing(6)
+        punt = QFrame()
+        punt.setFixedSize(7, 7)
+        punt.setStyleSheet(f"background: {stip}; border-radius: 3px;")
+        rij.addWidget(punt, 0, Qt.AlignmentFlag.AlignVCenter)
+        tekst = QLabel("Niet gecontroleerd" if niet_gecontroleerd else "Gecontroleerd")
+        tekst.setStyleSheet(f"color: {inkt}; font-size: 11px; font-weight: 700; background: transparent;")
+        rij.addWidget(tekst)
+        return chip
+
+    def _bouw_controle_balk(self, controle: list[str]) -> QFrame:
+        t = self._theme
+        balk = QFrame()
+        balk.setObjectName("ControleBalk")
+        balk.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        balk.setStyleSheet(
+            f"QFrame#ControleBalk {{ background: {t.critical_soft}; border: 1px solid {t.critical}; border-radius: 10px; }}"
+        )
+        rij = QHBoxLayout(balk)
+        rij.setContentsMargins(14, 12, 12, 12)
+        rij.setSpacing(12)
+        if controle == [ONBEKENDE_HERKOMST]:
+            inhoud = f"<b>Niet gecontroleerd.</b> {html.escape(ONBEKENDE_HERKOMST)}"
+        else:
+            regels = "<br>".join(f"•&nbsp;{html.escape(r)}" for r in controle)
+            inhoud = f"<b>Niet gecontroleerd.</b> De samenstelling is veranderd sinds dit zaagplan gemaakt is:<br>{regels}"
+        tekst = QLabel(inhoud)
+        tekst.setTextFormat(Qt.TextFormat.RichText)
+        tekst.setWordWrap(True)
+        tekst.setStyleSheet(f"color: {t.critical_ink}; font-size: 12.5px; background: transparent;")
+        rij.addWidget(tekst, 1)
+        knop = QPushButton("Opnieuw genereren")
+        knop.setProperty("role", "primary")
+        knop.setCursor(Qt.CursorShape.PointingHandCursor)
+        knop.setEnabled(self._zaagplan_worker is None)
+        knop.clicked.connect(self._controle_opnieuw_genereren)
+        rij.addWidget(knop, 0, Qt.AlignmentFlag.AlignTop)
+        return balk
+
+    def _bouw_export_bevestiging(self) -> QFrame:
+        t = self._theme
+        balk = QFrame()
+        balk.setObjectName("ExportBevestiging")
+        balk.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        balk.setStyleSheet(
+            f"QFrame#ExportBevestiging {{ background: {t.warning_soft}; border: 1px solid {t.warning}; border-radius: 10px; }}"
+        )
+        rij = QHBoxLayout(balk)
+        rij.setContentsMargins(14, 10, 10, 10)
+        rij.setSpacing(10)
+        wat = "De PDF krijgt het watermerk NIET GECONTROLEERD op elke pagina." if self._zp_export_bevestig == "zaagplan" else (
+            "Elk label krijgt het watermerk NIET GECONTROLEERD."
+        )
+        tekst = QLabel(f"<b>Dit zaagplan is niet gecontroleerd.</b> {wat}")
+        tekst.setTextFormat(Qt.TextFormat.RichText)
+        tekst.setWordWrap(True)
+        tekst.setStyleSheet(f"color: {t.warning_ink}; font-size: 12.5px; background: transparent;")
+        rij.addWidget(tekst, 1)
+        for label, rol, actie in (
+            ("Annuleren", "ghost", self._annuleer_export_bevestiging),
+            ("Eerst opnieuw genereren", "ghost", self._controle_opnieuw_genereren),
+            ("Toch exporteren", "primary", self._toch_exporteren),
+        ):
+            knop = QPushButton(label)
+            knop.setProperty("role", rol)
+            knop.setCursor(Qt.CursorShape.PointingHandCursor)
+            knop.clicked.connect(actie)
+            rij.addWidget(knop, 0, Qt.AlignmentFlag.AlignVCenter)
+        return balk
+
+    def _vraag_export_bevestiging(self, soort: str) -> None:
+        self._zp_export_bevestig = soort
+        self._ververs_zaagplan_controle()
+
+    def _annuleer_export_bevestiging(self) -> None:
+        self._zp_export_bevestig = None
+        self._ververs_zaagplan_controle()
+
+    def _toch_exporteren(self) -> None:
+        soort, self._zp_export_bevestig = self._zp_export_bevestig, None
+        self._ververs_zaagplan_controle()
+        if soort == "zaagplan":
+            self._exporteer_pdf(bevestigd=True)
+        elif soort is not None:
+            self._exporteer_labels_pdf(alleen_selectie=soort == "labels-selectie", bevestigd=True)
+
+    def _controle_opnieuw_genereren(self) -> None:
+        self._zp_export_bevestig = None
+        if self._actief_paneel != "zaagplannen":
+            self._paneel_knoppen["zaagplannen"].setChecked(True)
+            self._zet_paneel("zaagplannen")
+        self._genereer_zaagplannen()
+
+    # ------------------------------------------------------------------
     # PDF-export: alle platen + de zaaglijst in één bestand
     # ------------------------------------------------------------------
-    def _exporteer_pdf(self) -> None:
+    def _exporteer_pdf(self, bevestigd: bool = False) -> None:
         if not self._zaagplannen:
+            return
+        if self._zaagplan_controle() and not bevestigd:
+            self._vraag_export_bevestiging("zaagplan")
             return
         standaard_naam = f"Zaagplan {self._project().naam}.pdf"
         pad, _ = QFileDialog.getSaveFileName(self, "Zaagplan opslaan als PDF", standaard_naam, "PDF-bestanden (*.pdf)")
@@ -4055,6 +4264,8 @@ class ProjectDetailPage(QWidget):
             strategie_label=_STRATEGIE_LABEL[self._zaagplan_strategie],
             materialen=self._materialen,
             sort_niveaus=self._sort_niveaus,
+            revisie=self._zaagplan_revisie(),
+            niet_gecontroleerd=bool(self._zaagplan_controle()),
         )
 
     def _bouw_zaagplan_start(self) -> QWidget:
@@ -4130,13 +4341,19 @@ class ProjectDetailPage(QWidget):
         titel.setProperty("role", "matName")
         titel_kolom.addWidget(titel)
         aantal = len(self._zaagplannen)
-        sub = QLabel(
-            f"{aantal} {'plaat' if aantal == 1 else 'platen'} · strategie {_STRATEGIE_LABEL[self._zaagplan_strategie]}"
-        )
+        sub_tekst = f"{aantal} {'plaat' if aantal == 1 else 'platen'} · strategie {_STRATEGIE_LABEL[self._zaagplan_strategie]}"
+        if self._zaagplan_herkomst is not None:
+            sub_tekst += f" · gegenereerd {self._zaagplan_herkomst.gegenereerd_op.strftime('%Y-%m-%d %H:%M')}"
+        sub = QLabel(sub_tekst)
         sub.setProperty("role", "matMeta")
         titel_kolom.addWidget(sub)
         toolbar.addLayout(titel_kolom)
         toolbar.addStretch(1)
+        chips = QWidget()
+        self._zp_chip_box = QHBoxLayout(chips)
+        self._zp_chip_box.setContentsMargins(0, 0, 6, 0)
+        self._zp_chip_box.setSpacing(8)
+        toolbar.addWidget(chips, 0, Qt.AlignmentFlag.AlignVCenter)
         toolbar.addWidget(self._bouw_strategie_combo())
         opnieuw_btn = QPushButton("  Opnieuw genereren")
         opnieuw_btn.setProperty("role", "ghost")
@@ -4148,9 +4365,12 @@ class ProjectDetailPage(QWidget):
         pdf_btn.setProperty("role", "primary")
         pdf_btn.setIcon(icon("download", "#12141B", 13))
         pdf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        pdf_btn.clicked.connect(self._exporteer_pdf)
+        pdf_btn.clicked.connect(lambda: self._exporteer_pdf())
         toolbar.addWidget(pdf_btn)
         layout.addLayout(toolbar)
+
+        self._zp_controle_box = self._controle_box(layout)
+        self._ververs_zaagplan_controle()
 
         if self._zaagplan_bezet_melding or self._zaagplan_bevestig_codes:
             layout.addWidget(self._bouw_zaagplan_melding())

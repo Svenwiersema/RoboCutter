@@ -43,6 +43,7 @@ class Theme:
     warning_soft: str
     critical: str
     critical_soft: str
+    critical_ink: str
     neutral_dot: str
     indigo: str
     indigo_soft: str
@@ -78,6 +79,7 @@ LICHT = Theme(
     warning_soft="#FBF1DC",
     critical="#C74F4F",
     critical_soft="#FBEAEA",
+    critical_ink="#8E2F2F",
     neutral_dot="#9297A8",
     indigo="#7B6FE0",
     indigo_soft="#EFEDFB",
@@ -105,6 +107,7 @@ DONKER = Theme(
     warning_soft="#382C13",
     critical="#E57373",
     critical_soft="#3A2020",
+    critical_ink="#F3B5B5",
     neutral_dot="#767B90",
     indigo="#A79CFF",
     indigo_soft="#2C2A4D",

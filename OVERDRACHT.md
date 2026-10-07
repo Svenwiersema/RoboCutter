@@ -3149,13 +3149,9 @@ houden.
     bijwerken. `MainWindow` deelt één `ProjectRevisiesBibliotheek` en
     ruimt revisies op bij definitief verwijderen. Nieuwe iconen
     `history`/`commit`; `QPlainTextEdit[role="field"]` in theme.py.
-  - "Niet gecontroleerd" (backend al klaar; mockup
-    `design/assets/mockups/niet-gecontroleerd-concept.html` is
-    **goedgekeurd** maar de UI/PDF/labels zijn nog niet gebouwd — volgende
-    sessie. Sven wil dan ook bespreken: een revisie tijdens productie mag
-    niet het hele zaagplan opnieuw laten genereren, want er is al gezaagd;
-    alleen een deel, met reststukken vastzetten en al klare onderdelen
-    uitzetten):
+  - "Niet gecontroleerd" (mockup
+    `design/assets/mockups/niet-gecontroleerd-concept.html`, goedgekeurd;
+    **gebouwd** in de sessie van 2026-10-07):
     `ZaagplannenOpslag.opslaan(..., bron=, revisie=)` bewaart de
     samenstelling + revisie van het moment van genereren (nieuwe kolommen
     `bron`/`revisie`, oude databases krijgen ze erbij),
@@ -3164,6 +3160,45 @@ houden.
   - Tests: `test_revisies.py` (7), +1 in `test_zaagplannen_opslag.py`.
     Offscreen rookproef met in-memory bibliotheken (vastleggen, wijziging,
     voorstel, terugzetten met bevestiging, thema-wissel). 248 tests.
+- **"Niet gecontroleerd" + revisie op documenten** (mockup hierboven).
+  - Backend: `ProjectRevisiesBibliotheek.zaagplan_controle(project_id,
+    bron)` geeft de redenen (leeg = gecontroleerd); zonder `bron` (zaagplan
+    van vóór deze functie) één regel `ONBEKENDE_HERKOMST`.
+  - UI (`project_detail_page.py`): bij genereren gaat een `deepcopy` van
+    het project + `huidige_revisie_label` mee (`_zaagplan_bron`; de worker
+    rekent ook met die kopie) en wordt bij `opslaan` bewaard. Zaagplannen-
+    paneel: revisietag + status-chip (Gecontroleerd / Niet gecontroleerd)
+    in de werkbalk, "gegenereerd <datum>" in de subregel, rode balk met de
+    wijzigingen + "Opnieuw genereren". Labels-paneel (alleen Onderdelen):
+    dezelfde balk. Exporteren terwijl niet gecontroleerd geeft een gele
+    inline bevestiging (Annuleren / Eerst opnieuw genereren / Toch
+    exporteren), ook bij onderdeel-labels. Balk en chips zitten in eigen
+    houders (`_zp_chip_box`, `_zp_controle_box`, `_lb_controle_box`) en
+    worden via `_ververs_zaagplan_controle` bijgewerkt na elke
+    projectwijziging (`_ververs_revisie_status`) en in `showEvent`, zonder
+    het zware zaagplanpaneel te herbouwen. Nieuw thema-token
+    `critical_ink`.
+  - PDF (`zaagplan_pdf.py`): `revisie=` geeft een REVISIE-blok in de kop
+    (met voetnoot "* met niet-vastgelegde wijzigingen" bij "Rev A*") en
+    een Revisie-cel in de voet van elke pagina; `niet_gecontroleerd=`
+    tekent het schuine lichtrode watermerk met kader als laatste op elke
+    pagina (`_teken_schuin_watermerk`, ook gebruikt door de labels).
+  - Labels (`label_pdf.py`): onderdeel-labels krijgen "Project: … · Rev
+    A*" (revisie vet) en een eigen klein watermerk, binnen de tekstzone
+    zodat de QR-/barcode scanbaar blijft. Reststuk-labels: geen van beide.
+  - Revisie op de documenten = de revisie van het moment van genereren
+    (uit de herkomst), niet de huidige.
+  - Let op: de zaaglijst-pagina's in de zaagplan-PDF komen nog steeds uit
+    de huidige samenstelling, de platen uit de bron — bij een niet
+    gecontroleerd zaagplan kunnen die dus van elkaar verschillen (het
+    watermerk staat op allebei).
+  - Tests: +1 in `test_revisies.py`. Offscreen rookproef (onbekende
+    herkomst, genereren, wijziging, export-bevestiging zaagplan + labels,
+    thema-wissel) en PDF's met echte fonts gerenderd en bekeken. 249 tests.
+  - Volgende stap (Svens wens, nog te bespreken): een revisie tijdens
+    productie mag niet het hele zaagplan opnieuw genereren, want er is al
+    gezaagd; alleen een deel, met reststukken vastzetten en al klare
+    onderdelen uitzetten.
 
 ## Werkwijze die Sven prettig vindt
 

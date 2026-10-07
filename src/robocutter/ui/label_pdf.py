@@ -39,6 +39,7 @@ from robocutter.instellingen.models import Instellingen
 from robocutter.modellen.models import Nerfrichting
 from robocutter.projecten.labels import OnderdeelLabel, ReststukLabel
 from robocutter.projecten.models import Project
+from robocutter.ui.zaagplan_pdf import _teken_schuin_watermerk
 
 __all__ = ["schrijf_labels_pdf"]
 
@@ -97,10 +98,20 @@ def _kantenband_tekst(label: OnderdeelLabel | ReststukLabel) -> str:
 
 
 def schrijf_labels_pdf(
-    pad: str, project: Project | None, labels: list[OnderdeelLabel | ReststukLabel], instellingen: Instellingen
+    pad: str,
+    project: Project | None,
+    labels: list[OnderdeelLabel | ReststukLabel],
+    instellingen: Instellingen,
+    revisie: str = "",
+    niet_gecontroleerd: bool = False,
 ) -> None:
     """Schrijft ``labels`` als een rooster labels naar één PDF op
-    ``pad`` (A4 staand, meerdere pagina's zodra het rooster vol is)."""
+    ``pad`` (A4 staand, meerdere pagina's zodra het rooster vol is).
+
+    Alleen voor onderdeel-labels: ``revisie`` komt achter het
+    projectnummer en ``niet_gecontroleerd`` zet op elk label een klein
+    watermerk (labels worden los geplakt). Reststuk-labels beschrijven
+    een stuk dat er fysiek ligt en krijgen geen van beide."""
 
     printer = QPrinter(QPrinter.PrinterMode.HighResolution)
     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
@@ -135,7 +146,7 @@ def schrijf_labels_pdf(
             kol, rij = i % kolommen, i // kolommen
             x = _MARGE_MM + kol * (_LABEL_W_MM + _GAP_MM)
             y = _MARGE_MM + rij * (_LABEL_H_MM + _GAP_MM)
-            _teken_label(ctx, x, y, project, label, instellingen)
+            _teken_label(ctx, x, y, project, label, instellingen, revisie, niet_gecontroleerd)
 
     painter.end()
 
@@ -147,6 +158,8 @@ def _teken_label(
     project: Project | None,
     label: OnderdeelLabel | ReststukLabel,
     instellingen: Instellingen,
+    revisie: str = "",
+    niet_gecontroleerd: bool = False,
 ) -> None:
     is_reststuk = isinstance(label, ReststukLabel)
     p = ctx.painter
@@ -185,7 +198,16 @@ def _teken_label(
     p.setPen(QPen(_MUTED))
     if not is_reststuk:  # reststuk-label: bewust geen projectregel (hoofdstuk 6)
         proj_tekst = f"Project: {label.projectnummer or (project.naam if project else '')}"
-        p.drawText(proj_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, proj_font, proj_tekst, proj_rect.width()))
+        if revisie:
+            # "Project: OPD-2026-114 · Rev A*", de revisie vet.
+            proj_tekst = _elide(p, proj_font, proj_tekst, proj_rect.width() * 0.7) + " · "
+            p.drawText(proj_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, proj_tekst)
+            rev_x = proj_rect.left() + p.fontMetrics().horizontalAdvance(proj_tekst)
+            rev_font = _font(_SANS, 6.5, bold=True)
+            p.setPen(QPen(_INK))
+            p.drawText(QRectF(rev_x, proj_rect.top(), proj_rect.right() - rev_x, proj_rect.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, rev_font, revisie, proj_rect.right() - rev_x))
+        else:
+            p.drawText(proj_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, proj_font, proj_tekst, proj_rect.width()))
 
     onder_y = y_mm + _LABEL_H_MM - pad - 4.0
 
@@ -216,6 +238,17 @@ def _teken_label(
         _teken_barcode(
             ctx, x_mm + pad, y_mm + _LABEL_H_MM - pad - barcode_h, _LABEL_W_MM - 2 * pad, barcode_h, label.scancode_waarde
         )
+
+    # Eigen watermerk per label: een losgeknipt label laat nog steeds zien
+    # dat het niet gecontroleerd was. Naast/boven de scancode, zodat die
+    # scanbaar blijft.
+    if niet_gecontroleerd and not is_reststuk:
+        vak_b = _LABEL_W_MM - (code_zone_mm + pad if scancode == "qr" else 0)
+        vak_h = _LABEL_H_MM - (8.0 + pad if scancode == "barcode" else 0)
+        p.save()
+        p.setClipRect(QRectF(ctx.px(x_mm, y_mm), ctx.px(x_mm + vak_b, y_mm + vak_h)))
+        _teken_schuin_watermerk(p, ctx.mm, vak_b, vak_h, x_mm, y_mm, 0.8, -14.0, 64)
+        p.restore()
 
 
 def _teken_nerf_pijl(ctx: _Ctx, x_mm: float, y_mm: float, richting: Nerfrichting) -> None:

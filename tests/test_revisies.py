@@ -14,6 +14,7 @@ from robocutter.modellen.models import Model, ModelOnderdeel
 from robocutter.projecten.bibliotheek import ProjectenBibliotheek
 from robocutter.projecten.models import Project, ProjectStatus
 from robocutter.projecten.revisies import (
+    ONBEKENDE_HERKOMST,
     GeenWijzigingenError,
     ProjectRevisiesBibliotheek,
     revisie_naam,
@@ -193,3 +194,15 @@ def test_revisielabel_en_zaagplan_wijzigingen():
     assert revisies.zaagplan_wijzigingen(project.id, bron) == ["Los onderdeel verwijderd: Plint"]
     revisies.vastleggen(project.id)
     assert revisies.huidige_revisie_label(project.id) == "Rev A"
+
+
+def test_zaagplan_controle_telt_onbekende_herkomst_als_niet_gecontroleerd():
+    from copy import deepcopy
+
+    materialen, modellen, projecten, revisies = _opzet()
+    _, _, project = _project_met_inhoud(materialen, modellen, projecten)
+    assert revisies.zaagplan_controle(project.id, None) == [ONBEKENDE_HERKOMST]
+    bron = deepcopy(project)
+    assert revisies.zaagplan_controle(project.id, bron) == []
+    projecten.los_onderdeel_verwijderen(project.id, project.losse_onderdelen[0].id)
+    assert revisies.zaagplan_controle(project.id, bron) == ["Los onderdeel verwijderd: Plint"]

@@ -102,6 +102,10 @@ class _Ctx:
     project_naam: str
     werkvoorbereider: str
     logo: QPixmap | None
+    # Revisie waarvan het zaagplan gemaakt is ("" = blok weglaten) en of
+    # het watermerk NIET GECONTROLEERD op elke pagina moet.
+    revisie: str = ""
+    niet_gecontroleerd: bool = False
 
     def px(self, x_mm: float, y_mm: float) -> QPointF:
         return QPointF(x_mm * self.dpmm, y_mm * self.dpmm)
@@ -117,12 +121,17 @@ def schrijf_zaagplannen_pdf(
     strategie_label: str,
     materialen: MaterialenBibliotheek,
     sort_niveaus: list[str],
+    revisie: str = "",
+    niet_gecontroleerd: bool = False,
 ) -> None:
     """Schrijft alle platen van ``zaagplannen`` plus de volledige
     zaaglijst van ``project`` naar één PDF-bestand op ``pad`` — elke
     plaat op zijn eigen pagina (A4 liggend), gevolgd door de zaaglijst
     (die zelf over meerdere pagina's kan lopen, zie
-    ``_teken_zaaglijst_paginas``)."""
+    ``_teken_zaaglijst_paginas``). ``revisie`` komt in kop en voet ("Rev
+    A*" = met niet-vastgelegde wijzigingen); ``niet_gecontroleerd`` zet
+    het watermerk NIET GECONTROLEERD op elke pagina (mockup
+    ``design/assets/mockups/niet-gecontroleerd-concept.html``)."""
 
     instellingen = InstellingenBeheer().huidige
     logo = _laad_logo(instellingen.bedrijfslogo_pad)
@@ -149,6 +158,8 @@ def schrijf_zaagplannen_pdf(
         project_naam=project.naam,
         werkvoorbereider=instellingen.werkvoorbereider_naam,
         logo=logo,
+        revisie=revisie,
+        niet_gecontroleerd=niet_gecontroleerd,
     )
 
     for i, plan in enumerate(zaagplannen):
@@ -230,8 +241,30 @@ def _teken_kop(ctx: _Ctx, regel2: str) -> float:
         p.setPen(QPen(_INK))
         font = _font(_SANS, 8.5, bold=True)
         p.drawText(naam_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, _elide(p, font, ctx.werkvoorbereider, ctx.mm(wv_breedte)))
+        rechts_x -= wv_breedte + 3.0
 
-    links_max_breedte = rechts_x - marge_x - 4.0
+    if ctx.revisie:
+        # Revisieblok: de revisie waarvan dit zaagplan gemaakt is.
+        p.setPen(QPen(_LINE, ctx.mm(0.25)))
+        p.drawLine(ctx.px(rechts_x, 3.0), ctx.px(rechts_x, kop_hoogte - 3.0))
+        rechts_x -= 3.0
+        rev_breedte = 34.0
+        label_rect = QRectF(ctx.px(rechts_x - rev_breedte, 2.6), QPointF(ctx.mm(rechts_x), ctx.mm(5.6)))
+        p.setPen(QPen(_HEADER_MUTED))
+        p.setFont(_font(_SANS, 6.0))
+        p.drawText(label_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "REVISIE")
+        waarde_rect = QRectF(ctx.px(rechts_x - rev_breedte, 5.6), QPointF(ctx.mm(rechts_x), ctx.mm(9.8)))
+        p.setPen(QPen(_INK))
+        font = _font(_MONO, 9.0, bold=True)
+        p.drawText(waarde_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, _elide(p, font, ctx.revisie, ctx.mm(rev_breedte)))
+        if ctx.revisie.endswith("*"):
+            noot_rect = QRectF(ctx.px(rechts_x - rev_breedte - 10, 9.8), QPointF(ctx.mm(rechts_x), ctx.mm(12.6)))
+            p.setPen(QPen(_HEADER_MUTED))
+            p.setFont(_font(_SANS, 5.2))
+            p.drawText(noot_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "* met niet-vastgelegde wijzigingen")
+        rechts_x -= rev_breedte + 10
+
+    links_max_breedte = rechts_x - marge_x - 1.0
 
     # Linkerkant: "ZAAGPLAN" tag + projectnaam, daaronder de submeta.
     tag_font = _font(_SANS, 12.5, bold=True)
@@ -280,6 +313,55 @@ def _teken_footer(ctx: _Ctx, y_mm: float, cellen: list[tuple[str, str]]) -> None
         p.setPen(QPen(_INK))
         waarde_font = _font(_MONO, 9.5, bold=True)
         p.drawText(waarde_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, _elide(p, waarde_font, waarde, waarde_rect.width()))
+
+
+def _revisie_cel(ctx: _Ctx) -> list[tuple[str, str]]:
+    return [("Revisie", ctx.revisie)] if ctx.revisie else []
+
+
+def _teken_watermerk(ctx: _Ctx) -> None:
+    """Schuin, lichtrood NIET GECONTROLEERD-watermerk met kader over de
+    hele pagina — als laatste getekend, dus boven de tekening, maar licht
+    genoeg dat die leesbaar blijft."""
+    if not ctx.niet_gecontroleerd:
+        return
+    _teken_schuin_watermerk(ctx.painter, ctx.mm, ctx.breedte_mm, ctx.hoogte_mm, 0.0, 0.0, 0.62, -24.0, 40)
+
+
+def _teken_schuin_watermerk(
+    p: QPainter, mm, breedte_mm: float, hoogte_mm: float, x_mm: float, y_mm: float,
+    breedte_frac: float, hoek: float, alpha: int,
+) -> None:
+    """Tekent "NIET GECONTROLEERD" in een kader, gedraaid over ``hoek``
+    graden, gecentreerd in het vak (x, y, breedte, hoogte) en zo groot dat
+    de tekst ``breedte_frac`` van de vakbreedte beslaat."""
+    tekst = "NIET GECONTROLEERD"
+    kleur = QColor(_CUT)
+    kleur.setAlpha(alpha)
+    font = QFont(_SANS)
+    font.setBold(True)
+    font.setPixelSize(100)
+    font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 106)
+    p.setFont(font)
+    schaal = mm(breedte_mm) * breedte_frac / max(1.0, p.fontMetrics().horizontalAdvance(tekst))
+    font.setPixelSize(max(1, round(100 * schaal)))
+    p.setFont(font)
+    metrics = p.fontMetrics()
+    tekst_b = metrics.horizontalAdvance(tekst)
+    tekst_h = metrics.capHeight()
+    pad_x, pad_y = tekst_h * 0.45, tekst_h * 0.5
+    vak = QRectF(-tekst_b / 2 - pad_x, -tekst_h / 2 - pad_y, tekst_b + 2 * pad_x, tekst_h + 2 * pad_y)
+
+    p.save()
+    p.translate(mm(x_mm + breedte_mm / 2), mm(y_mm + hoogte_mm / 2))
+    p.rotate(hoek)
+    p.setPen(QPen(kleur, tekst_h * 0.09))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRect(vak)
+    p.setPen(QPen(kleur))
+    # Basislijn zo dat de hoofdletters verticaal in het kader centreren.
+    p.drawText(QPointF(-tekst_b / 2, tekst_h / 2), tekst)
+    p.restore()
 
 
 def _teken_tabel(
@@ -484,8 +566,10 @@ def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) ->
             ("Dikte", f"{mat.dikte:g} mm"),
             ("Zaagsnede", f"{mat.kerf:g} mm"),
             ("Benutting", f"{plan.resultaat.benuttingspercentage:g}%".replace(".", ",")),
+            *_revisie_cel(ctx),
         ],
     )
+    _teken_watermerk(ctx)
 
 
 def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zone_h_mm: float) -> None:
@@ -701,5 +785,7 @@ def _teken_zaaglijst_paginas(ctx: _Ctx, project: Project, materialen: Materialen
                 ("Project", project.naam),
                 ("Materialen", str(aantal_materialen)),
                 ("Gesorteerd op", totaal_gesorteerd_op),
+                *_revisie_cel(ctx),
             ],
         )
+        _teken_watermerk(ctx)
