@@ -37,12 +37,17 @@ class ZaagplaatWidget(QWidget):
         self._theme = theme
         # Al gezaagde onderdelen, als (onderdeel_id, instantie): gearceerd
         # met een vinkje (mockup deel-opnieuw-genereren-concept.html).
-        self._gezaagd = gezaagd or set()
+        self._gezaagd = set(gezaagd) if gezaagd is not None else set()
         self._klikbaar = klikbaar
         self._rects: list[QRectF] = []
         self.setMinimumHeight(160)
         if klikbaar:
             self.setMouseTracking(True)
+
+    def zet_gezaagd(self, gezaagd: set[tuple[str, int]]) -> None:
+        """Na afvinken: nieuwe stand tonen zonder de widget opnieuw te maken."""
+        self._gezaagd = set(gezaagd)
+        self.update()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt-signatuur)
         if self._klikbaar and event.button() == Qt.MouseButton.LeftButton:

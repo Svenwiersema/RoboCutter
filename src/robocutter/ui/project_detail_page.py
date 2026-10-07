@@ -4406,7 +4406,7 @@ class ProjectDetailPage(QWidget):
             return
         refs = self._zp_plaat_refs[index]
         plan = self._zaagplannen[index]
-        refs["tekening"].update()
+        refs["tekening"].zet_gezaagd(plan.gezaagd)
         for p, (vinkje, labels) in zip(plan.resultaat.plaatsingen, refs["rijen"]):
             aan = (p.onderdeel_id, p.instantie) in plan.gezaagd
             vinkje.zet(aan)
