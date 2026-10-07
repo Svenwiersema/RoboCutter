@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +40,8 @@ from robocutter.modellen.models import Nerfrichting as ModNerfrichting
 from robocutter.modellen.models import Rand as ModRand
 from robocutter.optimalisatie.models import Materiaal as OptMateriaal
 from robocutter.optimalisatie.models import Plaatsing, Rand as OptRand, Reststuk, ZaagplanResultaat, Zaagsnede
+from robocutter.projecten.models import Project
+from robocutter.projecten.opslag import dict_naar_project, project_naar_dict
 from robocutter.projecten.zaagplannen import OnderdeelInfo, PlaatZaagplan
 
 _SCHEMA = """
@@ -52,12 +55,33 @@ CREATE TABLE IF NOT EXISTS zaagplannen (
 """
 
 
+# Later toegevoegde kolommen (revisies, "Niet gecontroleerd"): oudere
+# databases krijgen ze erbij, met NULL voor bestaande zaagplannen.
+_EXTRA_KOLOMMEN = {"bron": "TEXT", "revisie": "TEXT"}
+
+
 def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
     verbinding = sqlite3.connect(db_pad)
     verbinding.row_factory = sqlite3.Row
     verbinding.execute(_SCHEMA)
+    bestaand = {rij["name"] for rij in verbinding.execute("PRAGMA table_info(zaagplannen)")}
+    for naam, soort in _EXTRA_KOLOMMEN.items():
+        if naam not in bestaand:
+            verbinding.execute(f"ALTER TABLE zaagplannen ADD COLUMN {naam} {soort}")
     verbinding.commit()
     return verbinding
+
+
+@dataclass
+class ZaagplanHerkomst:
+    """Waar een opgeslagen zaagplan op gebaseerd is: de samenstelling van
+    het project op het moment van genereren (``None`` bij een zaagplan van
+    vóór deze functie) en de revisie van dat moment ("Rev A", "Rev A*" als
+    er niet-vastgelegde wijzigingen waren, "" zonder revisies)."""
+
+    gegenereerd_op: datetime
+    bron: Project | None
+    revisie: str
 
 
 class ZaagplannenOpslag:
@@ -82,13 +106,34 @@ class ZaagplannenOpslag:
         waarschuwingen = list(json.loads(rij["waarschuwingen"]))
         return plannen, waarschuwingen, normaliseer_zaagstrategie(rij["strategie"])
 
+    def laad_herkomst(self, project_id: str) -> ZaagplanHerkomst | None:
+        rij = self._db.execute(
+            "SELECT gegenereerd_op, bron, revisie FROM zaagplannen WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        if rij is None:
+            return None
+        return ZaagplanHerkomst(
+            gegenereerd_op=datetime.fromisoformat(rij["gegenereerd_op"]),
+            bron=dict_naar_project(json.loads(rij["bron"])) if rij["bron"] else None,
+            revisie=rij["revisie"] or "",
+        )
+
     def opslaan(
-        self, project_id: str, plannen: list[PlaatZaagplan], waarschuwingen: list[str], strategie: str
+        self,
+        project_id: str,
+        plannen: list[PlaatZaagplan],
+        waarschuwingen: list[str],
+        strategie: str,
+        bron: Project | None = None,
+        revisie: str = "",
     ) -> None:
+        """``bron``: de samenstelling waaruit dit zaagplan gegenereerd is
+        (voor "Niet gecontroleerd"), ``revisie``: zie ``ZaagplanHerkomst``."""
         self._db.execute(
             """
-            INSERT OR REPLACE INTO zaagplannen (project_id, strategie, gegenereerd_op, plannen, waarschuwingen)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO zaagplannen (
+                project_id, strategie, gegenereerd_op, plannen, waarschuwingen, bron, revisie
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id,
@@ -96,6 +141,8 @@ class ZaagplannenOpslag:
                 datetime.now().isoformat(timespec="seconds"),
                 json.dumps([_plan_naar_dict(p) for p in plannen]),
                 json.dumps(list(waarschuwingen)),
+                json.dumps(project_naar_dict(bron)) if bron is not None else None,
+                revisie,
             ),
         )
         self._db.commit()

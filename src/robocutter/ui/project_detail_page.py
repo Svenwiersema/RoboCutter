@@ -49,6 +49,8 @@ revisiegeschiedenis: alleen de laatste stand overleeft een herstart.
 
 from __future__ import annotations
 
+import html
+
 import math
 import sys
 import threading
@@ -72,6 +74,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -112,6 +115,7 @@ from robocutter.projecten.project_reststukken import (
     ProjectReststukkenBibliotheek,
     ProjectReststukStatus,
 )
+from robocutter.projecten.revisies import GeenWijzigingenError, ProjectRevisiesBibliotheek
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
 from robocutter.projecten.zaagplannen import (
     PlaatZaagplan,
@@ -140,7 +144,12 @@ _SORTEER_LABEL = {
     "materiaal": "Materiaal", "naam": "Naam", "breedte": "Breedte",
     "hoogte": "Hoogte", "aantal": "Aantal", "herkomst": "Herkomst",
 }
-_PANEEL_ITEMS = [("overzicht", "user", "Overzicht"), ("samenstelling", "layers", "Samenstelling"), ("zaaglijst", "list", "Zaaglijst")]
+_PANEEL_ITEMS = [
+    ("overzicht", "user", "Overzicht"),
+    ("samenstelling", "layers", "Samenstelling"),
+    ("zaaglijst", "list", "Zaaglijst"),
+    ("revisies", "history", "Revisies"),
+]
 # Beide "Documenten"-items zijn inmiddels echt: Zaagplannen sinds de
 # vorige stap, Labels sinds deze stap (zie _build_labels_paneel) — allebei
 # leunen op een gegenereerd zaagplan van dit project.
@@ -218,6 +227,23 @@ class _ZoekVeld(QLineEdit):
         if self.completer() is not None:
             self.completer().setCompletionPrefix(self.text())
             self.completer().complete()
+
+
+class _KlikbaarItem(QWidget):
+    """Klikbare regel (bv. een revisie in de tijdlijn). Een plain QWidget
+    i.p.v. een QPushButton als container: die laatste klapt zijn
+    sizeHint in (zie CLAUDE.md)."""
+
+    clicked = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
 
 
 class _ZaagplanWorker(QThread):
@@ -483,6 +509,7 @@ class ProjectDetailPage(QWidget):
         on_reststukken_gewijzigd: Callable[[], None] | None = None,
         on_open_model: Callable[[str], None] | None = None,
         on_model_bibliotheek_gewijzigd: Callable[[str], None] | None = None,
+        revisies: ProjectRevisiesBibliotheek | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -505,6 +532,15 @@ class ProjectDetailPage(QWidget):
         self._am_open = False
         self._am_invoer: tuple[str, str, str] = ("", "", "")
         self._am_opgeslagen: tuple[str, str, str] | None = None  # (model_id, naam, map)
+        # Revisies: gedeeld vanuit MainWindow (zonder: alleen in het geheugen).
+        self._revisies = revisies if revisies is not None else ProjectRevisiesBibliotheek(projecten, materialen)
+        self._rv_open = False
+        self._rv_notitie_tekst = ""
+        self._rv_vastgelegd: tuple[str, str] | None = None  # (revisienaam, toelichting) na vastleggen
+        self._rv_gekozen = "huidig"  # "huidig" of een revisie-id in het Revisies-paneel
+        self._rv_bevestig_terug = False
+        self._rv_terug_fout = ""
+        self._rv_voorstel_model: str | None = None  # na "bijwerken naar laatste versie"
 
         self._actief_paneel = "overzicht"
         # Labels-paneel: welke soort staat open, en welke labels zijn
@@ -598,6 +634,7 @@ class ProjectDetailPage(QWidget):
         self._ververs_alles()
 
     def _meld_gewijzigd(self) -> None:
+        self._ververs_revisie_status()
         if self._on_gewijzigd is not None:
             self._on_gewijzigd()
 
@@ -682,6 +719,8 @@ class ProjectDetailPage(QWidget):
         elif key == "labels":
             # Reststuk-labels volgen de Reststukken-lijst (status, maat).
             self._ververs_labels_paneel()
+        elif key == "revisies":
+            self._ververs_revisies_paneel()
         self._activeer_stack_paneel(key)
 
     def _activeer_stack_paneel(self, key: str) -> None:
@@ -725,6 +764,7 @@ class ProjectDetailPage(QWidget):
             "overzicht": self._build_overzicht_paneel(),
             "samenstelling": self._build_samenstelling_paneel(),
             "zaaglijst": self._build_zaaglijst_paneel(),
+            "revisies": self._build_revisies_paneel(),
             "labels": self._build_labels_paneel(),
             "zaagplannen": self._build_zaagplannen_paneel(),
             "reststukken": self._build_reststukken_paneel(),
@@ -778,6 +818,12 @@ class ProjectDetailPage(QWidget):
 
         head_row.addLayout(left, 1)
 
+        self._rv_knop = QPushButton("")
+        self._rv_knop.setProperty("role", "ghost")
+        self._rv_knop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._rv_knop.clicked.connect(self._rv_toggle)
+        head_row.addWidget(self._rv_knop)
+
         self._als_model_btn = QPushButton("  Opslaan als model")
         self._als_model_btn.setProperty("role", "ghost")
         self._als_model_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -791,6 +837,7 @@ class ProjectDetailPage(QWidget):
         head_row.addWidget(self._archiveer_btn)
 
         wrapper.addLayout(head_row)
+        wrapper.addWidget(self._build_vastleg_paneel())
         wrapper.addWidget(self._build_als_model_paneel())
         return wrapper
 
@@ -829,6 +876,7 @@ class ProjectDetailPage(QWidget):
         chip_layout = self._chip_container.layout()
         _clear_layout(chip_layout)
         chip_layout.addWidget(self._bouw_status_chip(project))
+        chip_layout.addWidget(self._bouw_revisie_chip())
 
         self._meta_klant_label.setText(project.klant or "—")
         self._meta_opdracht_label.setText(project.opdrachtnummer or "—")
@@ -859,6 +907,615 @@ class ProjectDetailPage(QWidget):
             return
         self._ververs_head()
         self._meld_gewijzigd()
+
+    # ------------------------------------------------------------------
+    # Revisies (hoofdstuk 1). Mockup goedgekeurd:
+    # design/assets/mockups/project-revisies-concept.html. Revisiechip in
+    # de kop, "Revisie vastleggen" als inline paneel onder de kop, en een
+    # eigen Revisies-paneel (tijdlijn + alleen-lezen samenstelling +
+    # terugzetten). Altijd handmatig vastleggen.
+    # ------------------------------------------------------------------
+    def _bouw_revisie_chip(self) -> QFrame:
+        t = self._theme
+        chip = QFrame()
+        chip.setObjectName("RevChip")
+        chip.setStyleSheet(
+            f"QFrame#RevChip {{ background: {t.surface}; border: 1px solid {t.border}; border-radius: 10px; }}"
+        )
+        layout = QHBoxLayout(chip)
+        layout.setContentsMargins(9, 2, 4, 2)
+        layout.setSpacing(6)
+        laatste = self._revisies.laatste(self._project_id)
+        naam = QLabel(laatste.naam if laatste is not None else "Niet vastgelegd")
+        naam.setStyleSheet(
+            f"color: {t.text if laatste is not None else t.text_muted}; font-size: 11px; font-weight: 700;"
+            + (" font-family: Consolas;" if laatste is not None else "")
+        )
+        layout.addWidget(naam)
+        wijzigingen = self._revisies.wijzigingen(self._project_id) or []
+        if wijzigingen:
+            n = len(wijzigingen)
+            pil = QLabel(f"{n} {'wijziging' if n == 1 else 'wijzigingen'}")
+            pil.setStyleSheet(
+                f"background: {t.warning_soft}; color: {t.warning_ink}; border-radius: 7px; padding: 0 6px;"
+                "font-size: 11px; font-weight: 700;"
+            )
+            layout.addWidget(pil)
+        else:
+            layout.setContentsMargins(9, 3, 9, 3)
+        chip.setToolTip("\n".join(wijzigingen) if wijzigingen else "")
+        return chip
+
+    def _build_vastleg_paneel(self) -> QWidget:
+        t = self._theme
+        container = QWidget()
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 18, 0, 0)
+
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        kaart.setStyleSheet(f"QFrame#TableCard {{ border-color: {t.accent_soft_border}; }}")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        kop = QHBoxLayout()
+        kop.setContentsMargins(18, 14, 18, 12)
+        kop.setSpacing(10)
+        self._rv_titel = QLabel("")
+        self._rv_titel.setObjectName("CardTitle")
+        kop.addWidget(self._rv_titel)
+        sub = QLabel(
+            "Alleen voor een wijziging op verzoek van de klant. Een fout uit de werkvoorbereiding "
+            "corrigeren is geen nieuwe revisie."
+        )
+        sub.setProperty("role", "cardMeta")
+        sub.setWordWrap(True)
+        kop.addWidget(sub, 1)
+        layout.addLayout(kop)
+        layout.addWidget(self._am_lijn())
+
+        body = QHBoxLayout()
+        body.setContentsMargins(18, 16, 18, 18)
+        body.setSpacing(24)
+        links = QWidget()
+        links_layout = QVBoxLayout(links)
+        links_layout.setContentsMargins(0, 0, 0, 0)
+        links_layout.setSpacing(8)
+        self._rv_lijst_label = self._am_sectielabel("")
+        links_layout.addWidget(self._rv_lijst_label)
+        self._rv_wijz_lijst = QVBoxLayout()
+        self._rv_wijz_lijst.setContentsMargins(0, 0, 0, 0)
+        self._rv_wijz_lijst.setSpacing(0)
+        lijst_frame = QFrame()
+        lijst_frame.setObjectName("RvWijzLijst")
+        lijst_frame.setStyleSheet(f"QFrame#RvWijzLijst {{ border: 1px solid {t.border}; border-radius: 10px; }}")
+        lijst_frame.setLayout(self._rv_wijz_lijst)
+        links_layout.addWidget(lijst_frame)
+        self._rv_lijst_hint = QLabel("Wordt automatisch de samenvatting van de revisie.")
+        self._rv_lijst_hint.setProperty("role", "fieldHint")
+        links_layout.addWidget(self._rv_lijst_hint)
+        body.addWidget(links, 1, Qt.AlignmentFlag.AlignTop)
+
+        rechts = QWidget()
+        rechts.setFixedWidth(340)
+        rechts_layout = QVBoxLayout(rechts)
+        rechts_layout.setContentsMargins(0, 0, 0, 0)
+        rechts_layout.setSpacing(6)
+        rechts_layout.addWidget(self._field_label("Notitie (optioneel)"))
+        self._rv_notitie = QPlainTextEdit()
+        self._rv_notitie.setProperty("role", "field")
+        self._rv_notitie.setPlaceholderText("bijv. klant wil extra onderkast naast de vaatwasser")
+        self._rv_notitie.setFixedHeight(96)
+        self._rv_notitie.setPlainText(self._rv_notitie_tekst)
+        self._rv_notitie.textChanged.connect(self._rv_notitie_gewijzigd)
+        rechts_layout.addWidget(self._rv_notitie)
+        body.addWidget(rechts, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(body)
+
+        voet = QWidget()
+        voet.setObjectName("RvVoet")
+        voet.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        voet.setStyleSheet(
+            f"QWidget#RvVoet {{ background: {t.surface_2}; border-top: 1px solid {t.border};"
+            "border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }"
+        )
+        voet_layout = QHBoxLayout(voet)
+        voet_layout.setContentsMargins(18, 12, 18, 12)
+        voet_layout.setSpacing(10)
+        self._rv_voet_icoon = QLabel()
+        self._rv_voet_icoon.setFixedSize(18, 18)
+        self._rv_voet_icoon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._rv_voet_icoon.setPixmap(icon_pixmap("check", t.surface, 11))
+        self._rv_voet_icoon.setStyleSheet(f"background: {t.success}; border-radius: 9px;")
+        voet_layout.addWidget(self._rv_voet_icoon)
+        self._rv_voet_tekst = QLabel("")
+        voet_layout.addWidget(self._rv_voet_tekst)
+        voet_layout.addStretch(1)
+        annuleren = QPushButton("Annuleren")
+        annuleren.setProperty("role", "ghost")
+        annuleren.setCursor(Qt.CursorShape.PointingHandCursor)
+        annuleren.clicked.connect(lambda: self._rv_zet_open(False))
+        voet_layout.addWidget(annuleren)
+        self._rv_vastleg_btn = QPushButton("")
+        self._rv_vastleg_btn.setProperty("role", "primary")
+        self._rv_vastleg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._rv_vastleg_btn.clicked.connect(self._rv_vastleggen)
+        voet_layout.addWidget(self._rv_vastleg_btn)
+        layout.addWidget(voet)
+
+        outer.addWidget(kaart)
+        self._rv_container = container
+        container.setVisible(self._rv_open)
+        return container
+
+    def _rv_notitie_gewijzigd(self) -> None:
+        self._rv_notitie_tekst = self._rv_notitie.toPlainText()
+
+    def _rv_toggle(self) -> None:
+        self._rv_zet_open(not self._rv_open)
+
+    def _rv_zet_open(self, open_: bool) -> None:
+        self._rv_open = open_
+        if open_:
+            self._rv_vastgelegd = None
+            self._rv_notitie.clear()
+            if self._am_open:
+                # Eén uitklappaneel tegelijk onder de kop.
+                self._am_zet_open(False)
+        self._ververs_vastleg_paneel()
+        if open_:
+            self._rv_notitie.setFocus()
+
+    def _ververs_vastleg_paneel(self) -> None:
+        t = self._theme
+        laatste = self._revisies.laatste(self._project_id)
+        volgende = self._revisies.volgende_naam(self._project_id)
+        self._rv_knop.setText(f"  {volgende} vastleggen")
+        if self._rv_open:
+            self._rv_knop.setStyleSheet(
+                f"QPushButton {{ background: {t.accent_soft}; border-color: {t.accent_soft_border}; color: {t.accent_text}; }}"
+            )
+            self._rv_knop.setIcon(icon("commit", t.accent_text, 14))
+        else:
+            self._rv_knop.setStyleSheet("")
+            self._rv_knop.setIcon(icon("commit", t.text, 14))
+        self._rv_container.setVisible(self._rv_open)
+        if not self._rv_open:
+            return
+
+        wijzigingen = self._revisies.wijzigingen(self._project_id)
+        _clear_layout(self._rv_wijz_lijst)
+        if laatste is None:
+            project = self._project()
+            self._rv_titel.setText("Origineel vastleggen")
+            self._rv_lijst_label.setText("WAT ER WORDT VASTGELEGD")
+            n_mod = sum(i.aantal for i in project.modelinstanties)
+            regels = [
+                f"Projectgegevens van {project.naam} ({project.klant})",
+                f"{n_mod} {'model' if n_mod == 1 else 'modellen'} en {len(project.losse_onderdelen)} "
+                f"{'los onderdeel' if len(project.losse_onderdelen) == 1 else 'losse onderdelen'}",
+            ]
+            stip = t.accent
+        else:
+            self._rv_titel.setText(f"{volgende} vastleggen")
+            self._rv_lijst_label.setText(f"WIJZIGINGEN SINDS {laatste.naam.upper()}")
+            regels = wijzigingen or [f"Niets veranderd sinds {laatste.naam}."]
+            stip = t.warning if wijzigingen else t.text_faint
+        for i, regel in enumerate(regels):
+            if i:
+                self._rv_wijz_lijst.addWidget(self._am_lijn())
+            self._rv_wijz_lijst.addWidget(self._rv_regel(regel, stip))
+        self._rv_lijst_hint.setVisible(laatste is not None and bool(wijzigingen))
+
+        kan_vastleggen = laatste is None or bool(wijzigingen)
+        self._rv_vastleg_btn.setText(f"{volgende} vastleggen")
+        self._rv_vastleg_btn.setEnabled(kan_vastleggen)
+        if self._rv_vastgelegd is not None:
+            naam, sub = self._rv_vastgelegd
+            self._rv_voet_icoon.show()
+            self._rv_voet_tekst.setText(
+                f'<span style="color:{t.success_ink}; font-weight:600">{naam} vastgelegd</span>'
+                f'&nbsp;&nbsp;<span style="color:{t.text_muted}">{sub}</span>'
+            )
+            return
+        self._rv_voet_icoon.hide()
+        if laatste is None:
+            tekst = "Legt de huidige stand vast als Origineel"
+        elif wijzigingen:
+            n = len(wijzigingen)
+            tekst = f"{n} {'wijziging wordt' if n == 1 else 'wijzigingen worden'} {volgende}"
+        else:
+            tekst = f"Niets veranderd sinds {laatste.naam}"
+        self._rv_voet_tekst.setText(f'<span style="color:{t.text_muted}">{tekst}</span>')
+
+    def _rv_regel(self, tekst: str, stip_kleur: str) -> QWidget:
+        rij = QWidget()
+        layout = QHBoxLayout(rij)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(9)
+        stip = QLabel()
+        stip.setFixedSize(6, 6)
+        stip.setStyleSheet(f"background: {stip_kleur}; border-radius: 3px;")
+        layout.addWidget(stip, 0, Qt.AlignmentFlag.AlignVCenter)
+        label = QLabel(tekst)
+        label.setWordWrap(True)
+        label.setStyleSheet(f"color: {self._theme.text}; font-size: 12.5px;")
+        layout.addWidget(label, 1)
+        return rij
+
+    def _rv_vastleggen(self) -> None:
+        try:
+            revisie = self._revisies.vastleggen(self._project_id, self._rv_notitie.toPlainText())
+        except GeenWijzigingenError:
+            self._ververs_revisie_status()
+            return
+        n = len(revisie.samenvatting) if revisie.nummer else 0
+        delen = []
+        if n:
+            delen.append(f"{n} {'wijziging' if n == 1 else 'wijzigingen'}")
+        delen.append("met notitie" if revisie.notitie else "zonder notitie")
+        self._rv_vastgelegd = (revisie.naam, ", ".join(delen))
+        self._rv_voorstel_model = None
+        self._rv_gekozen = revisie.id
+        self._rv_bevestig_terug = False
+        self._ververs_revisie_status()
+
+    # -- Revisies-paneel --------------------------------------------------
+    def _build_revisies_paneel(self) -> QWidget:
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QHBoxLayout(kaart)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        links = QWidget()
+        links.setFixedWidth(360)
+        links.setObjectName("RvTijdlijn")
+        links.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        links.setStyleSheet(f"QWidget#RvTijdlijn {{ border-right: 1px solid {self._theme.border}; }}")
+        self._rv_tijdlijn = QVBoxLayout(links)
+        self._rv_tijdlijn.setContentsMargins(0, 0, 0, 0)
+        self._rv_tijdlijn.setSpacing(0)
+        layout.addWidget(links)
+
+        rechts = QWidget()
+        self._rv_detail = QVBoxLayout(rechts)
+        self._rv_detail.setContentsMargins(18, 16, 18, 18)
+        self._rv_detail.setSpacing(12)
+        layout.addWidget(rechts, 1)
+        return kaart
+
+    def _ververs_revisies_paneel(self) -> None:
+        t = self._theme
+        revisies = list(reversed(self._revisies.lijst(self._project_id)))
+        wijzigingen = self._revisies.wijzigingen(self._project_id)
+        ids = {r.id for r in revisies}
+        if self._rv_gekozen != "huidig" and self._rv_gekozen not in ids:
+            self._rv_gekozen = revisies[0].id if revisies else "huidig"
+
+        _clear_layout(self._rv_tijdlijn)
+        items: list[tuple[str, str, str, list[str], str, bool]] = []
+        if wijzigingen is None or wijzigingen:
+            sam = wijzigingen or ["Nog niets vastgelegd. Leg het origineel vast via de knop bovenaan."]
+            items.append(("huidig", "Huidige stand", "niet vastgelegd", sam, "", True))
+        for r in revisies:
+            items.append((r.id, r.naam, r.aangemaakt.strftime("%Y-%m-%d %H:%M"), r.samenvatting, r.notitie, False))
+        for index, (rid, naam, datum, sam, notitie, huidig) in enumerate(items):
+            self._rv_tijdlijn.addWidget(
+                self._rv_tijdlijn_item(rid, naam, datum, sam, notitie, huidig, index < len(items) - 1)
+            )
+        self._rv_tijdlijn.addStretch(1)
+
+        _clear_layout(self._rv_detail)
+        if self._rv_gekozen == "huidig":
+            project = self._project()
+            laatste = self._revisies.laatste(self._project_id)
+            kop = QHBoxLayout()
+            kop.setSpacing(10)
+            naam = QLabel("Huidige stand")
+            naam.setStyleSheet(f"color: {t.text}; font-size: 16px; font-weight: 700;")
+            kop.addWidget(naam)
+            uitleg = QLabel(
+                f"Dit is de stand waarin je werkt. Gemarkeerd: veranderd sinds {laatste.naam}."
+                if laatste is not None and wijzigingen
+                else "Dit is de stand waarin je werkt."
+            )
+            uitleg.setProperty("role", "cardMeta")
+            uitleg.setWordWrap(True)
+            kop.addWidget(uitleg, 1)
+            self._rv_detail.addLayout(kop)
+            vergelijk_met = laatste.momentopname if laatste is not None and wijzigingen else None
+            self._rv_samenstelling(project, vergelijk_met)
+        else:
+            revisie = self._revisies.ophalen(self._rv_gekozen)
+            kop = QHBoxLayout()
+            kop.setSpacing(10)
+            naam = QLabel(revisie.naam)
+            naam.setStyleSheet(f"color: {t.text}; font-family: Consolas; font-size: 16px; font-weight: 700;")
+            kop.addWidget(naam)
+            meta = QLabel(f"vastgelegd {revisie.aangemaakt.strftime('%Y-%m-%d %H:%M')}")
+            meta.setProperty("role", "cardMeta")
+            kop.addWidget(meta, 1)
+            if not self._rv_bevestig_terug:
+                lezen = QLabel("alleen-lezen")
+                lezen.setStyleSheet(
+                    f"color: {t.text_muted}; background: {t.surface_2}; border: 1px solid {t.border};"
+                    "border-radius: 8px; padding: 2px 7px; font-size: 10.5px; font-weight: 700;"
+                )
+                kop.addWidget(lezen)
+                terug = QPushButton(f"  Terugzetten naar {revisie.naam}")
+                terug.setProperty("role", "ghost")
+                terug.setIcon(icon("undo", t.text, 13))
+                terug.setCursor(Qt.CursorShape.PointingHandCursor)
+                terug.clicked.connect(self._rv_vraag_terugzetten)
+                kop.addWidget(terug)
+            self._rv_detail.addLayout(kop)
+            if self._rv_bevestig_terug:
+                self._rv_detail.addWidget(self._rv_terugzet_bevestiging(revisie, wijzigingen or []))
+            self._rv_samenstelling(revisie.momentopname, None)
+        self._rv_detail.addStretch(1)
+
+    def _rv_tijdlijn_item(
+        self, rid: str, naam: str, datum: str, samenvatting: list[str], notitie: str, huidig: bool, lijn_eronder: bool
+    ) -> QWidget:
+        t = self._theme
+        gekozen = rid == self._rv_gekozen
+        item = _KlikbaarItem()
+        item.setObjectName("RvItem")
+        item.setCursor(Qt.CursorShape.PointingHandCursor)
+        item.setStyleSheet(
+            f"QWidget#RvItem {{ background: {t.accent_soft if gekozen else 'transparent'};"
+            f" border-bottom: 1px solid {t.border}; }}"
+        )
+        item.clicked.connect(lambda r=rid: self._rv_kies(r))
+        layout = QHBoxLayout(item)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(12)
+
+        spoor = QVBoxLayout()
+        spoor.setSpacing(4)
+        spoor.setContentsMargins(0, 3, 0, 0)
+        bol = QLabel()
+        bol.setFixedSize(11, 11)
+        bol.setStyleSheet(
+            f"background: {t.surface}; border: 2px {'dashed' if huidig else 'solid'} "
+            f"{t.warning if huidig else t.accent}; border-radius: 5px;"
+        )
+        spoor.addWidget(bol, 0, Qt.AlignmentFlag.AlignHCenter)
+        if lijn_eronder:
+            lijn = QFrame()
+            lijn.setFixedWidth(2)
+            lijn.setStyleSheet(f"background: {t.border}; border: none;")
+            spoor.addWidget(lijn, 1, Qt.AlignmentFlag.AlignHCenter)
+        else:
+            spoor.addStretch(1)
+        layout.addLayout(spoor)
+
+        tekst = QVBoxLayout()
+        tekst.setSpacing(3)
+        kop = QHBoxLayout()
+        kop.setSpacing(8)
+        naam_label = QLabel(naam)
+        naam_label.setStyleSheet(
+            f"color: {t.text}; font-size: 13px; font-weight: 700;" + ("" if huidig else " font-family: Consolas;")
+        )
+        kop.addWidget(naam_label)
+        datum_label = QLabel(datum)
+        datum_label.setStyleSheet(f"color: {t.text_faint}; font-size: 11.5px;")
+        kop.addWidget(datum_label)
+        kop.addStretch(1)
+        tekst.addLayout(kop)
+        sam = QLabel("<br>".join(html.escape(s) for s in samenvatting))
+        sam.setWordWrap(True)
+        sam.setStyleSheet(f"color: {t.text_muted}; font-size: 12.5px;")
+        tekst.addWidget(sam)
+        if notitie:
+            notitie_label = QLabel(notitie)
+            notitie_label.setWordWrap(True)
+            notitie_label.setStyleSheet(
+                f"color: {t.text}; background: {t.surface_2}; border-radius: 6px; padding: 4px 8px; font-size: 12px;"
+            )
+            tekst.addWidget(notitie_label)
+        layout.addLayout(tekst, 1)
+        return item
+
+    def _rv_kies(self, rid: str) -> None:
+        self._rv_gekozen = rid
+        self._rv_bevestig_terug = False
+        self._rv_terug_fout = ""
+        self._ververs_revisies_paneel()
+
+    def _rv_samenstelling(self, project: Project, vergelijk_met: Project | None) -> None:
+        """Alleen-lezen samenstelling. Met ``vergelijk_met`` worden regels
+        gemarkeerd die sindsdien veranderd of nieuw zijn."""
+
+        t = self._theme
+        self._rv_detail.addWidget(self._am_sectielabel("Samenstelling"))
+        oud_inst = {i.id: i for i in vergelijk_met.modelinstanties} if vergelijk_met is not None else None
+        oud_los = {o.id: o for o in vergelijk_met.losse_onderdelen} if vergelijk_met is not None else None
+
+        rijen = []
+        for i in project.modelinstanties:
+            veranderd = oud_inst is not None and (
+                i.id not in oud_inst or oud_inst[i.id].aantal != i.aantal or oud_inst[i.id].onderdelen != i.onderdelen
+            )
+            rijen.append((i.model_naam, "", i.aantal, veranderd))
+        self._rv_detail.addWidget(self._rv_groep("Modellen", rijen, "Geen modellen"))
+        rijen = [
+            (o.naam, f"{o.breedte:g} × {o.hoogte:g}", o.aantal, oud_los is not None and oud_los.get(o.id) != o)
+            for o in project.losse_onderdelen
+        ]
+        self._rv_detail.addWidget(self._rv_groep("Losse onderdelen", rijen, "Geen losse onderdelen"))
+
+    def _rv_groep(self, titel: str, rijen: list[tuple[str, str, int, bool]], leeg_tekst: str) -> QFrame:
+        t = self._theme
+        groep = QFrame()
+        groep.setObjectName("AmGroep")
+        groep.setStyleSheet(f"QFrame#AmGroep {{ border: 1px solid {t.border}; border-radius: 10px; background: {t.surface}; }}")
+        layout = QVBoxLayout(groep)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+        kop = QWidget()
+        kop.setObjectName("AmGroepKop")
+        kop.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        kop.setStyleSheet(
+            f"QWidget#AmGroepKop {{ background: {t.surface_2}; border-top-left-radius: 9px; border-top-right-radius: 9px; }}"
+        )
+        kop_layout = QHBoxLayout(kop)
+        kop_layout.setContentsMargins(12, 7, 12, 7)
+        kop_label = QLabel(titel)
+        kop_label.setStyleSheet(f"color: {t.text}; font-size: 12.5px; font-weight: 600;")
+        kop_layout.addWidget(kop_label)
+        layout.addWidget(kop)
+        if not rijen:
+            layout.addWidget(self._am_lijn())
+            leeg = QLabel(leeg_tekst)
+            leeg.setContentsMargins(12, 7, 12, 7)
+            leeg.setStyleSheet(f"color: {t.text_faint}; font-size: 12.5px;")
+            layout.addWidget(leeg)
+        for naam, maat, aantal, veranderd in rijen:
+            layout.addWidget(self._am_lijn())
+            rij = QWidget()
+            rij.setObjectName("RvRij")
+            rij.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            if veranderd:
+                rij.setStyleSheet(f"QWidget#RvRij {{ background: {t.warning_soft}; }}")
+            rij_layout = QHBoxLayout(rij)
+            rij_layout.setContentsMargins(12, 6, 12, 6)
+            rij_layout.setSpacing(10)
+            naam_label = QLabel(naam)
+            naam_label.setStyleSheet(f"color: {t.text}; font-size: 12.5px;")
+            rij_layout.addWidget(naam_label, 1)
+            if maat:
+                maat_label = QLabel(maat)
+                maat_label.setStyleSheet(f"color: {t.text_muted}; font-family: Consolas; font-size: 12px;")
+                rij_layout.addWidget(maat_label)
+            aantal_label = QLabel(f"×{aantal}")
+            aantal_label.setMinimumWidth(34)
+            aantal_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            aantal_label.setStyleSheet(f"color: {t.text}; font-family: Consolas; font-size: 12px; font-weight: 700;")
+            rij_layout.addWidget(aantal_label)
+            layout.addWidget(rij)
+        return groep
+
+    def _rv_vraag_terugzetten(self) -> None:
+        self._rv_bevestig_terug = True
+        self._rv_terug_fout = ""
+        self._ververs_revisies_paneel()
+
+    def _rv_terugzet_bevestiging(self, revisie, wijzigingen: list[str]) -> QWidget:
+        t = self._theme
+        balk = QFrame()
+        balk.setObjectName("RvBevestig")
+        balk.setStyleSheet(
+            f"QFrame#RvBevestig {{ background: {t.warning_soft}; border: 1px solid {t.warning}; border-radius: 10px; }}"
+        )
+        layout = QHBoxLayout(balk)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
+        n = len(wijzigingen)
+        verloren = (
+            f" De {n} niet-vastgelegde {'wijziging gaat' if n == 1 else 'wijzigingen gaan'} verloren."
+            if n
+            else ""
+        )
+        tekst = (
+            self._rv_terug_fout
+            or f"De huidige stand wordt gelijk aan <b>{revisie.naam}</b>.{verloren} "
+            "Het zaagplan moet daarna opnieuw gegenereerd worden."
+        )
+        label = QLabel(tekst)
+        label.setWordWrap(True)
+        label.setStyleSheet(f"color: {t.warning_ink}; font-size: 12.5px; background: transparent; border: none;")
+        layout.addWidget(label, 1)
+        nee = QPushButton("Annuleren")
+        nee.setProperty("role", "ghost")
+        nee.setCursor(Qt.CursorShape.PointingHandCursor)
+        nee.clicked.connect(lambda: self._rv_kies(self._rv_gekozen))
+        layout.addWidget(nee)
+        if not self._rv_terug_fout:
+            ja = QPushButton("Terugzetten")
+            ja.setProperty("role", "primary")
+            ja.setCursor(Qt.CursorShape.PointingHandCursor)
+            ja.clicked.connect(lambda: self._rv_terugzetten(revisie.id))
+            layout.addWidget(ja)
+        return balk
+
+    def _rv_terugzetten(self, revisie_id: str) -> None:
+        try:
+            self._revisies.terugzetten(self._project_id, revisie_id)
+        except ValueError as exc:
+            self._rv_terug_fout = f"Terugzetten lukt niet: {exc}"
+            self._ververs_revisies_paneel()
+            return
+        self._rv_bevestig_terug = False
+        self._rv_gekozen = "huidig"
+        self._ververs_alles()
+        self._meld_gewijzigd()
+
+    # -- Voorstel na "bijwerken naar laatste versie" ----------------------
+    def _build_rv_voorstel(self) -> QFrame:
+        t = self._theme
+        balk = QFrame()
+        balk.setObjectName("RvVoorstel")
+        balk.setStyleSheet(
+            f"QFrame#RvVoorstel {{ background: {t.accent_soft}; border: 1px solid {t.accent_soft_border}; border-radius: 10px; }}"
+        )
+        layout = QHBoxLayout(balk)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(12)
+        self._rv_voorstel_tekst = QLabel("")
+        self._rv_voorstel_tekst.setWordWrap(True)
+        self._rv_voorstel_tekst.setStyleSheet(f"color: {t.text}; font-size: 12.5px; background: transparent; border: none;")
+        layout.addWidget(self._rv_voorstel_tekst, 1)
+        niet_nu = QPushButton("Niet nu")
+        niet_nu.setProperty("role", "ghost")
+        niet_nu.setCursor(Qt.CursorShape.PointingHandCursor)
+        niet_nu.clicked.connect(self._rv_voorstel_weg)
+        layout.addWidget(niet_nu)
+        self._rv_voorstel_btn = QPushButton("")
+        self._rv_voorstel_btn.setProperty("role", "primary")
+        self._rv_voorstel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._rv_voorstel_btn.clicked.connect(self._rv_voorstel_vastleggen)
+        layout.addWidget(self._rv_voorstel_btn)
+        self._rv_voorstel_balk = balk
+        return balk
+
+    def _ververs_rv_voorstel(self) -> None:
+        wijzigingen = self._revisies.wijzigingen(self._project_id)
+        if self._rv_voorstel_model is None or wijzigingen == []:
+            self._rv_voorstel_balk.hide()
+            return
+        t = self._theme
+        self._rv_voorstel_tekst.setText(
+            f'<b style="color:{t.accent_text}">{html.escape(self._rv_voorstel_model)} is bijgewerkt naar de '
+            "laatste modelversie.</b> Dat is meestal revisie-waardig. Wil je de huidige stand als nieuwe "
+            "revisie vastleggen?"
+        )
+        self._rv_voorstel_btn.setText(f"{self._revisies.volgende_naam(self._project_id)} vastleggen…")
+        self._rv_voorstel_balk.show()
+
+    def _rv_voorstel_weg(self) -> None:
+        self._rv_voorstel_model = None
+        self._ververs_rv_voorstel()
+
+    def _rv_voorstel_vastleggen(self) -> None:
+        self._rv_voorstel_model = None
+        self._ververs_rv_voorstel()
+        self._rv_zet_open(True)
+        self._view.verticalScrollBar().setValue(0)
+
+    def _ververs_revisie_status(self) -> None:
+        """Na elke wijziging aan het project: chip, vastleg-paneel,
+        Revisies-paneel en voorstel bijwerken."""
+        chip_layout = self._chip_container.layout()
+        _clear_layout(chip_layout)
+        chip_layout.addWidget(self._bouw_status_chip(self._project()))
+        chip_layout.addWidget(self._bouw_revisie_chip())
+        self._ververs_vastleg_paneel()
+        self._ververs_revisies_paneel()
+        self._ververs_rv_voorstel()
 
     # ------------------------------------------------------------------
     # Project opslaan als nieuw model (hoofdstuk 4, "Project → Model").
@@ -1021,6 +1678,9 @@ class ProjectDetailPage(QWidget):
 
     def _am_zet_open(self, open_: bool) -> None:
         self._am_open = open_
+        if open_ and self._rv_open:
+            # Eén uitklappaneel tegelijk onder de kop.
+            self._rv_zet_open(False)
         if open_:
             naam = self._project().naam
             self._am_naam.setText(naam)
@@ -1456,6 +2116,7 @@ class ProjectDetailPage(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(20)
+        layout.addWidget(self._build_rv_voorstel())
         layout.addWidget(self._build_modellen_kaart())
         layout.addWidget(self._build_losse_onderdelen_kaart())
         layout.addStretch(1)
@@ -1688,10 +2349,16 @@ class ProjectDetailPage(QWidget):
         self._meld_gewijzigd()
 
     def _model_instantie_bijwerken(self, instantie_id: str) -> None:
+        voor = [replace(o) for i in self._project().modelinstanties if i.id == instantie_id for o in i.onderdelen]
         try:
-            self._projecten.model_bijwerken_naar_laatste_versie(self._project_id, instantie_id)
+            project = self._projecten.model_bijwerken_naar_laatste_versie(self._project_id, instantie_id)
         except OnbekendModelError:
             pass
+        else:
+            # Svens keuze: bijwerken maakt geen revisie, maar stelt het voor.
+            instantie = next(i for i in project.modelinstanties if i.id == instantie_id)
+            if instantie.onderdelen != voor:
+                self._rv_voorstel_model = instantie.model_naam
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()
         self._meld_gewijzigd()
@@ -3796,6 +4463,9 @@ class ProjectDetailPage(QWidget):
     def _ververs_alles(self) -> None:
         self._ververs_head()
         self._ververs_als_model_paneel()
+        self._ververs_vastleg_paneel()
+        self._ververs_revisies_paneel()
+        self._ververs_rv_voorstel()
         self._ververs_overzicht_paneel()
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()

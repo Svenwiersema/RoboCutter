@@ -716,8 +716,8 @@ in plaats van aan te nemen:
 
 - Mes/groef-plaatsingsregels (hoofdstuk 5 noemt dit zelf nog als
   "verder te detailleren").
-- Revisiegeschiedenis/sandboxes (hoofdstuk 1/2), "project opslaan als
-  nieuw model" (hoofdstuk 4 — inmiddels wél gebouwd, zie het logboek), en echte zaagplan-generatie vanuit een
+- Revisiegeschiedenis voor modellen (hoofdstuk 2; projectrevisies en
+  "project opslaan als nieuw model" zijn inmiddels wél gebouwd, zie het logboek), en echte zaagplan-generatie vanuit een
   project (+ de daarvan afhankelijke reststukken-vrijgave bij
   Afronding) — bewust uitgesteld, zie de Projectenbeheer-sectie
   hierboven. Materialenbibliotheek, Reststukkenbibliotheek (Module 3),
@@ -3119,6 +3119,51 @@ houden.
   - Tests: +2 in `test_projecten.py`. Offscreen rookproef met in-memory
     bibliotheken (openen, lege naam, opslaan, callbacks, thema-wissel,
     dichtklappen). 240 tests.
+
+- **Projectrevisies (hoofdstuk 1).** Mockup goedgekeurd ("mockup ziet er
+  goed uit"): `design/assets/mockups/project-revisies-concept.html`.
+  Keuzes van Sven (vooraf gevraagd): **eerst projecten** (modelrevisies
+  later, incl. geschiedenis meenemen bij "project als model"); oude
+  revisie **bekijken + terugzetten**; "bijwerken naar laatste versie"
+  **stelt een revisie voor** (balk), maakt er geen; de "sandbox" is
+  gewoon **de huidige werkstand**; de eerste vastlegging heet
+  **Origineel**, daarna Rev A, Rev B, ...
+  - Backend: `projecten/revisies.py` (`ProjectRevisie`, `revisie_naam`,
+    `vergelijk_projecten` voor de automatische samenvatting,
+    `ProjectRevisiesBibliotheek`: `vastleggen` (weigert zonder
+    wijzigingen: `GeenWijzigingenError`), `wijzigingen`, `terugzetten`,
+    `verwijder_project`, `huidige_revisie_label` ("Rev A*" bij
+    niet-vastgelegde wijzigingen), `zaagplan_wijzigingen`) +
+    `revisies_opslag.py` (eigen tabel `project_revisies`, momentopname
+    als JSON via de nieuwe `projecten.opslag.project_naar_dict` /
+    `dict_naar_project`). Een revisie is een volledige momentopname van
+    projectgegevens + samenstelling; status en archief horen er niet bij
+    en blijven bij terugzetten staan. Terugzetten legt zelf geen revisie
+    vast.
+  - UI (`project_detail_page.py`): revisiechip naast de statuschip ("Rev A"
+    + aantal wijzigingen, of "Niet vastgelegd"), knop "Rev B vastleggen"
+    (inline paneel met wijzigingen + notitie; één uitklappaneel tegelijk
+    met "Opslaan als model"), zijbalk-item **Revisies** (tijdlijn,
+    alleen-lezen samenstelling met gemarkeerde wijzigingen, terugzetten
+    met inline bevestiging), voorstelbalk bovenaan Samenstelling na
+    bijwerken. `MainWindow` deelt één `ProjectRevisiesBibliotheek` en
+    ruimt revisies op bij definitief verwijderen. Nieuwe iconen
+    `history`/`commit`; `QPlainTextEdit[role="field"]` in theme.py.
+  - "Niet gecontroleerd" (backend al klaar; mockup
+    `design/assets/mockups/niet-gecontroleerd-concept.html` is
+    **goedgekeurd** maar de UI/PDF/labels zijn nog niet gebouwd — volgende
+    sessie. Sven wil dan ook bespreken: een revisie tijdens productie mag
+    niet het hele zaagplan opnieuw laten genereren, want er is al gezaagd;
+    alleen een deel, met reststukken vastzetten en al klare onderdelen
+    uitzetten):
+    `ZaagplannenOpslag.opslaan(..., bron=, revisie=)` bewaart de
+    samenstelling + revisie van het moment van genereren (nieuwe kolommen
+    `bron`/`revisie`, oude databases krijgen ze erbij),
+    `laad_herkomst` geeft ze terug; `revisies.samenstelling_wijzigingen`
+    vergelijkt alleen wat het zaagplan raakt (geen projectgegevens).
+  - Tests: `test_revisies.py` (7), +1 in `test_zaagplannen_opslag.py`.
+    Offscreen rookproef met in-memory bibliotheken (vastleggen, wijziging,
+    voorstel, terugzetten met bevestiging, thema-wissel). 248 tests.
 
 ## Werkwijze die Sven prettig vindt
 

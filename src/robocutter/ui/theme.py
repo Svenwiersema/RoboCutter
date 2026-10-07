@@ -469,6 +469,11 @@ def build_stylesheet(t: Theme) -> str:
     }}
     QLineEdit[role="field"]:focus, QComboBox[role="field"]:focus {{ border-color: {t.accent}; }}
     QComboBox[role="field"]:disabled {{ color: {t.text_muted}; }}
+    QPlainTextEdit[role="field"] {{
+        background: {t.surface}; border: 1px solid {t.border}; border-radius: 7px;
+        padding: 4px 6px; font-size: 13px; color: {t.text};
+    }}
+    QPlainTextEdit[role="field"]:focus {{ border-color: {t.accent}; }}
     /* Zonder expliciete stijl hier leunt QComboBox op de (in dit paneel
        bewust transparant gemaakte, zie hierboven) achtergrond van zijn
        voorouders voor zijn eigen "niet expliciet gestileerde" uiterlijk —

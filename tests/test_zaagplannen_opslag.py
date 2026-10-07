@@ -178,3 +178,29 @@ def test_oude_strategienaam_rijen_wordt_horizontaal_bij_laden(tmp_path):
 
     assert strategie == "horizontaal"
     assert all(p.resultaat.strategie == "horizontaal" for p in herladen)
+
+
+def test_herkomst_wordt_bewaard_en_oude_database_krijgt_kolommen(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "zaagplannen.db"
+    # Een database van vóór revisies: tabel zonder bron/revisie-kolommen.
+    oud = sqlite3.connect(db)
+    oud.execute(
+        "CREATE TABLE zaagplannen (project_id TEXT PRIMARY KEY, strategie TEXT NOT NULL, "
+        "gegenereerd_op TEXT NOT NULL, plannen TEXT NOT NULL, waarschuwingen TEXT NOT NULL)"
+    )
+    oud.execute("INSERT INTO zaagplannen VALUES ('p-oud', 'horizontaal', '2026-10-01T10:00:00', '[]', '[]')")
+    oud.commit()
+    oud.close()
+
+    plannen, waarschuwingen, project = _project_met_zaagplan()
+    opslag = ZaagplannenOpslag(open_verbinding(db))
+    herkomst_oud = opslag.laad_herkomst("p-oud")
+    assert herkomst_oud.bron is None and herkomst_oud.revisie == ""
+
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal", bron=project, revisie="Rev A*")
+    herkomst = ZaagplannenOpslag(open_verbinding(db)).laad_herkomst(project.id)
+    assert herkomst.revisie == "Rev A*"
+    assert herkomst.bron.losse_onderdelen == project.losse_onderdelen
+    assert opslag.laad_herkomst("bestaat-niet") is None

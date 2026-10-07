@@ -1,0 +1,344 @@
+<title>Revisies Keuken Jansen</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: app-chrome boven, projectzijbalk met nieuw item Revisies; kop met revisiechip en
+     "Revisie vastleggen" (inline paneel, geen pop-up); daaronder het Revisies-paneel: tijdlijn links,
+     alleen-lezen samenstelling + terugzetten rechts. Tokens = theme.py (LICHT/DONKER). */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF; --accent-soft-border:#CDD6FF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --neutral-dot:#9297A8; --indigo:#7B6FE0; --indigo-soft:#EFEDFB;
+    --chrome-bg:#16171D; --chrome-bg-raised:#1D1F27; --chrome-text:#E7E8EE;
+    --chrome-text-muted:#8B8FA3; --chrome-border:#2B2D37; --chrome-active-bg:rgba(95,127,255,0.18);
+    --paper:#FFFFFF; --paper-ink:#1a1a1a; --paper-muted:#5b6470; --paper-line:#c7ccd3;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .app{display:flex;flex-direction:column;min-height:100vh;}
+
+  .header{height:52px;background:var(--chrome-bg);border-bottom:1px solid var(--chrome-border);display:flex;align-items:center;gap:24px;padding:0 18px;}
+  .brand{color:var(--chrome-text);font-size:15px;font-weight:800;}
+  .brand span{color:#8CA0FF;}
+  .nav{display:flex;gap:2px;flex-wrap:wrap;}
+  .nav-btn{padding:7px 13px;border-radius:7px;font-weight:600;color:var(--chrome-text-muted);}
+  .nav-btn.active{background:var(--chrome-active-bg);color:#C7D3FF;}
+  .tabstrip{height:38px;background:var(--chrome-bg-raised);border-bottom:1px solid var(--chrome-border);display:flex;padding:0 6px;}
+  .tab{display:flex;align-items:center;padding:0 16px;color:var(--chrome-text-muted);font-weight:500;}
+  .tab.active{background:var(--bg);color:var(--text);font-weight:600;}
+
+  .workspace{flex:1;display:flex;min-height:0;}
+  .sidebar{width:216px;flex:0 0 auto;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;}
+  .sidebar-label{color:var(--text-faint);font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;font-weight:500;color:var(--text-muted);}
+  .sidebar-item.active{background:var(--accent-soft);color:var(--accent-text);font-weight:600;}
+  .sidebar-item .nieuw{margin-left:auto;font-size:10px;font-weight:700;color:var(--indigo);background:var(--indigo-soft);border-radius:7px;padding:1px 6px;}
+  .divider{height:1px;background:var(--border);margin:8px 0;}
+
+  .view{flex:1;min-width:0;padding:24px 28px 40px;}
+  .inner{max-width:1120px;display:flex;flex-direction:column;gap:18px;}
+  .head{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;}
+  .head-left{flex:1;min-width:240px;display:flex;flex-direction:column;gap:8px;}
+  .crumb{font-size:11px;color:var(--text-faint);font-weight:700;letter-spacing:0.8px;}
+  .title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .title{font-size:22px;font-weight:800;text-wrap:balance;margin:0;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:var(--accent-soft);color:var(--accent-text);}
+  .chip .dot{width:7px;height:7px;border-radius:3px;background:var(--accent);}
+  .chip-rev{background:var(--surface);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:11px;}
+  .chip-rev .wijz{font-family:var(--sans);color:var(--warning-ink);background:var(--warning-soft);border-radius:7px;padding:0 6px;margin-left:2px;}
+  .meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--text-muted);font-size:12.5px;}
+  .head-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;}
+  .btn svg{width:14px;height:14px;}
+  .btn-primary{background:var(--accent);color:#12141B;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+  .btn-ghost.on{background:var(--accent-soft);border-color:var(--accent-soft-border);color:var(--accent-text);}
+  .btn-sm{padding:6px 11px;font-size:12.5px;}
+  .btn:disabled{opacity:0.45;cursor:default;}
+  .btn:focus-visible,.field:focus-visible,.linkbtn:focus-visible,.rev:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  .section-label{color:var(--text-faint);font-size:10.5px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
+  .flabel{color:var(--text-muted);font-size:12px;font-weight:600;display:block;margin-bottom:5px;}
+  .field{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:7px 9px;font:inherit;font-size:13px;color:var(--text);resize:vertical;}
+  .field:focus{border-color:var(--accent);outline:none;}
+  .hint{color:var(--text-faint);font-size:11.5px;line-height:1.45;}
+  .linkbtn{border:none;background:none;color:var(--accent-text);font:inherit;font-weight:600;cursor:pointer;padding:0;}
+
+  /* Vastleg-paneel onder de kop */
+  .panel{background:var(--surface);border:1px solid var(--accent-soft-border);border-radius:12px;overflow:hidden;}
+  .panel-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border);}
+  .panel-title{font-size:15px;font-weight:700;}
+  .panel-sub{color:var(--text-muted);font-size:12.5px;}
+  .panel-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,340px);gap:24px;padding:16px 18px 18px;}
+  .wijz-lijst{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .wijz-lijst li{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;display:flex;gap:9px;align-items:baseline;}
+  .wijz-lijst li:last-child{border-bottom:none;}
+  .wijz-lijst li::before{content:"";width:6px;height:6px;border-radius:3px;background:var(--warning);flex:0 0 auto;transform:translateY(-1px);}
+  .panel-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--border);background:var(--surface-2);}
+  .panel-foot .grow{flex:1;min-width:200px;color:var(--text-muted);font-size:12.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .ok{color:var(--success-ink);font-weight:600;}
+  .ok-dot{width:18px;height:18px;border-radius:9px;background:var(--success);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .ok-dot svg{width:11px;height:11px;color:var(--surface);}
+
+  /* Revisies-paneel */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .rev-layout{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);}
+  .rev-lijst{border-right:1px solid var(--border);display:flex;flex-direction:column;}
+  .rev{all:unset;box-sizing:border-box;display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;}
+  .rev:hover{background:var(--surface-hover);}
+  .rev.sel{background:var(--accent-soft);}
+  .rev .spoor{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:3px;}
+  .rev .bol{width:11px;height:11px;border-radius:6px;border:2px solid var(--accent);background:var(--surface);}
+  .rev.huidig .bol{border-color:var(--warning);border-style:dashed;}
+  .rev .lijn{width:2px;flex:1;background:var(--border);}
+  .rev .tekst{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+  .rev .r-kop{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+  .rev .r-naam{font-family:var(--mono);font-weight:700;font-size:13px;}
+  .rev.huidig .r-naam{font-family:var(--sans);}
+  .rev .r-datum{color:var(--text-faint);font-size:11.5px;font-variant-numeric:tabular-nums;}
+  .rev .r-sam{color:var(--text-muted);font-size:12.5px;line-height:1.45;}
+  .rev .r-notitie{font-size:12px;color:var(--text);background:var(--surface-2);border-radius:6px;padding:4px 8px;margin-top:2px;}
+  .rev-detail{padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px;min-width:0;}
+  .detail-kop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .detail-naam{font-family:var(--mono);font-size:16px;font-weight:700;}
+  .detail-meta{color:var(--text-muted);font-size:12.5px;flex:1;min-width:160px;}
+  .lezen{font-size:10.5px;font-weight:700;color:var(--text-muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:2px 7px;}
+  .groep{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .groep-kop{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-2);border-bottom:1px solid var(--border);font-size:12.5px;font-weight:600;flex-wrap:wrap;}
+  .groep-kop .aant{font-family:var(--mono);font-size:12px;color:var(--text-muted);}
+  .rij{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:32px;border-bottom:1px solid var(--border);font-size:12.5px;}
+  .rij:last-child{border-bottom:none;}
+  .rij .naam{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .mono{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-muted);}
+  .aantal{font-family:var(--mono);font-size:12px;font-weight:700;min-width:30px;text-align:right;}
+  .rij.veranderd{background:var(--warning-soft);}
+  .bevestig{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--warning-soft);border:1px solid var(--warning);border-radius:10px;padding:10px 12px;color:var(--warning-ink);font-size:12.5px;line-height:1.45;}
+  .bevestig .grow{flex:1;min-width:220px;}
+
+  /* Voorstel na bijwerken */
+  .voorstel{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent-soft-border);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--text);line-height:1.45;}
+  .voorstel .grow{flex:1;min-width:240px;}
+  .voorstel b{color:var(--accent-text);}
+
+  .note{background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:10px 14px;color:var(--text-muted);font-size:12.5px;line-height:1.55;}
+  .note b{color:var(--text);}
+  .note ul{margin:6px 0 0;padding-left:18px;}
+
+  @media (max-width:900px){
+    .panel-body,.rev-layout{grid-template-columns:1fr;}
+    .rev-lijst{border-right:none;border-bottom:1px solid var(--border);}
+  }
+  @media (max-width:760px){
+    .sidebar{display:none;}
+    .view{padding:18px 16px 32px;}
+    .header{gap:12px;}
+  }
+</style>
+
+<div class="app">
+  <div class="header">
+    <div class="brand">Robo<span>Cutter</span></div>
+    <div class="nav"><div class="nav-btn active">Projecten</div><div class="nav-btn">Modellen</div><div class="nav-btn">Materialen</div><div class="nav-btn">Reststukken</div></div>
+  </div>
+  <div class="tabstrip"><div class="tab">Projecten</div><div class="tab active">Keuken Jansen</div></div>
+
+  <div class="workspace">
+    <nav class="sidebar" aria-label="Project">
+      <div class="sidebar-label">Keuken Jansen</div>
+      <div class="sidebar-item">Overzicht</div>
+      <div class="sidebar-item">Samenstelling</div>
+      <div class="sidebar-item">Zaaglijst</div>
+      <div class="sidebar-item active">Revisies <span class="nieuw">nieuw</span></div>
+      <div class="divider"></div>
+      <div class="sidebar-label">Documenten</div>
+      <div class="sidebar-item">Zaagplannen</div>
+      <div class="sidebar-item">Labels</div>
+      <div class="sidebar-item">Reststukken</div>
+    </nav>
+
+    <main class="view">
+      <div class="inner">
+        <div class="head">
+          <div class="head-left">
+            <div class="crumb">PROJECTEN</div>
+            <div class="title-row">
+              <h1 class="title">Keuken Jansen</h1>
+              <span class="chip"><span class="dot"></span>Werkvoorbereiding</span>
+              <span class="chip chip-rev" id="chip-rev">Rev A <span class="wijz" id="chip-wijz">3 wijzigingen</span></span>
+            </div>
+            <div class="meta"><span>fam. Jansen</span><span>OPD-2026-114</span><span>Oplevering 2026-11-20</span></div>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost on" id="btn-vastleggen" type="button" aria-expanded="true" aria-controls="panel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M3 12h5.5M15.5 12H21"/></svg>
+              Revisie vastleggen
+            </button>
+            <button class="btn btn-ghost" type="button">Opslaan als model</button>
+            <button class="btn btn-ghost" type="button">Archiveren</button>
+          </div>
+        </div>
+
+        <section class="panel" id="panel" aria-label="Revisie vastleggen">
+          <div class="panel-head">
+            <span class="panel-title" id="panel-titel">Rev B vastleggen</span>
+            <span class="panel-sub">Alleen voor een wijziging op verzoek van de klant. Een fout uit de werkvoorbereiding corrigeren is geen nieuwe revisie.</span>
+          </div>
+          <div class="panel-body">
+            <div>
+              <div class="section-label">Wijzigingen sinds Rev A</div>
+              <ul class="wijz-lijst" id="wijz-lijst">
+                <li>Onderkast 60cm: aantal 3 → 4</li>
+                <li>Hoge kast: Legplank (562 × 500 → 562 × 480 mm, aantal 4 → 5)</li>
+                <li>Los onderdeel toegevoegd: Passtuk links</li>
+              </ul>
+              <div class="hint" style="margin-top:6px">Wordt automatisch de samenvatting van de revisie.</div>
+            </div>
+            <div>
+              <label class="flabel" for="in-notitie">Notitie <span style="font-weight:400;color:var(--text-faint)">(optioneel)</span></label>
+              <textarea class="field" id="in-notitie" rows="4" placeholder="bijv. klant wil extra onderkast naast de vaatwasser">Klant wil extra onderkast naast de vaatwasser, legplanken iets ondieper.</textarea>
+            </div>
+          </div>
+          <div class="panel-foot">
+            <span class="grow" id="foot">3 wijzigingen worden Rev B</span>
+            <button class="btn btn-ghost" id="btn-annuleren" type="button">Annuleren</button>
+            <button class="btn btn-primary" id="btn-leg-vast" type="button">Rev B vastleggen</button>
+          </div>
+        </section>
+
+        <section class="card" aria-label="Revisies">
+          <div class="rev-layout">
+            <div class="rev-lijst" id="rev-lijst"></div>
+            <div class="rev-detail" id="rev-detail"></div>
+          </div>
+        </section>
+
+        <div>
+          <div class="section-label" style="margin-bottom:8px">Elders: na “bijwerken naar laatste versie” in Samenstelling</div>
+          <div class="voorstel">
+            <span class="grow"><b>Onderkast 60cm is bijgewerkt naar de laatste modelversie.</b> Dat is meestal revisie-waardig. Wil je de huidige stand als nieuwe revisie vastleggen?</span>
+            <button class="btn btn-ghost btn-sm" type="button">Niet nu</button>
+            <button class="btn btn-primary btn-sm" type="button">Rev B vastleggen…</button>
+          </div>
+        </div>
+
+        <div class="note"><b>Over deze mockup.</b>
+          <ul>
+            <li>De eerste vastlegging heet <b>Origineel</b>, daarna Rev A, Rev B, ... Zolang er nog niets is vastgelegd heet de knop “Origineel vastleggen” en toont de kop “Niet vastgelegd”.</li>
+            <li>Een revisie bewaart de projectgegevens en de samenstelling. De status (Werkvoorbereiding, In productie, ...) hoort er niet bij.</li>
+            <li>Terugzetten maakt de huidige stand gelijk aan een oude revisie. Dat legt zelf geen revisie vast; je ziet het daarna als wijzigingen in de kop. Het zaagplan moet daarna opnieuw gegenereerd worden.</li>
+            <li>Zijn er geen wijzigingen sinds de laatste revisie, dan staat de knop in het paneel uit met “Niets veranderd sinds Rev A”.</li>
+          </ul>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  const revisies = [
+    { id: 'huidig', naam: 'Huidige stand', datum: 'niet vastgelegd', huidig: true,
+      sam: ['Onderkast 60cm: aantal 3 → 4', 'Hoge kast: Legplank (562 × 500 → 562 × 480 mm, aantal 4 → 5)', 'Los onderdeel toegevoegd: Passtuk links'],
+      inhoud: { modellen: [['Onderkast 60cm', 4, true], ['Bovenkast 60cm', 2, false], ['Hoge kast', 1, true]], losse: [['Plint', '2400 × 120', 2, false], ['Passtuk links', '720 × 45', 1, true]] } },
+    { id: 'a', naam: 'Rev A', datum: '2026-10-21 14:05',
+      sam: ['Model toegevoegd: Hoge kast ×1', 'Onderkast 60cm: aantal 2 → 3'], notitie: 'Klant wil hoge kast voor de oven.',
+      inhoud: { modellen: [['Onderkast 60cm', 3], ['Bovenkast 60cm', 2], ['Hoge kast', 1]], losse: [['Plint', '2400 × 120', 2]] } },
+    { id: 'o', naam: 'Origineel', datum: '2026-10-12 09:30',
+      sam: ['Eerste vastlegging: 4 modellen, 1 los onderdeel'], notitie: 'Offerte akkoord.',
+      inhoud: { modellen: [['Onderkast 60cm', 2], ['Bovenkast 60cm', 2]], losse: [['Plint', '2400 × 120', 2]] } },
+  ];
+  let gekozen = 'a';
+  let bevestigen = false;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function tekenLijst() {
+    const el = document.getElementById('rev-lijst');
+    el.innerHTML = revisies.map((r, i) => `
+      <button class="rev ${r.huidig ? 'huidig' : ''} ${r.id === gekozen ? 'sel' : ''}" data-id="${r.id}" type="button" aria-pressed="${r.id === gekozen}">
+        <span class="spoor"><span class="bol"></span>${i < revisies.length - 1 ? '<span class="lijn"></span>' : ''}</span>
+        <span class="tekst">
+          <span class="r-kop"><span class="r-naam">${esc(r.naam)}</span><span class="r-datum">${esc(r.datum)}</span></span>
+          <span class="r-sam">${r.sam.map(esc).join('<br>')}</span>
+          ${r.notitie ? `<span class="r-notitie">${esc(r.notitie)}</span>` : ''}
+        </span>
+      </button>`).join('');
+    el.querySelectorAll('.rev').forEach(b => b.addEventListener('click', () => { gekozen = b.dataset.id; bevestigen = false; teken(); }));
+  }
+
+  function tekenDetail() {
+    const r = revisies.find(x => x.id === gekozen);
+    const el = document.getElementById('rev-detail');
+    const modellen = r.inhoud.modellen.map(([n, a, v]) => `<div class="rij ${v ? 'veranderd' : ''}"><span class="naam">${esc(n)}</span><span class="aantal">×${a}</span></div>`).join('');
+    const losse = r.inhoud.losse.map(([n, m, a, v]) => `<div class="rij ${v ? 'veranderd' : ''}"><span class="naam">${esc(n)}</span><span class="mono">${m}</span><span class="aantal">×${a}</span></div>`).join('');
+    let acties = '';
+    if (r.huidig) {
+      acties = `<span class="detail-meta">Dit is de stand waarin je werkt. Gemarkeerd: veranderd sinds Rev A.</span>`;
+    } else if (!bevestigen) {
+      acties = `<span class="lezen">alleen-lezen</span><button class="btn btn-ghost btn-sm" id="btn-terug" type="button">Terugzetten naar ${esc(r.naam)}</button>`;
+    }
+    el.innerHTML = `
+      <div class="detail-kop">
+        <span class="detail-naam">${esc(r.naam)}</span>
+        ${r.huidig ? '' : `<span class="detail-meta">vastgelegd ${esc(r.datum)}</span>`}
+        ${acties}
+      </div>
+      ${bevestigen ? `<div class="bevestig"><span class="grow">De huidige stand wordt gelijk aan <b>${esc(r.naam)}</b>. De 3 niet-vastgelegde wijzigingen gaan verloren. Het zaagplan moet daarna opnieuw gegenereerd worden.</span><button class="btn btn-ghost btn-sm" id="btn-nee" type="button">Annuleren</button><button class="btn btn-primary btn-sm" id="btn-ja" type="button">Terugzetten</button></div>` : ''}
+      <div class="section-label">Samenstelling</div>
+      <div class="groep"><div class="groep-kop">Modellen</div>${modellen}</div>
+      <div class="groep"><div class="groep-kop">Losse onderdelen</div>${losse}</div>`;
+    const t = document.getElementById('btn-terug');
+    if (t) t.addEventListener('click', () => { bevestigen = true; tekenDetail(); });
+    const nee = document.getElementById('btn-nee');
+    if (nee) nee.addEventListener('click', () => { bevestigen = false; tekenDetail(); });
+    const ja = document.getElementById('btn-ja');
+    if (ja) ja.addEventListener('click', () => {
+      bevestigen = false;
+      document.getElementById('chip-wijz').textContent = '3 wijzigingen';
+      gekozen = 'huidig';
+      teken();
+    });
+  }
+  function teken() { tekenLijst(); tekenDetail(); }
+  teken();
+
+  const btn = document.getElementById('btn-vastleggen');
+  const panel = document.getElementById('panel');
+  const foot = document.getElementById('foot');
+  const standaardFoot = foot.innerHTML;
+  function zetOpen(open) {
+    panel.hidden = !open;
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) { foot.innerHTML = standaardFoot; document.getElementById('btn-leg-vast').disabled = false; }
+  }
+  btn.addEventListener('click', () => zetOpen(panel.hidden));
+  document.getElementById('btn-annuleren').addEventListener('click', () => zetOpen(false));
+  document.getElementById('btn-leg-vast').addEventListener('click', e => {
+    e.currentTarget.disabled = true;
+    foot.innerHTML = '<span class="ok-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span><span class="ok">Rev B vastgelegd</span><span>3 wijzigingen, met notitie</span>';
+    document.getElementById('chip-rev').innerHTML = 'Rev B';
+  });
+</script>

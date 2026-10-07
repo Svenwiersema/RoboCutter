@@ -108,6 +108,8 @@ from robocutter.projecten.models import Project, ProjectStatus
 from robocutter.projecten.project_reststukken import ProjectReststukkenBibliotheek
 from robocutter.projecten.project_reststukken_opslag import open_verbinding as open_project_reststukken_verbinding
 from robocutter.projecten.zaaglijst import bouw_zaaglijst
+from robocutter.projecten.revisies import ProjectRevisiesBibliotheek
+from robocutter.projecten.revisies_opslag import open_verbinding as open_revisies_verbinding
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.projecten.zaagplannen_opslag import open_verbinding as open_zaagplannen_verbinding
 from robocutter.reststukken.models import ReststukStatus
@@ -343,6 +345,12 @@ class MainWindow(QMainWindow):
         self._project_reststukken_db = open_project_reststukken_verbinding(zaagplannen_db_pad)
         self._project_reststukken = ProjectReststukkenBibliotheek(
             self._materialen_page.bibliotheek, self._reststukken_page.bibliotheek, self._project_reststukken_db
+        )
+        # Revisies per project (zie projecten/revisies.py), gedeeld tussen
+        # alle projecttabbladen.
+        self._revisies_db = open_revisies_verbinding(zaagplannen_db_pad)
+        self._project_revisies = ProjectRevisiesBibliotheek(
+            self._projecten_page.bibliotheek, self._materialen_page.bibliotheek, self._revisies_db
         )
         # Eén losse, sluitbare ProjectDetailPage per geopend project
         # (tabsleutel f"project:{project_id}") — anders dan de
@@ -605,6 +613,7 @@ class MainWindow(QMainWindow):
                 on_reststukken_gewijzigd=self._on_reststukken_gewijzigd,
                 on_open_model=self._open_tab_model,
                 on_model_bibliotheek_gewijzigd=self._on_model_bibliotheek_gewijzigd,
+                revisies=self._project_revisies,
             )
         if key not in self._open_tabs:
             self._open_tabs.append(key)
@@ -741,6 +750,7 @@ class MainWindow(QMainWindow):
         # bibliotheek blijven zoals ze zijn.
         self._project_reststukken.verwijder_project(project_id)
         self._zaagplannen_opslag.verwijderen(project_id)
+        self._project_revisies.verwijder_project(project_id)
         if self._reststukken_page.bibliotheek.geef_reserveringen_vrij(project_id):
             self._reststukken_page.ververs()
         for key in list(self._open_tabs):
@@ -1001,6 +1011,7 @@ class MainWindow(QMainWindow):
         self._materialen_page.sluit_verbinding()
         self._projecten_page.sluit_verbinding()
         self._zaagplannen_db.close()
+        self._revisies_db.close()
         self._project_reststukken_db.close()
         super().closeEvent(event)
 

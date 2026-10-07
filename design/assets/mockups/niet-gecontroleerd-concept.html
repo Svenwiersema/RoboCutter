@@ -1,0 +1,249 @@
+<title>Niet gecontroleerd</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: één kolom met drie stappen (app, zaagplan-PDF, labels) en een schakelaar
+     gecontroleerd / niet gecontroleerd bovenaan. Papier is wit in beide thema's. Tokens = theme.py. */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF; --accent-soft-border:#CDD6FF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --neutral-dot:#9297A8; --critical:#C74F4F; --critical-soft:#FBEAEA; --critical-ink:#8E2F2F; --indigo:#7B6FE0; --indigo-soft:#EFEDFB;
+    --chrome-bg:#16171D; --chrome-bg-raised:#1D1F27; --chrome-text:#E7E8EE;
+    --chrome-text-muted:#8B8FA3; --chrome-border:#2B2D37; --chrome-active-bg:rgba(95,127,255,0.18);
+    --paper:#FFFFFF; --paper-ink:#1a1a1a; --paper-muted:#5b6470; --paper-line:#c7ccd3;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --neutral-dot:#767B90; --critical:#E57373; --critical-soft:#3A2020; --critical-ink:#F3B5B5; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --neutral-dot:#767B90; --critical:#E57373; --critical-soft:#3A2020; --critical-ink:#F3B5B5; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .view{max-width:1180px;margin:0 auto;padding:24px 16px 48px;display:flex;flex-direction:column;gap:22px;}
+  .top{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;}
+  .top .grow{flex:1;min-width:260px;}
+  h1{font-size:22px;font-weight:800;margin:0 0 4px;text-wrap:balance;}
+  .lead{color:var(--text-muted);font-size:13px;line-height:1.5;margin:0;max-width:70ch;}
+  .segmented{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px;}
+  .seg{border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:600;color:var(--text-muted);padding:7px 14px;border-radius:7px;cursor:pointer;}
+  .seg.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,0.08);}
+  .seg:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  .stap{display:flex;flex-direction:column;gap:10px;}
+  .stap-kop{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .stap-nr{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent-text);}
+  .stap-titel{font-size:15px;font-weight:700;}
+  .stap-sub{color:var(--text-muted);font-size:12.5px;}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;}
+  .btn-primary{background:var(--accent);color:#12141B;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+  .btn-sm{padding:6px 11px;font-size:12.5px;}
+
+  /* Scherm: zaagplannen-paneel */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .doc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border);}
+  .doc-head .grow{flex:1;min-width:200px;}
+  .doc-titel{font-size:15px;font-weight:700;}
+  .doc-meta{color:var(--text-muted);font-size:12.5px;}
+  .rev-tag{font-family:var(--mono);font-size:11px;font-weight:700;border:1px solid var(--border);border-radius:8px;padding:2px 8px;background:var(--surface);}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;border-radius:10px;padding:3px 9px;}
+  .status .dot{width:7px;height:7px;border-radius:4px;}
+  .status.ok{background:var(--success-soft);color:var(--success-ink);}
+  .status.ok .dot{background:var(--success);}
+  .status.niet{background:var(--critical-soft);color:var(--critical-ink);}
+  .status.niet .dot{background:var(--critical);}
+  .banner{margin:14px 18px 0;border:1px solid var(--critical);background:var(--critical-soft);border-radius:10px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;color:var(--critical-ink);}
+  .banner .grow{flex:1;min-width:240px;font-size:12.5px;line-height:1.5;}
+  .banner b{font-weight:700;}
+  .banner ul{margin:6px 0 0;padding-left:18px;}
+  .confirm{margin:14px 18px 0;border:1px solid var(--warning);background:var(--warning-soft);border-radius:10px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--warning-ink);font-size:12.5px;line-height:1.45;}
+  .confirm .grow{flex:1;min-width:240px;}
+  .plaat-vb{margin:14px 18px 18px;height:150px;border-radius:8px;background:repeating-linear-gradient(90deg,var(--surface-2) 0 118px,var(--border) 118px 119px),var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px;}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;}
+
+  /* Papier: A4 liggend op schaal, wit in beide thema's */
+  .papier-wrap{overflow-x:auto;}
+  .papier{position:relative;width:840px;aspect-ratio:297/210;background:var(--paper);color:var(--paper-ink);border:1px solid var(--paper-line);box-shadow:0 2px 10px rgba(0,0,0,0.12);font-family:"Segoe UI",var(--sans);overflow:hidden;}
+  .p-kop{position:absolute;left:0;right:0;top:0;height:42px;border-bottom:1.5px solid var(--paper-ink);display:flex;align-items:center;padding:0 10px;gap:12px;}
+  .p-links{flex:1;min-width:0;}
+  .p-r1{display:flex;gap:14px;align-items:baseline;}
+  .p-tag{font-weight:800;font-size:17px;letter-spacing:0.3px;}
+  .p-naam{font-weight:700;font-size:14px;}
+  .p-sub{color:var(--paper-muted);font-size:11px;margin-top:2px;}
+  .p-blok{border-left:1px solid var(--paper-line);padding-left:10px;text-align:right;}
+  .p-blok .k{font-size:8px;color:var(--paper-muted);letter-spacing:0.6px;}
+  .p-blok .v{font-size:12px;font-weight:700;}
+  .p-blok .v.mono{font-family:Consolas,var(--mono);}
+  .p-blok .n{font-size:7.5px;color:var(--paper-muted);}
+  .p-blok.nieuw{outline:2px dashed var(--accent);outline-offset:3px;border-radius:2px;}
+  .p-logo{font-weight:800;font-size:11px;color:var(--paper-muted);border-left:1px solid var(--paper-line);padding-left:10px;}
+  .p-plaat{position:absolute;left:170px;right:170px;top:62px;bottom:120px;border:1px solid var(--paper-line);background:#eef1f6;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);}
+  .p-plaat div{border:1px dashed #c0392b55;}
+  .p-plaat div.r{background:#e3f2e8;}
+  .p-tabel{position:absolute;left:10px;right:10px;bottom:46px;height:58px;border:1px solid var(--paper-line);background:repeating-linear-gradient(180deg,#e2e6ea 0 16px,#fff 16px 37px,#f6f7f9 37px 58px);}
+  .p-voet{position:absolute;left:10px;right:10px;bottom:8px;height:30px;border:1px solid var(--paper-line);display:flex;}
+  .p-voet div{flex:1;border-right:1px solid var(--paper-line);padding:3px 8px;font-size:8px;color:var(--paper-muted);}
+  .p-voet div:last-child{border-right:none;}
+  .p-voet b{display:block;color:var(--paper-ink);font-size:10px;}
+  .p-voet .nieuw{outline:2px dashed var(--accent);outline-offset:-3px;}
+  .watermerk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+  .watermerk span{transform:rotate(-24deg);font-size:64px;font-weight:800;letter-spacing:4px;color:rgba(192,57,43,0.16);border:5px solid rgba(192,57,43,0.16);padding:6px 22px;white-space:nowrap;}
+  .watermerk.klein span{font-size:15px;letter-spacing:1px;border-width:2px;padding:2px 8px;transform:rotate(-14deg);color:rgba(192,57,43,0.32);border-color:rgba(192,57,43,0.32);}
+  .uitleg{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+  .uitleg div{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--text-muted);line-height:1.5;}
+  .uitleg b{color:var(--text);}
+  .accent-sw{display:inline-block;width:12px;height:12px;border:2px dashed var(--accent);border-radius:2px;vertical-align:-2px;margin-right:4px;}
+
+  /* Label 64×38 mm op 5 px/mm */
+  .labels{display:flex;gap:18px;flex-wrap:wrap;}
+  .label{position:relative;width:320px;max-width:100%;aspect-ratio:64/38;background:var(--paper);color:var(--paper-ink);border:1px dashed var(--paper-line);border-radius:3px;padding:12px;display:flex;gap:10px;font-family:"Segoe UI",var(--sans);overflow:hidden;}
+  .label .txt{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .l-name{font-size:14px;font-weight:700;}
+  .l-mat{font-size:11px;color:var(--paper-muted);margin-top:2px;}
+  .l-afm{font-family:Consolas,var(--mono);font-size:17px;font-weight:700;margin-top:8px;}
+  .l-proj{font-size:10px;color:var(--paper-muted);margin-top:4px;}
+  .l-proj .rev{color:var(--paper-ink);font-weight:700;outline:2px dashed var(--accent);outline-offset:2px;border-radius:2px;}
+  .l-kant{font-size:10px;font-weight:700;color:var(--paper-muted);margin-top:auto;}
+  .qr{width:75px;height:75px;flex:0 0 auto;background:
+    conic-gradient(from 90deg at 30% 30%,var(--paper-ink) 25%,transparent 0) 0 0/15px 15px,var(--paper);opacity:0.85;}
+
+  .note{background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:10px 14px;color:var(--text-muted);font-size:12.5px;line-height:1.55;}
+  .note b{color:var(--text);}
+  .note ul{margin:6px 0 0;padding-left:18px;}
+</style>
+
+<div class="view">
+  <div class="top">
+    <div class="grow">
+      <h1>Niet gecontroleerd en revisie op documenten</h1>
+      <p class="lead">Een zaagplan onthoudt van welke samenstelling en welke revisie het gemaakt is. Verandert de samenstelling daarna, dan heet het zaagplan <b>Niet gecontroleerd</b>: in de app, bij exporteren en als watermerk op de PDF en de labels.</p>
+    </div>
+    <div class="segmented" role="tablist" aria-label="Stand van het zaagplan">
+      <button class="seg" id="seg-ok" type="button" role="tab" aria-selected="false">Gecontroleerd</button>
+      <button class="seg active" id="seg-niet" type="button" role="tab" aria-selected="true">Niet gecontroleerd</button>
+    </div>
+  </div>
+
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">1</span><span class="stap-titel">In de app</span><span class="stap-sub">Zaagplannen-paneel van het project. Het Labels-paneel krijgt dezelfde balk.</span></div>
+    <div class="card">
+      <div class="doc-head">
+        <div class="grow">
+          <div class="doc-titel">Zaagplan · 2 platen</div>
+          <div class="doc-meta">Gegenereerd 2026-10-21 14:05 · strategie Horizontaal</div>
+        </div>
+        <span class="rev-tag" title="Revisie waarvan dit zaagplan gemaakt is">Rev A</span>
+        <span class="status niet" id="status"><span class="dot"></span><span id="status-tekst">Niet gecontroleerd</span></span>
+        <div class="toolbar">
+          <button class="btn btn-ghost btn-sm" type="button">Opnieuw genereren</button>
+          <button class="btn btn-primary btn-sm" id="btn-export" type="button">Alles + zaaglijst als PDF</button>
+        </div>
+      </div>
+      <div class="banner" id="banner">
+        <div class="grow"><b>Niet gecontroleerd.</b> De samenstelling is veranderd sinds dit zaagplan gemaakt is:
+          <ul><li>Onderkast 60cm: aantal 3 → 4</li><li>Los onderdeel toegevoegd: Passtuk links</li></ul>
+        </div>
+        <button class="btn btn-primary btn-sm" type="button">Opnieuw genereren</button>
+      </div>
+      <div class="confirm" id="confirm" hidden>
+        <span class="grow"><b>Dit zaagplan is niet gecontroleerd.</b> De PDF krijgt het watermerk NIET GECONTROLEERD op elke pagina.</span>
+        <button class="btn btn-ghost btn-sm" id="btn-annuleer" type="button">Annuleren</button>
+        <button class="btn btn-ghost btn-sm" type="button">Eerst opnieuw genereren</button>
+        <button class="btn btn-primary btn-sm" type="button">Toch exporteren</button>
+      </div>
+      <div class="plaat-vb">zaagplaten zoals nu</div>
+    </div>
+    <div class="note" style="margin-top:2px">Een zaagplan van vóór deze functie weet niet op welke samenstelling het gebaseerd is. Dat telt ook als niet gecontroleerd, met de tekst “Onbekend op welke samenstelling dit zaagplan gebaseerd is. Genereer het opnieuw.”</div>
+  </section>
+
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">2</span><span class="stap-titel">Zaagplan-PDF</span><span class="stap-sub">A4 liggend, kop en voet zoals nu. <span class="accent-sw"></span>Gestippeld = nieuw.</span></div>
+    <div class="papier-wrap">
+      <div class="papier">
+        <div class="p-kop">
+          <div class="p-links">
+            <div class="p-r1"><span class="p-tag">ZAAGPLAN</span><span class="p-naam">Keuken Jansen</span></div>
+            <div class="p-sub">Wit meubelpaneel 18mm · Plaat 1 van 2 · strategie Horizontaal</div>
+          </div>
+          <div class="p-blok nieuw"><div class="k">REVISIE</div><div class="v mono">Rev A*</div><div class="n">* met niet-vastgelegde wijzigingen</div></div>
+          <div class="p-blok"><div class="k">WERKVOORBEREIDER</div><div class="v">S. Wiersema</div></div>
+          <div class="p-logo">LOGO</div>
+        </div>
+        <div class="p-plaat"><div></div><div></div><div></div><div class="r"></div><div></div><div></div><div></div><div class="r"></div><div></div><div></div><div></div><div class="r"></div></div>
+        <div class="p-tabel"></div>
+        <div class="p-voet">
+          <div>PLAAT<b>2800 × 2070 mm</b></div><div>ONDERDELEN<b>9</b></div><div>BENUTTING<b>71,4%</b></div><div>AFVAL<b>1,66 m²</b></div><div class="nieuw">REVISIE<b>Rev A*</b></div>
+        </div>
+        <div class="watermerk" id="wm-pdf"><span>NIET GECONTROLEERD</span></div>
+      </div>
+    </div>
+    <div class="uitleg">
+      <div><b>Revisie in de kop:</b> de revisie waarvan het zaagplan gemaakt is. “Rev A*” betekent: gemaakt van Rev A plus wijzigingen die nog niet als revisie zijn vastgelegd. Zonder revisies blijft het blok weg.</div>
+      <div><b>Watermerk:</b> schuin over elke pagina (platen en zaaglijst), lichtrood zodat de tekening leesbaar blijft. Alleen als het zaagplan niet gecontroleerd is.</div>
+    </div>
+  </section>
+
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">3</span><span class="stap-titel">Labels</span><span class="stap-sub">64 × 38 mm, inhoud zoals nu; de revisie komt achter het projectnummer.</span></div>
+    <div class="labels">
+      <div class="label">
+        <div class="txt">
+          <div class="l-name">Zijwand</div>
+          <div class="l-mat">Wit meubelpaneel 18mm</div>
+          <div class="l-afm">720 × 560</div>
+          <div class="l-proj">Project: OPD-2026-114 · <span class="rev">Rev A*</span></div>
+          <div class="l-kant">Kantenband: boven</div>
+        </div>
+        <div class="qr" aria-hidden="true"></div>
+        <div class="watermerk klein" id="wm-label"><span>NIET GECONTROLEERD</span></div>
+      </div>
+    </div>
+    <div class="uitleg">
+      <div><b>Op elk label een eigen watermerk</b>, omdat labels los op de onderdelen worden geplakt. Een losgeknipt label laat dus nog steeds zien dat het niet gecontroleerd was.</div>
+      <div><b>Reststuk-labels</b> beschrijven een stuk dat er fysiek ligt. Die krijgen geen revisie en geen watermerk.</div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const segOk = document.getElementById('seg-ok');
+  const segNiet = document.getElementById('seg-niet');
+  const exportBtn = document.getElementById('btn-export');
+  const confirmBalk = document.getElementById('confirm');
+  let niet = true;
+  function zet(nietGec) {
+    niet = nietGec;
+    segOk.classList.toggle('active', !niet); segOk.setAttribute('aria-selected', String(!niet));
+    segNiet.classList.toggle('active', niet); segNiet.setAttribute('aria-selected', String(niet));
+    const status = document.getElementById('status');
+    status.className = 'status ' + (niet ? 'niet' : 'ok');
+    document.getElementById('status-tekst').textContent = niet ? 'Niet gecontroleerd' : 'Gecontroleerd';
+    document.getElementById('banner').hidden = !niet;
+    document.getElementById('wm-pdf').hidden = !niet;
+    document.getElementById('wm-label').hidden = !niet;
+    confirmBalk.hidden = true;
+  }
+  segOk.addEventListener('click', () => zet(false));
+  segNiet.addEventListener('click', () => zet(true));
+  exportBtn.addEventListener('click', () => { if (niet) confirmBalk.hidden = false; });
+  document.getElementById('btn-annuleer').addEventListener('click', () => { confirmBalk.hidden = true; });
+</script>

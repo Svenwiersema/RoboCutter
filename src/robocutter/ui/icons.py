@@ -110,6 +110,15 @@ _ICONS: dict[str, str] = {
         <path d="M4 8h13M14 4l3 4-3 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M20 16H7M10 20l-3-4 3-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
     ''',
+    "history": '''
+        <path d="M12 7.5V12l3.5 2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M7.5 9H3V4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M6.2 17.8A8.25 8.25 0 106 6L3 9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    ''',
+    "commit": '''
+        <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.9"/>
+        <path d="M3 12h5.5M15.5 12H21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+    ''',
     "undo": '''
         <path d="M7.5 9H3V4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M6.2 17.8A8.25 8.25 0 106 6L3 9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>

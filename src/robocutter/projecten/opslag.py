@@ -114,7 +114,28 @@ def _project_naar_rij(p: Project) -> tuple:
     )
 
 
-def _rij_naar_project(rij: sqlite3.Row) -> Project:
+def project_naar_dict(p: Project) -> dict:
+    """Het hele project als JSON-geschikte dict — gebruikt door
+    ``revisies_opslag.py`` voor de momentopname per revisie."""
+
+    kolommen = (
+        "id", "naam", "klant", "contactpersoon", "email", "telefoon", "opdrachtnummer",
+        "startdatum", "opleverdatum", "status", "gearchiveerd", "modelinstanties", "losse_onderdelen",
+    )
+    d = dict(zip(kolommen, _project_naar_rij(p)))
+    d["modelinstanties"] = json.loads(d["modelinstanties"])
+    d["losse_onderdelen"] = json.loads(d["losse_onderdelen"])
+    return d
+
+
+def dict_naar_project(d: dict) -> Project:
+    rij = dict(d)
+    rij["modelinstanties"] = json.dumps(d["modelinstanties"])
+    rij["losse_onderdelen"] = json.dumps(d["losse_onderdelen"])
+    return _rij_naar_project(rij)
+
+
+def _rij_naar_project(rij: sqlite3.Row | dict) -> Project:
     return Project(
         id=rij["id"],
         naam=rij["naam"],
