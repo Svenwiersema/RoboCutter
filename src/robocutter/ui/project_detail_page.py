@@ -481,6 +481,8 @@ class ProjectDetailPage(QWidget):
         on_open_projecten_tab: Callable[[], None] | None = None,
         on_open_modelkopie: Callable[[str, str], None] | None = None,
         on_reststukken_gewijzigd: Callable[[], None] | None = None,
+        on_open_model: Callable[[str], None] | None = None,
+        on_model_bibliotheek_gewijzigd: Callable[[str], None] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -497,6 +499,12 @@ class ProjectDetailPage(QWidget):
         self._melding = OpslagMelding(self, theme)
         self._on_gewijzigd = on_gewijzigd
         self._on_open_projecten_tab = on_open_projecten_tab
+        # "Opslaan als model": het nieuwe model openen + modellenlijst verversen.
+        self._on_open_model = on_open_model
+        self._on_model_bibliotheek_gewijzigd = on_model_bibliotheek_gewijzigd
+        self._am_open = False
+        self._am_invoer: tuple[str, str, str] = ("", "", "")
+        self._am_opgeslagen: tuple[str, str, str] | None = None  # (model_id, naam, map)
 
         self._actief_paneel = "overzicht"
         # Labels-paneel: welke soort staat open, en welke labels zijn
@@ -770,6 +778,12 @@ class ProjectDetailPage(QWidget):
 
         head_row.addLayout(left, 1)
 
+        self._als_model_btn = QPushButton("  Opslaan als model")
+        self._als_model_btn.setProperty("role", "ghost")
+        self._als_model_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._als_model_btn.clicked.connect(self._am_toggle)
+        head_row.addWidget(self._als_model_btn)
+
         self._archiveer_btn = QPushButton()
         self._archiveer_btn.setProperty("role", "ghost")
         self._archiveer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -777,6 +791,7 @@ class ProjectDetailPage(QWidget):
         head_row.addWidget(self._archiveer_btn)
 
         wrapper.addLayout(head_row)
+        wrapper.addWidget(self._build_als_model_paneel())
         return wrapper
 
     def _meta_item(self, row: QHBoxLayout, icon_naam: str) -> QLabel:
@@ -844,6 +859,360 @@ class ProjectDetailPage(QWidget):
             return
         self._ververs_head()
         self._meld_gewijzigd()
+
+    # ------------------------------------------------------------------
+    # Project opslaan als nieuw model (hoofdstuk 4, "Project → Model").
+    # Mockup goedgekeurd: design/assets/mockups/project-als-model-concept.html.
+    # Inline paneel onder de kop, in elke projectstatus; bevestiging in de
+    # voettekst van het paneel (geen OpslagMelding).
+    # ------------------------------------------------------------------
+    def _build_als_model_paneel(self) -> QWidget:
+        t = self._theme
+        container = QWidget()
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 18, 0, 0)
+
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        kaart.setStyleSheet(f"QFrame#TableCard {{ border-color: {t.accent_soft_border}; }}")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        kop = QHBoxLayout()
+        kop.setContentsMargins(18, 14, 18, 12)
+        kop.setSpacing(10)
+        titel = QLabel("Project opslaan als nieuw model")
+        titel.setObjectName("CardTitle")
+        kop.addWidget(titel)
+        sub = QLabel("Het hele project in één keer. Het project zelf verandert niet.")
+        sub.setProperty("role", "cardMeta")
+        sub.setWordWrap(True)
+        kop.addWidget(sub, 1)
+        layout.addLayout(kop)
+        layout.addWidget(self._am_lijn())
+
+        body = QHBoxLayout()
+        body.setContentsMargins(18, 16, 18, 18)
+        body.setSpacing(24)
+
+        form_widget = QWidget()
+        form_widget.setFixedWidth(320)
+        form = QVBoxLayout(form_widget)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(6)
+        form.addWidget(self._am_sectielabel("Nieuw model"))
+        form.addSpacing(4)
+        form.addWidget(self._field_label("Naam"))
+        self._am_naam = self._field_input()
+        form.addWidget(self._am_naam)
+        self._am_naam_fout = QLabel("Naam is verplicht.")
+        self._am_naam_fout.setProperty("role", "warningText")
+        self._am_naam_fout.setWordWrap(True)
+        self._am_naam_fout.hide()
+        form.addWidget(self._am_naam_fout)
+        form.addSpacing(6)
+        form.addWidget(self._field_label("Map"))
+        self._am_map = _ZoekVeld()
+        self._am_map.setProperty("role", "field")
+        self._am_map.setPlaceholderText("bijv. Keukens/Onderkasten")
+        self._am_map_completer = QCompleter([])
+        self._am_map_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._am_map_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._am_map.setCompleter(self._am_map_completer)
+        form.addWidget(self._am_map)
+        map_hint = QLabel("Vult aan met bestaande mappen uit de modellenbibliotheek.")
+        map_hint.setProperty("role", "fieldHint")
+        map_hint.setWordWrap(True)
+        form.addWidget(map_hint)
+        form.addSpacing(6)
+        form.addWidget(self._field_label("Tags"))
+        self._am_tags = self._field_input()
+        self._am_tags.setPlaceholderText("komma-gescheiden")
+        form.addWidget(self._am_tags)
+        form.addSpacing(6)
+        self._am_omschrijving_hint = QLabel("")
+        self._am_omschrijving_hint.setProperty("role", "fieldHint")
+        self._am_omschrijving_hint.setWordWrap(True)
+        form.addWidget(self._am_omschrijving_hint)
+        form.addStretch(1)
+        body.addWidget(form_widget, 0, Qt.AlignmentFlag.AlignTop)
+
+        inhoud_widget = QWidget()
+        self._am_inhoud = QVBoxLayout(inhoud_widget)
+        self._am_inhoud.setContentsMargins(0, 0, 0, 0)
+        self._am_inhoud.setSpacing(10)
+        body.addWidget(inhoud_widget, 1, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(body)
+
+        voet = QWidget()
+        voet.setObjectName("AmVoet")
+        voet.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        voet.setStyleSheet(
+            f"QWidget#AmVoet {{ background: {t.surface_2}; border-top: 1px solid {t.border};"
+            "border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }"
+        )
+        voet_layout = QHBoxLayout(voet)
+        voet_layout.setContentsMargins(18, 12, 18, 12)
+        voet_layout.setSpacing(10)
+        self._am_voet_icoon = QLabel()
+        self._am_voet_icoon.setFixedSize(18, 18)
+        self._am_voet_icoon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._am_voet_icoon.setPixmap(icon_pixmap("check", t.surface, 11))
+        self._am_voet_icoon.setStyleSheet(f"background: {t.success}; border-radius: 9px;")
+        voet_layout.addWidget(self._am_voet_icoon)
+        self._am_voet_tekst = QLabel("")
+        voet_layout.addWidget(self._am_voet_tekst)
+        self._am_openen_btn = QPushButton("Model openen")
+        self._am_openen_btn.setStyleSheet(
+            f"QPushButton {{ color: {t.accent_text}; font-weight: 600; border: none; background: transparent; padding: 0; }}"
+        )
+        self._am_openen_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._am_openen_btn.clicked.connect(self._am_open_model)
+        voet_layout.addWidget(self._am_openen_btn)
+        voet_layout.addStretch(1)
+        annuleren = QPushButton("Annuleren")
+        annuleren.setProperty("role", "ghost")
+        annuleren.setCursor(Qt.CursorShape.PointingHandCursor)
+        annuleren.clicked.connect(lambda: self._am_zet_open(False))
+        voet_layout.addWidget(annuleren)
+        self._am_opslaan_btn = QPushButton("Model opslaan")
+        self._am_opslaan_btn.setProperty("role", "primary")
+        self._am_opslaan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._am_opslaan_btn.clicked.connect(self._am_opslaan)
+        voet_layout.addWidget(self._am_opslaan_btn)
+        layout.addWidget(voet)
+
+        # Invoer staat in attributen: een thema-wissel bouwt het paneel opnieuw op.
+        self._am_naam.setText(self._am_invoer[0])
+        self._am_map.setText(self._am_invoer[1])
+        self._am_tags.setText(self._am_invoer[2])
+        self._am_naam.textChanged.connect(self._am_invoer_gewijzigd)
+        self._am_map.textChanged.connect(self._am_invoer_gewijzigd)
+        self._am_tags.textChanged.connect(self._am_invoer_gewijzigd)
+        self._am_naam.returnPressed.connect(self._am_opslaan)
+
+        outer.addWidget(kaart)
+        self._am_container = container
+        container.setVisible(self._am_open)
+        return container
+
+    def _am_lijn(self) -> QFrame:
+        lijn = QFrame()
+        lijn.setFixedHeight(1)
+        lijn.setStyleSheet(f"background: {self._theme.border}; border: none;")
+        return lijn
+
+    def _am_sectielabel(self, tekst: str) -> QLabel:
+        label = QLabel(tekst.upper())
+        label.setProperty("role", "fieldSectionLabel")
+        return label
+
+    def _am_invoer_gewijzigd(self) -> None:
+        self._am_invoer = (self._am_naam.text(), self._am_map.text(), self._am_tags.text())
+        self._am_naam_fout.hide()
+        if self._am_opgeslagen is not None:
+            # Na een nieuwe wijziging hoort de bevestiging niet meer bij deze invoer.
+            self._am_opgeslagen = None
+            self._ververs_als_model_voet()
+
+    def _am_toggle(self) -> None:
+        self._am_zet_open(not self._am_open)
+
+    def _am_zet_open(self, open_: bool) -> None:
+        self._am_open = open_
+        if open_:
+            naam = self._project().naam
+            self._am_naam.setText(naam)
+            self._am_map.clear()
+            self._am_tags.clear()
+            self._am_opgeslagen = None
+            self._am_naam_fout.hide()
+        self._ververs_als_model_paneel()
+        if open_:
+            self._am_naam.setFocus()
+            self._am_naam.selectAll()
+
+    def _ververs_als_model_paneel(self) -> None:
+        self._am_container.setVisible(self._am_open)
+        self._am_btn_stijl()
+        if not self._am_open:
+            return
+        project = self._project()
+        self._am_omschrijving_hint.setText(
+            f"Omschrijving wordt: “Opgeslagen uit project {project.naam} ({project.klant})”."
+        )
+        mappen = sorted({m.map for m in self._modellen.lijst() if m.map})
+        self._am_map_completer.setModel(QStringListModel(mappen, self._am_map_completer))
+
+        t = self._theme
+        _clear_layout(self._am_inhoud)
+        self._am_inhoud.addWidget(self._am_sectielabel("Wat er in het model komt"))
+        submodellen, aangepast, losse = self._projecten.als_model_samenstelling(self._project_id)
+        if submodellen:
+            rijen = []
+            for s in submodellen:
+                try:
+                    naam = self._modellen.ophalen(s.model_id).naam
+                except KeyError:
+                    naam = s.model_id
+                rijen.append((naam, "", "", s.aantal))
+            self._am_inhoud.addWidget(
+                self._am_groep(
+                    "Submodellen", t.indigo_soft, t.indigo,
+                    "ongewijzigde modelkopieën, blijven verwijzen naar de bibliotheek", rijen, kubus=True,
+                )
+            )
+        for instantie, onderdelen in aangepast:
+            voorvoegsel = f"{instantie.model_naam} · "
+            rijen = [(o.naam[len(voorvoegsel):], voorvoegsel, f"{o.breedte:g} × {o.hoogte:g}", o.aantal) for o in onderdelen]
+            self._am_inhoud.addWidget(
+                self._am_groep(
+                    "Aangepast in project", t.warning_soft, t.warning_ink,
+                    f"{instantie.model_naam} ×{instantie.aantal} wordt losse onderdelen, zodat je aanpassingen bewaard blijven",
+                    rijen,
+                )
+            )
+        if losse:
+            rijen = [(o.naam, "", f"{o.breedte:g} × {o.hoogte:g}", o.aantal) for o in losse]
+            self._am_inhoud.addWidget(self._am_groep("Losse onderdelen", t.surface, t.text_muted, "", rijen))
+        if not (submodellen or aangepast or losse):
+            leeg = QLabel("Dit project heeft nog geen modellen of onderdelen.")
+            leeg.setProperty("role", "cardMeta")
+            self._am_inhoud.addWidget(leeg)
+
+        self._am_aantallen = (len(submodellen), sum(len(o) for _, o in aangepast) + len(losse))
+        self._ververs_als_model_voet()
+
+    def _am_btn_stijl(self) -> None:
+        t = self._theme
+        if self._am_open:
+            self._als_model_btn.setStyleSheet(
+                f"QPushButton {{ background: {t.accent_soft}; border-color: {t.accent_soft_border}; color: {t.accent_text}; }}"
+            )
+            self._als_model_btn.setIcon(icon("cube", t.accent_text, 14))
+        else:
+            self._als_model_btn.setStyleSheet("")
+            self._als_model_btn.setIcon(icon("cube", t.text, 14))
+
+    def _am_groep(
+        self,
+        tag: str,
+        tag_bg: str,
+        tag_kleur: str,
+        uitleg: str,
+        rijen: list[tuple[str, str, str, int]],
+        kubus: bool = False,
+    ) -> QFrame:
+        t = self._theme
+        groep = QFrame()
+        groep.setObjectName("AmGroep")
+        groep.setStyleSheet(f"QFrame#AmGroep {{ border: 1px solid {t.border}; border-radius: 10px; background: {t.surface}; }}")
+        layout = QVBoxLayout(groep)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+
+        kop = QWidget()
+        kop.setObjectName("AmGroepKop")
+        kop.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        kop.setStyleSheet(
+            f"QWidget#AmGroepKop {{ background: {t.surface_2}; border-top-left-radius: 9px; border-top-right-radius: 9px; }}"
+        )
+        kop_layout = QHBoxLayout(kop)
+        kop_layout.setContentsMargins(12, 7, 12, 7)
+        kop_layout.setSpacing(8)
+        tag_label = QLabel(tag)
+        rand = f"border: 1px solid {t.border};" if tag_bg == t.surface else ""
+        tag_label.setStyleSheet(
+            f"background: {tag_bg}; color: {tag_kleur}; {rand} border-radius: 8px; padding: 2px 7px;"
+            "font-size: 10.5px; font-weight: 700;"
+        )
+        kop_layout.addWidget(tag_label)
+        if uitleg:
+            uitleg_label = QLabel(uitleg)
+            uitleg_label.setStyleSheet(f"color: {t.text_muted}; font-size: 12px;")
+            uitleg_label.setWordWrap(True)
+            kop_layout.addWidget(uitleg_label, 1)
+        else:
+            kop_layout.addStretch(1)
+        layout.addWidget(kop)
+
+        for naam, voorvoegsel, maat, aantal in rijen:
+            layout.addWidget(self._am_lijn())
+            rij = QWidget()
+            rij_layout = QHBoxLayout(rij)
+            rij_layout.setContentsMargins(12, 7, 12, 7)
+            rij_layout.setSpacing(10)
+            if kubus:
+                ic = QLabel()
+                ic.setPixmap(icon_pixmap("cube", t.indigo, 15))
+                rij_layout.addWidget(ic)
+            naam_label = QLabel(
+                f'<span style="color:{t.text_faint}">{voorvoegsel}</span>{naam}' if voorvoegsel else naam
+            )
+            naam_label.setStyleSheet(f"color: {t.text}; font-size: 13px;")
+            rij_layout.addWidget(naam_label, 1)
+            if maat:
+                maat_label = QLabel(maat)
+                maat_label.setStyleSheet(f"color: {t.text_muted}; font-family: Consolas; font-size: 12px;")
+                rij_layout.addWidget(maat_label)
+            aantal_label = QLabel(f"×{aantal}")
+            aantal_label.setMinimumWidth(34)
+            aantal_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            aantal_label.setStyleSheet(f"color: {t.text}; font-family: Consolas; font-size: 12px; font-weight: 700;")
+            rij_layout.addWidget(aantal_label)
+            layout.addWidget(rij)
+        return groep
+
+    def _ververs_als_model_voet(self) -> None:
+        t = self._theme
+        n_sub, n_ond = getattr(self, "_am_aantallen", (0, 0))
+        leeg = n_sub == 0 and n_ond == 0
+        self._am_opslaan_btn.setEnabled(not leeg)
+        if self._am_opgeslagen is not None:
+            _, naam, map_ = self._am_opgeslagen
+            self._am_voet_icoon.show()
+            self._am_voet_tekst.setText(
+                f'<span style="color:{t.success_ink}; font-weight:600">Model “{naam}” opgeslagen</span>'
+                f'&nbsp;&nbsp;<span style="color:{t.text_muted}">in {map_ or "de modellenbibliotheek"}</span>'
+            )
+            self._am_openen_btn.setVisible(self._on_open_model is not None)
+            return
+        self._am_voet_icoon.hide()
+        self._am_openen_btn.hide()
+        if leeg:
+            tekst = "Niets om op te slaan"
+        else:
+            delen = []
+            if n_sub:
+                delen.append(f"{n_sub} {'submodel' if n_sub == 1 else 'submodellen'}")
+            if n_ond:
+                delen.append(f"{n_ond} {'onderdeel' if n_ond == 1 else 'onderdelen'}")
+            tekst = " en ".join(delen)
+        self._am_voet_tekst.setText(f'<span style="color:{t.text_muted}">{tekst}</span>')
+
+    def _am_opslaan(self) -> None:
+        naam = self._am_naam.text().strip()
+        if not naam:
+            self._am_naam_fout.setText("Naam is verplicht.")
+            self._am_naam_fout.show()
+            self._am_naam.setFocus()
+            return
+        tags = tuple(t.strip() for t in self._am_tags.text().split(",") if t.strip())
+        try:
+            model = self._projecten.als_nieuw_model(self._project_id, naam, self._am_map.text(), tags)
+        except ValueError as exc:
+            self._am_naam_fout.setText(str(exc))
+            self._am_naam_fout.show()
+            return
+        self._am_opgeslagen = (model.id, model.naam, model.map)
+        self._ververs_als_model_voet()
+        if self._on_model_bibliotheek_gewijzigd is not None:
+            self._on_model_bibliotheek_gewijzigd(model.id)
+
+    def _am_open_model(self) -> None:
+        if self._am_opgeslagen is not None and self._on_open_model is not None:
+            self._on_open_model(self._am_opgeslagen[0])
 
     # ------------------------------------------------------------------
     # Gedeelde veld-helpers (zelfde patroon als materialen_page.py/modellen_page.py)
@@ -3426,6 +3795,7 @@ class ProjectDetailPage(QWidget):
     # ------------------------------------------------------------------
     def _ververs_alles(self) -> None:
         self._ververs_head()
+        self._ververs_als_model_paneel()
         self._ververs_overzicht_paneel()
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()

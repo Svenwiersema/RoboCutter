@@ -1,0 +1,262 @@
+<title>Keuken Jansen als model</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: app-chrome boven, projectzijbalk links, projectkop met "Opslaan als model" naast
+     Archiveren; die klapt een inline paneel open onder de kop (geen pop-up): links naam/map/tags,
+     rechts wat er in het model komt, voettekst met Annuleren/Model opslaan + melding. Tokens = theme.py. */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF; --accent-soft-border:#CDD6FF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --neutral-dot:#9297A8; --indigo:#7B6FE0; --indigo-soft:#EFEDFB;
+    --chrome-bg:#16171D; --chrome-bg-raised:#1D1F27; --chrome-text:#E7E8EE;
+    --chrome-text-muted:#8B8FA3; --chrome-border:#2B2D37; --chrome-active-bg:rgba(95,127,255,0.18);
+    --paper:#FFFFFF; --paper-ink:#1a1a1a; --paper-muted:#5b6470; --paper-line:#c7ccd3;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --neutral-dot:#767B90; --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .app{display:flex;flex-direction:column;min-height:100vh;}
+
+  .header{height:52px;background:var(--chrome-bg);border-bottom:1px solid var(--chrome-border);display:flex;align-items:center;gap:24px;padding:0 18px;}
+  .brand{color:var(--chrome-text);font-size:15px;font-weight:800;}
+  .brand span{color:#8CA0FF;}
+  .nav{display:flex;gap:2px;flex-wrap:wrap;}
+  .nav-btn{padding:7px 13px;border-radius:7px;font-weight:600;color:var(--chrome-text-muted);}
+  .nav-btn.active{background:var(--chrome-active-bg);color:#C7D3FF;}
+  .tabstrip{height:38px;background:var(--chrome-bg-raised);border-bottom:1px solid var(--chrome-border);display:flex;padding:0 6px;}
+  .tab{display:flex;align-items:center;padding:0 16px;color:var(--chrome-text-muted);font-weight:500;}
+  .tab.active{background:var(--bg);color:var(--text);font-weight:600;}
+
+  .workspace{flex:1;display:flex;min-height:0;}
+  .sidebar{width:216px;flex:0 0 auto;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;}
+  .sidebar-label{color:var(--text-faint);font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;font-weight:500;color:var(--text-muted);}
+  .sidebar-item.active{background:var(--accent-soft);color:var(--accent-text);font-weight:600;}
+  .divider{height:1px;background:var(--border);margin:8px 0;}
+
+  .view{flex:1;min-width:0;padding:24px 28px 40px;}
+  .inner{max-width:1120px;display:flex;flex-direction:column;gap:18px;}
+  .head{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;}
+  .head-left{flex:1;min-width:240px;display:flex;flex-direction:column;gap:8px;}
+  .crumb{font-size:11px;color:var(--text-faint);font-weight:700;letter-spacing:0.8px;}
+  .title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .title{font-size:22px;font-weight:800;text-wrap:balance;margin:0;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:var(--accent-soft);color:var(--accent-text);}
+  .chip .dot{width:7px;height:7px;border-radius:3px;background:var(--accent);}
+  .meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--text-muted);font-size:12.5px;}
+  .head-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;}
+  .btn svg{width:14px;height:14px;}
+  .btn-primary{background:var(--accent);color:#12141B;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+  .btn-ghost.on{background:var(--accent-soft);border-color:var(--accent-soft-border);color:var(--accent-text);}
+  .btn:focus-visible,.field:focus-visible,.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  /* Het inline paneel */
+  .panel{background:var(--surface);border:1px solid var(--accent-soft-border);border-radius:12px;overflow:hidden;}
+  .panel-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border);}
+  .panel-title{font-size:15px;font-weight:700;}
+  .panel-sub{color:var(--text-muted);font-size:12.5px;}
+  .panel-body{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:24px;padding:18px;}
+  .form{display:flex;flex-direction:column;gap:12px;margin:0;}
+  .section-label{color:var(--text-faint);font-size:10.5px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
+  .flabel{color:var(--text-muted);font-size:12px;font-weight:600;display:block;margin-bottom:5px;}
+  .field{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:7px 9px;font:inherit;font-size:13px;color:var(--text);}
+  .field:focus{border-color:var(--accent);outline:none;}
+  .hint{color:var(--text-faint);font-size:11px;margin-top:4px;line-height:1.45;}
+  .err{color:var(--warning-ink);font-size:12px;font-weight:600;margin-top:4px;}
+
+  .inhoud{display:flex;flex-direction:column;gap:10px;min-width:0;}
+  .groep{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .groep-kop{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-2);border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;}
+  .groep-kop .uitleg{color:var(--text-muted);}
+  .rij{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:34px;border-bottom:1px solid var(--border);}
+  .rij:last-child{border-bottom:none;}
+  .rij .naam{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rij .naam .pre{color:var(--text-faint);}
+  .mono{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-muted);}
+  .aantal{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);min-width:30px;text-align:right;}
+  .tag{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;}
+  .tag-sub{background:var(--indigo-soft);color:var(--indigo);}
+  .tag-aangepast{background:var(--warning-soft);color:var(--warning-ink);}
+  .tag-los{background:var(--surface);color:var(--text-muted);border:1px solid var(--border);}
+  .icoon{width:15px;height:15px;flex:0 0 auto;color:var(--indigo);}
+
+  .panel-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--border);background:var(--surface-2);}
+  .panel-foot .grow{flex:1;min-width:200px;color:var(--text-muted);font-size:12.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .ok{color:var(--success-ink);font-weight:600;}
+  .ok-dot{width:18px;height:18px;border-radius:9px;background:var(--success);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .ok-dot svg{width:11px;height:11px;color:var(--surface);}
+  .linkbtn{border:none;background:none;color:var(--accent-text);font:inherit;font-weight:600;cursor:pointer;padding:0;}
+
+  .placeholder{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
+  .ph-k{color:var(--text-faint);font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;}
+  .ph-v{font-size:13px;margin-top:4px;}
+
+  .note{background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:10px 14px;color:var(--text-muted);font-size:12.5px;line-height:1.55;}
+  .note b{color:var(--text);}
+
+  @media (max-width:860px){ .panel-body{grid-template-columns:1fr;} }
+  @media (max-width:760px){
+    .sidebar{display:none;}
+    .view{padding:18px 16px 32px;}
+    .header{gap:12px;}
+  }
+</style>
+
+<div class="app">
+  <div class="header">
+    <div class="brand">Robo<span>Cutter</span></div>
+    <div class="nav"><div class="nav-btn active">Projecten</div><div class="nav-btn">Modellen</div><div class="nav-btn">Materialen</div><div class="nav-btn">Reststukken</div></div>
+  </div>
+  <div class="tabstrip"><div class="tab">Projecten</div><div class="tab active">Keuken Jansen</div></div>
+
+  <div class="workspace">
+    <nav class="sidebar" aria-label="Project">
+      <div class="sidebar-label">Keuken Jansen</div>
+      <div class="sidebar-item active">Overzicht</div>
+      <div class="sidebar-item">Samenstelling</div>
+      <div class="sidebar-item">Zaaglijst</div>
+      <div class="divider"></div>
+      <div class="sidebar-label">Documenten</div>
+      <div class="sidebar-item">Zaagplannen</div>
+      <div class="sidebar-item">Labels</div>
+      <div class="sidebar-item">Reststukken</div>
+    </nav>
+
+    <main class="view">
+      <div class="inner">
+        <div class="head">
+          <div class="head-left">
+            <div class="crumb">PROJECTEN</div>
+            <div class="title-row"><h1 class="title">Keuken Jansen</h1><span class="chip"><span class="dot"></span>Werkvoorbereiding</span></div>
+            <div class="meta"><span>fam. Jansen</span><span>OPD-2026-114</span><span>Oplevering 2026-11-20</span></div>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost on" id="btn-als-model" type="button" aria-expanded="true" aria-controls="panel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>
+              Opslaan als model
+            </button>
+            <button class="btn btn-ghost" type="button">Archiveren</button>
+          </div>
+        </div>
+
+        <section class="panel" id="panel" aria-label="Project opslaan als model">
+          <div class="panel-head">
+            <span class="panel-title">Project opslaan als nieuw model</span>
+            <span class="panel-sub">Het hele project in één keer. Het project zelf verandert niet.</span>
+          </div>
+          <div class="panel-body">
+            <form class="form" id="form" novalidate>
+              <div class="section-label">Nieuw model</div>
+              <div>
+                <label class="flabel" for="in-naam">Naam</label>
+                <input class="field" id="in-naam" value="Keuken Jansen">
+                <div class="err" id="err-naam" hidden>Naam is verplicht.</div>
+              </div>
+              <div>
+                <label class="flabel" for="in-map">Map</label>
+                <input class="field" id="in-map" placeholder="bijv. Keukens/Onderkasten" value="Keukens">
+                <div class="hint">Vult aan met bestaande mappen uit de modellenbibliotheek.</div>
+              </div>
+              <div>
+                <label class="flabel" for="in-tags">Tags</label>
+                <input class="field" id="in-tags" placeholder="komma-gescheiden" value="keuken, wit">
+              </div>
+              <div class="hint">Omschrijving wordt: “Opgeslagen uit project Keuken Jansen (fam. Jansen)”.</div>
+            </form>
+
+            <div class="inhoud">
+              <div class="section-label">Wat er in het model komt</div>
+
+              <div class="groep">
+                <div class="groep-kop"><span class="tag tag-sub">Submodellen</span><span class="uitleg">ongewijzigde modelkopieën, blijven verwijzen naar de bibliotheek</span></div>
+                <div class="rij"><svg class="icoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/></svg><span class="naam">Onderkast 60cm</span><span class="aantal">×4</span></div>
+                <div class="rij"><svg class="icoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/></svg><span class="naam">Bovenkast 60cm</span><span class="aantal">×2</span></div>
+              </div>
+
+              <div class="groep">
+                <div class="groep-kop"><span class="tag tag-aangepast">Aangepast in project</span><span class="uitleg">Hoge kast ×2 wordt losse onderdelen, zodat je aanpassingen bewaard blijven</span></div>
+                <div class="rij"><span class="naam"><span class="pre">Hoge kast · </span>Zijwand</span><span class="mono">2100 × 560</span><span class="aantal">×4</span></div>
+                <div class="rij"><span class="naam"><span class="pre">Hoge kast · </span>Bodem</span><span class="mono">564 × 520</span><span class="aantal">×2</span></div>
+                <div class="rij"><span class="naam"><span class="pre">Hoge kast · </span>Legplank</span><span class="mono">562 × 500</span><span class="aantal">×8</span></div>
+              </div>
+
+              <div class="groep">
+                <div class="groep-kop"><span class="tag tag-los">Losse onderdelen</span></div>
+                <div class="rij"><span class="naam">Plint</span><span class="mono">2400 × 120</span><span class="aantal">×2</span></div>
+                <div class="rij"><span class="naam">Passtuk links</span><span class="mono">720 × 45</span><span class="aantal">×1</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel-foot">
+            <span class="grow" id="foot">2 submodellen en 5 onderdelen</span>
+            <button class="btn btn-ghost" id="btn-annuleren" type="button">Annuleren</button>
+            <button class="btn btn-primary" id="btn-opslaan" type="button">Model opslaan</button>
+          </div>
+        </section>
+
+        <div class="placeholder" aria-label="Rest van het overzicht">
+          <div><div class="ph-k">Klant</div><div class="ph-v">fam. Jansen</div></div>
+          <div><div class="ph-k">Contactpersoon</div><div class="ph-v">M. Jansen</div></div>
+          <div><div class="ph-k">Startdatum</div><div class="ph-v">2026-10-12</div></div>
+          <div><div class="ph-k">Samenstelling</div><div class="ph-v">4 modelkopieën · 2 losse onderdelen</div></div>
+        </div>
+
+        <div class="note"><b>Over deze mockup.</b> De knop <b>Opslaan als model</b> staat naast Archiveren in de kop van elk projecttabblad, in elke projectstatus. Het paneel klapt open onder de kop, zonder pop-up. Na opslaan staat de bevestiging in de voettekst van het paneel, met een knop om het nieuwe model in een eigen tabblad te openen. Een modelkopie die je in het project hebt aangepast, of waarvan het bronmodel verwijderd is, wordt losse onderdelen met de modelnaam ervoor. Revisiegeschiedenis gaat nog niet mee, omdat die nog niet bestaat.</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  const btn = document.getElementById('btn-als-model');
+  const panel = document.getElementById('panel');
+  const foot = document.getElementById('foot');
+  const naam = document.getElementById('in-naam');
+  const err = document.getElementById('err-naam');
+  const standaardFoot = foot.innerHTML;
+  const schoon = s => s.replace(/[<>&"]/g, '');
+  function zetOpen(open) {
+    panel.hidden = !open;
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) { foot.innerHTML = standaardFoot; err.hidden = true; naam.focus(); }
+  }
+  btn.addEventListener('click', () => zetOpen(panel.hidden));
+  document.getElementById('btn-annuleren').addEventListener('click', () => zetOpen(false));
+  naam.addEventListener('input', () => { err.hidden = true; });
+  document.getElementById('btn-opslaan').addEventListener('click', () => {
+    const n = naam.value.trim();
+    if (!n) { err.hidden = false; naam.focus(); return; }
+    const map = document.getElementById('in-map').value.trim();
+    foot.innerHTML = '<span class="ok-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>'
+      + '<span class="ok">Model “' + schoon(n) + '” opgeslagen</span><span>in ' + (map ? schoon(map) : 'de modellenbibliotheek') + '</span>'
+      + '<button class="linkbtn" type="button">Model openen</button>';
+  });
+  document.getElementById('form').addEventListener('submit', e => e.preventDefault());
+</script>

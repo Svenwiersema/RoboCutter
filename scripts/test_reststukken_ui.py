@@ -263,6 +263,7 @@ class ReststukkenTestVenster(QMainWindow):
     def _toon_in_formulier(self, reststuk: Reststuk) -> None:
         self.huidig_id = reststuk.id
         self._ververs_materiaal_combo()
+        self.veld_materiaal.setEnabled(False)  # reststuk kan niet van materiaal veranderen
         index = self.veld_materiaal.findData(reststuk.materiaal_id)
         if index >= 0:
             self.veld_materiaal.setCurrentIndex(index)
@@ -276,6 +277,7 @@ class ReststukkenTestVenster(QMainWindow):
         self.huidig_id = None
         self.tabel.clearSelection()
         self._ververs_materiaal_combo()
+        self.veld_materiaal.setEnabled(True)
         self.veld_lengte.setValue(0)
         self.veld_breedte.setValue(0)
         self.veld_herkomst_project.clear()
@@ -304,6 +306,7 @@ class ReststukkenTestVenster(QMainWindow):
         if self.huidig_id is None:
             reststuk = self.bibliotheek.toevoegen(reststuk)
             self.huidig_id = reststuk.id
+            self.veld_materiaal.setEnabled(False)
         else:
             reststuk.status = self.bibliotheek.ophalen(self.huidig_id).status
             self.bibliotheek.bijwerken(reststuk)

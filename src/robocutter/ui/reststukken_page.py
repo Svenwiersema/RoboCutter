@@ -144,6 +144,7 @@ class ReststukkenPage(QWidget):
         self._label_vinkjes: dict[str, _Vinkje] = {}
         self._alle_families_tonen = False
         self._bewerk_id: str | None = None
+        self._bewerk_gekoppeld: Reststuk | None = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1028,6 +1029,16 @@ class ReststukkenPage(QWidget):
         rij.addLayout(kol2)
         section.addLayout(rij)
 
+        # Uitleg vooraf als je de maat wijzigt van een stuk dat aan een
+        # project hangt: het zaagplan van dat project klopt daarna niet meer.
+        self._maat_koppeling_melding = QLabel()
+        self._maat_koppeling_melding.setProperty("role", "warningText")
+        self._maat_koppeling_melding.setWordWrap(True)
+        self._maat_koppeling_melding.hide()
+        section.addWidget(self._maat_koppeling_melding)
+        self._in_lengte.valueChanged.connect(self._werk_maat_melding_bij)
+        self._in_breedte.valueChanged.connect(self._werk_maat_melding_bij)
+
         # Welke randen nog de fabriekskantenband van de plaat hebben (wordt
         # bij reststukken uit een project automatisch ingevuld).
         section.addWidget(self._field_label("Fabriekskantenband op"))
@@ -1042,6 +1053,20 @@ class ReststukkenPage(QWidget):
         if lengte > 0 and breedte > 0:
             self._kanten_rand_diagram.set_afmetingen(lengte, breedte)
 
+    def _werk_maat_melding_bij(self) -> None:
+        r = self._bewerk_gekoppeld
+        nieuw = (self._in_lengte.value(), self._in_breedte.value())
+        if r is None or nieuw == (r.lengte, r.breedte):
+            self._maat_koppeling_melding.hide()
+            return
+        hoe = "gereserveerd voor" if r.status == ReststukStatus.GERESERVEERD else "gebruikt in"
+        self._maat_koppeling_melding.setText(
+            f"Dit reststuk is {hoe} project {r.project_naam or '(onbekend)'}, met de maat "
+            f"{r.lengte:g} × {r.breedte:g} mm. Sla je de nieuwe maat op, dan klopt het zaagplan "
+            "van dat project niet meer tot je het daar opnieuw genereert."
+        )
+        self._maat_koppeling_melding.show()
+
     def _update_materiaal_info(self) -> None:
         materiaal_id = self._in_materiaal.currentData()
         if not materiaal_id:
@@ -1053,12 +1078,14 @@ class ReststukkenPage(QWidget):
             self._materiaal_info.setText("")
             return
         status_tekst = "" if materiaal.status == MateriaalStatus.ACTIEF else " · gearchiveerd"
+        vast_tekst = "" if self._in_materiaal.isEnabled() else " · materiaal van een reststuk ligt vast"
         self._materiaal_info.setText(
             f"Dikte {materiaal.derde_afmeting:g} mm"
-            f"{(' · ' + materiaal.familie) if materiaal.familie else ''}{status_tekst}"
+            f"{(' · ' + materiaal.familie) if materiaal.familie else ''}{status_tekst}{vast_tekst}"
         )
 
     def _reset_form(self) -> None:
+        self._bewerk_gekoppeld = None
         huidige = self._in_materiaal.currentData()
         self._in_materiaal.clear()
         for materiaal in sorted(self.materialen.lijst(), key=lambda m: m.naam.lower()):
@@ -1074,6 +1101,7 @@ class ReststukkenPage(QWidget):
         self._in_lengte.setValue(0)
         self._in_breedte.setValue(0)
         self._kanten_rand_diagram.set_geselecteerde_randen(frozenset())
+        self._in_materiaal.setEnabled(True)
         self._update_materiaal_info()
         self._validation_banner.hide()
 
@@ -1087,12 +1115,16 @@ class ReststukkenPage(QWidget):
             index = self._in_materiaal.findData(r.materiaal_id)
             if index >= 0:
                 self._in_materiaal.setCurrentIndex(index)
+            # Een reststuk kan niet van materiaal veranderen.
+            self._in_materiaal.setEnabled(False)
             self._update_materiaal_info()
             self._in_lengte.setValue(r.lengte)
             self._in_breedte.setValue(r.breedte)
             self._in_herkomst_project.setText(r.herkomst_project)
             self._in_herkomst_model.setText(r.herkomst_model)
             self._kanten_rand_diagram.set_geselecteerde_randen(r.fabriekskantenband_randen)
+            self._bewerk_gekoppeld = r if r.project_id else None
+            self._werk_maat_melding_bij()
 
             is_gebruikt = r.status != ReststukStatus.BESCHIKBAAR
             self._status_chip_label.setText(
@@ -1113,7 +1145,7 @@ class ReststukkenPage(QWidget):
             self._status_row.hide()
 
         self._drawer.show()
-        self._in_materiaal.setFocus()
+        (self._in_lengte if reststuk_id is not None else self._in_materiaal).setFocus()
 
     def _sluit_drawer(self) -> None:
         self._drawer.hide()

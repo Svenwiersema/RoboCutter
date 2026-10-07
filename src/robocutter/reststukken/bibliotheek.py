@@ -98,6 +98,10 @@ class ReststukkenBibliotheek:
     def bijwerken(self, reststuk: Reststuk) -> Reststuk:
         if reststuk.id not in self._reststukken:
             raise KeyError(f"Onbekend reststuk-id: {reststuk.id!r}")
+        # Een reststuk is een stuk van een bepaalde plaat: het kan niet
+        # achteraf van materiaal veranderen.
+        if reststuk.materiaal_id != self._reststukken[reststuk.id].materiaal_id:
+            raise ValueError("Het materiaal van een bestaand reststuk kan niet veranderen.")
         fouten = valideer(reststuk, self._materialen)
         if fouten:
             raise ValueError("; ".join(fouten))

@@ -603,6 +603,8 @@ class MainWindow(QMainWindow):
                 on_open_projecten_tab=lambda: self._open_tab("projecten"),
                 on_open_modelkopie=self._open_tab_projectmodel,
                 on_reststukken_gewijzigd=self._on_reststukken_gewijzigd,
+                on_open_model=self._open_tab_model,
+                on_model_bibliotheek_gewijzigd=self._on_model_bibliotheek_gewijzigd,
             )
         if key not in self._open_tabs:
             self._open_tabs.append(key)

@@ -717,7 +717,7 @@ in plaats van aan te nemen:
 - Mes/groef-plaatsingsregels (hoofdstuk 5 noemt dit zelf nog als
   "verder te detailleren").
 - Revisiegeschiedenis/sandboxes (hoofdstuk 1/2), "project opslaan als
-  nieuw model" (hoofdstuk 4), en echte zaagplan-generatie vanuit een
+  nieuw model" (hoofdstuk 4 — inmiddels wél gebouwd, zie het logboek), en echte zaagplan-generatie vanuit een
   project (+ de daarvan afhankelijke reststukken-vrijgave bij
   Afronding) — bewust uitgesteld, zie de Projectenbeheer-sectie
   hierboven. Materialenbibliotheek, Reststukkenbibliotheek (Module 3),
@@ -3059,7 +3059,7 @@ houden.
     beschikbaar van een stuk dat aan een project hangt eerst bevestiging
     ("Vrijgeven?"), en bij verwijderen/vrijgeven van zo'n stuk staat een
     uitleg boven de tabel. Een maatwijziging in het bewerkpaneel geeft
-    (nog) geen vooraf-uitleg, maar wel de melding in het project.
+    sinds de volgende stap ook een vooraf-uitleg (zie hieronder).
   - *Verdeling over reststukken* (`_verdeel_over_reststukken`): probeert
     kleinste eerst, grootste eerst en per stap het stuk waar het meeste op
     past; kiest de meeste geplaatste oppervlakte, dan het minste verbruikte
@@ -3072,6 +3072,53 @@ houden.
     rookproef met een db in de scratchpad (`effectieve_db_pad`
     omgeleid): reservering → bevestigen/annuleren → vrijgeven → melding
     in het project; labels aanvinken (half/alles) en PDF. 237 tests.
+
+- **Uitleg vooraf bij maatwijziging van een gekoppeld reststuk.** In het
+  bewerkpaneel van de Reststukkenbibliotheek verschijnt onder Lengte/
+  Breedte gele tekst zodra je de maat wijzigt van een stuk dat aan een
+  project hangt (gereserveerd of gebruikt): "Dit reststuk is gereserveerd
+  voor project X, met de maat L × B mm. Sla je de nieuwe maat op, dan
+  klopt het zaagplan van dat project niet meer ...". Verdwijnt weer als je
+  de oorspronkelijke maat terugzet; geen extra bevestigingsstap (opslaan
+  blijft gewoon opslaan, de melding in het project volgt daarna).
+  Offscreen rookproef met een db in de scratchpad.
+- **Materiaal van een reststuk ligt vast.** Sven: "een reststuk kan niet
+  zomaar van materiaal veranderen". Bij bewerken is de materiaalkeuze
+  uitgeschakeld (hint "materiaal van een reststuk ligt vast", focus gaat
+  naar Lengte), alleen bij een nieuw reststuk kies je het materiaal.
+  `ReststukkenBibliotheek.bijwerken` weigert een ander `materiaal_id`
+  (ValueError); ook `scripts/test_reststukken_ui.py` zet het veld op slot.
+  Test: `test_bijwerken_kan_materiaal_niet_veranderen`. 238 tests.
+
+- **Project opslaan als nieuw model (hoofdstuk 4, "Project → Model").**
+  Mockup goedgekeurd ("ja ziet er goed uit"):
+  `design/assets/mockups/project-als-model-concept.html`. Keuzes van Sven
+  (vooraf gevraagd): **mix** van submodellen en onderdelen, **in elke
+  projectstatus** (niet alleen Afgerond, ondanks "(afgerond) project" in
+  hoofdstuk 4), en **knop + inline paneel**.
+  - Backend: `ProjectenBibliotheek.als_model_samenstelling(project_id)`
+    (voorbeeld, slaat niets op) en `als_nieuw_model(project_id, naam,
+    map_, tags)`. Een modelkopie die gelijk is aan zijn bibliotheekmodel
+    (`model_instantie_afwijkingen == (set(), 0)`) wordt een
+    `SubModelVerwijzing` (zelfde model vaker: aantallen opgeteld); een
+    aangepaste kopie of een kopie zonder bronmodel wordt onderdelen met
+    "Modelnaam · " ervoor en aantal × kopie-aantal; losse onderdelen gaan
+    mee. Verse onderdeel-id's, omschrijving "Opgeslagen uit project X
+    (klant)". Het project zelf verandert niet. Revisiegeschiedenis bestaat
+    nog niet en gaat dus niet mee. `groep_id`'s blijven ongewijzigd (zelfde
+    als bij `model_instantie_als_nieuw_model`).
+  - UI (`project_detail_page.py`): knop "Opslaan als model" naast
+    Archiveren; paneel onder de kop (zichtbaar boven elk projectpaneel)
+    met Naam (standaard projectnaam), Map (aanvullen met bestaande mappen)
+    en Tags, rechts de groepen Submodellen / Aangepast in project / Losse
+    onderdelen. Bevestiging in de voettekst van het paneel met "Model
+    openen" (`on_open_model` → `MainWindow._open_tab_model`); de
+    modellenlijst ververst via `on_model_bibliotheek_gewijzigd`. Lege
+    naam geeft een inline melding; een leeg project kan niet opgeslagen
+    worden. Invoer overleeft een thema-wissel.
+  - Tests: +2 in `test_projecten.py`. Offscreen rookproef met in-memory
+    bibliotheken (openen, lege naam, opslaan, callbacks, thema-wissel,
+    dichtklappen). 240 tests.
 
 ## Werkwijze die Sven prettig vindt
 

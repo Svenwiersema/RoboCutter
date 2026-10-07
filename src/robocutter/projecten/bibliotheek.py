@@ -18,7 +18,7 @@ from dataclasses import replace
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
-from robocutter.modellen.models import Model, ModelOnderdeel
+from robocutter.modellen.models import Model, ModelOnderdeel, SubModelVerwijzing
 from robocutter.projecten import opslag
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
 
@@ -321,6 +321,65 @@ class ProjectenBibliotheek:
         instantie.onderdelen = [replace(o) for o in nieuw.onderdelen]
         self._persisteer(project)
         return nieuw
+
+    def als_model_samenstelling(
+        self, project_id: str
+    ) -> tuple[list[SubModelVerwijzing], list[tuple[ProjectModelInstantie, list[ModelOnderdeel]]], list[ModelOnderdeel]]:
+        """Wat ``als_nieuw_model`` van dit project zou maken, zonder iets op
+        te slaan (voor het voorbeeld in het projecttabblad):
+
+        - submodel-verwijzingen voor modelkopieën die nog gelijk zijn aan
+          hun bibliotheekmodel (zelfde model meerdere keren: aantallen
+          opgeteld), zodat de opbouw zichtbaar blijft;
+        - per in het project aangepaste kopie (of kopie waarvan het
+          bronmodel niet meer bestaat) de onderdelen die het wordt: aantal
+          vermenigvuldigd met het aantal van de kopie en de modelnaam
+          ervoor ("Hoge kast · Zijwand"), zodat de aanpassingen niet
+          verloren gaan;
+        - de losse onderdelen.
+
+        De onderdelen hebben hier nog hun oude id's."""
+
+        project = self._projecten[project_id]
+        submodel_aantallen: dict[str, int] = {}
+        aangepast: list[tuple[ProjectModelInstantie, list[ModelOnderdeel]]] = []
+        for instantie in project.modelinstanties:
+            if self.model_instantie_afwijkingen(project_id, instantie.id) == (set(), 0):
+                submodel_aantallen[instantie.model_id] = submodel_aantallen.get(instantie.model_id, 0) + instantie.aantal
+                continue
+            aangepast.append(
+                (
+                    instantie,
+                    [
+                        replace(o, naam=f"{instantie.model_naam} · {o.naam}", aantal=o.aantal * instantie.aantal)
+                        for o in instantie.onderdelen
+                    ],
+                )
+            )
+        submodellen = [SubModelVerwijzing(model_id=m, aantal=n) for m, n in submodel_aantallen.items()]
+        return submodellen, aangepast, [replace(o) for o in project.losse_onderdelen]
+
+    def als_nieuw_model(self, project_id: str, naam: str, map_: str = "", tags: tuple[str, ...] = ()) -> Model:
+        """Hoofdstuk 4, "Project → Model": slaat het hele project in één
+        keer op als nieuw model, opgebouwd zoals ``als_model_samenstelling``
+        beschrijft (op Svens keuze een mix van submodellen en onderdelen).
+        Alle onderdelen krijgen verse id's. Het project zelf verandert
+        niet. Revisiegeschiedenis bestaat nog niet, dus die gaat (nog)
+        niet mee."""
+
+        project = self._projecten[project_id]
+        submodellen, aangepast, losse = self.als_model_samenstelling(project_id)
+        onderdelen = [o for _, kopie in aangepast for o in kopie] + losse
+        nieuw = Model(
+            id="",
+            naam=naam.strip(),
+            omschrijving=f"Opgeslagen uit project {project.naam} ({project.klant})",
+            map=map_.strip(),
+            tags=tuple(t.strip() for t in tags if t.strip()),
+            onderdelen=[replace(o, id=uuid.uuid4().hex[:8]) for o in onderdelen],
+            submodellen=submodellen,
+        )
+        return self._modellen.toevoegen(nieuw)
 
     def los_onderdeel_toevoegen(self, project_id: str, onderdeel: ModelOnderdeel) -> Project:
         # Anders dan een model-instantie (een vaste snapshot, al gevalideerd op het

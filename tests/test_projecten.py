@@ -570,6 +570,52 @@ def test_modelkopie_als_nieuw_model_werkt_ook_bij_submodellen_en_vereist_naam():
     assert len(ids) == 2 and len(set(ids)) == 2  # dubbele id's uit de platgeslagen kopie opgelost
 
 
+def test_project_als_nieuw_model_mix_van_submodellen_en_onderdelen():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    onderkast = modellen.toevoegen(_model(naam="Onderkast", onderdelen=[_onderdeel(materiaal.id, id="z", naam="Zijwand", aantal=2)]))
+    hoge_kast = modellen.toevoegen(_model(naam="Hoge kast", onderdelen=[_onderdeel(materiaal.id, id="b", naam="Bodem", hoogte=540)]))
+    project = projecten.toevoegen(_project(naam="Keuken", klant="Jansen"))
+    project = projecten.model_toevoegen(project.id, onderkast.id, aantal=3)
+    project = projecten.model_toevoegen(project.id, onderkast.id, aantal=1)
+    project = projecten.model_toevoegen(project.id, hoge_kast.id, aantal=2)
+    hoge = project.modelinstanties[2]
+    projecten.model_instantie_onderdelen_opslaan(project.id, hoge.id, [replace(hoge.onderdelen[0], hoogte=520)])
+    projecten.los_onderdeel_toevoegen(project.id, _onderdeel(materiaal.id, naam="Plint"))
+
+    with pytest.raises(ValueError, match="Naam"):
+        projecten.als_nieuw_model(project.id, "  ")
+
+    model = projecten.als_nieuw_model(project.id, "Keuken Jansen", map_="Keukens", tags=("keuken", " "))
+
+    assert modellen.ophalen(model.id).naam == "Keuken Jansen"
+    assert model.map == "Keukens" and model.tags == ("keuken",)
+    assert "Keuken" in model.omschrijving and "Jansen" in model.omschrijving
+    # Ongewijzigde kopieën: één submodel-verwijzing, aantallen opgeteld.
+    assert [(s.model_id, s.aantal) for s in model.submodellen] == [(onderkast.id, 4)]
+    # Aangepaste kopie: onderdelen met modelnaam ervoor, aantal × kopie-aantal; plus het losse onderdeel.
+    assert [(o.naam, o.hoogte, o.aantal) for o in model.onderdelen] == [
+        ("Hoge kast · Bodem", 520, 2),
+        ("Plint", 720, 1),
+    ]
+    ids = {o.id for o in model.onderdelen}
+    assert len(ids) == 2 and not ids & {"b", projecten.ophalen(project.id).losse_onderdelen[0].id}
+    # Het project zelf is niet veranderd.
+    assert [i.model_id for i in projecten.ophalen(project.id).modelinstanties] == [onderkast.id, onderkast.id, hoge_kast.id]
+
+
+def test_project_als_nieuw_model_met_verdwenen_bronmodel_slaat_plat():
+    materialen, modellen, projecten = _bibliotheken()
+    materiaal = materialen.toevoegen(_materiaal())
+    kast = modellen.toevoegen(_model(naam="Kast", onderdelen=[_onderdeel(materiaal.id, naam="Zijwand")]))
+    project = projecten.toevoegen(_project())
+    project = projecten.model_toevoegen(project.id, kast.id)
+    modellen.verwijderen(kast.id)
+
+    model = projecten.als_nieuw_model(project.id, "Kopie")
+    assert model.submodellen == [] and [o.naam for o in model.onderdelen] == ["Kast · Zijwand"]
+
+
 def test_modelkopie_bewerkingen_overleven_herstart(tmp_path):
     from robocutter.materialen.opslag import open_verbinding as open_mat
     from robocutter.modellen.opslag import open_verbinding as open_mod

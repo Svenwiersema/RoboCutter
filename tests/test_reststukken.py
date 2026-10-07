@@ -92,6 +92,20 @@ def test_toevoegen_met_ongeldig_reststuk_faalt():
         reststukken.toevoegen(_reststuk("bestaat-niet"))
 
 
+def test_bijwerken_kan_materiaal_niet_veranderen():
+    materialen, reststukken = _bibliotheken()
+    eiken = materialen.toevoegen(_materiaal())
+    wit = materialen.toevoegen(_materiaal(naam="Wit meubelpaneel 18mm", familie="Meubelpaneel"))
+    r = reststukken.toevoegen(_reststuk(eiken.id))
+
+    with pytest.raises(ValueError):
+        reststukken.bijwerken(_reststuk(wit.id, id=r.id))
+    assert reststukken.ophalen(r.id).materiaal_id == eiken.id
+
+    reststukken.bijwerken(_reststuk(eiken.id, id=r.id, lengte=750))
+    assert reststukken.ophalen(r.id).lengte == 750
+
+
 def test_materiaal_van_geeft_gekoppeld_materiaal():
     materialen, reststukken = _bibliotheken()
     materiaal = materialen.toevoegen(_materiaal())
