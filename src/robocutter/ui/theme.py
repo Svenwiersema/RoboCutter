@@ -397,6 +397,7 @@ def build_stylesheet(t: Theme) -> str:
     QLabel[role="matMeta"] {{ color: {t.text_muted}; font-size: 12px; }}
     QLabel[role="typePill"] {{ color: {t.text_muted}; font-size: 12px; font-weight: 600; }}
     QLabel[role="dims"] {{ font-size: 13px; }}
+    QLabel[role="dims"][gezaagd="true"] {{ color: {t.text_muted}; }}
     QLabel[role="nerf"] {{ color: {t.text_muted}; font-size: 12.5px; }}
     QLabel[role="nerfNone"] {{ color: {t.text_faint}; font-size: 12.5px; }}
     QLabel[role="tagChip"] {{

@@ -627,12 +627,14 @@ class ProjectDetailPage(QWidget):
         # "Zaagplan bijwerken" (mockup deel-opnieuw-genereren-concept.html):
         # paneel open, keuzes per "gezaagd maar niet meer nodig"-stuk
         # ((plan_index, (onderdeel_id, instantie)) -> "bewaren"/"afschrijven"),
-        # de keuzes van een lopende bijwerking, en een houder per plaatkaart
-        # zodat afvinken alleen die kaart herbouwt.
+        # en de keuzes van een lopende bijwerking.
         self._zp_bijwerk_open = False
         self._zp_bijwerk_keuzes: dict[tuple[int, tuple[str, int]], str] = {}
         self._zp_bijwerk_lopend: dict[tuple[int, tuple[str, int]], str] | None = None
-        self._zp_plaat_houders: list[QVBoxLayout] = []
+        # Per plaatkaart: tekening, zaagstatus-houder en (vinkje, labels) per
+        # tabelregel, om afvinken ter plekke bij te werken.
+        self._zp_plaat_refs: list[dict] = []
+        self._zp_opnieuw_btn: QPushButton | None = None
         # Inline meldingen boven het zaagplan: een ander project is al aan
         # het genereren, of opnieuw genereren zou aanpassingen aan de
         # projectreststukken overschrijven (eerst bevestigen).
@@ -4160,6 +4162,8 @@ class ProjectDetailPage(QWidget):
         _clear_layout(self._zaagplannen_content)
         self._zaagplan_balk = self._zaagplan_status = self._zaagplan_eta = None
         self._zp_chip_box = self._zp_controle_box = None
+        self._zp_plaat_refs = []
+        self._zp_opnieuw_btn = None
         if self._zaagplan_worker is not None:
             self._zaagplannen_content.addWidget(self._bouw_zaagplan_bezig())
         elif self._zaagplannen is None:
@@ -4381,23 +4385,70 @@ class ProjectDetailPage(QWidget):
         self._zaagplannen_opslag.werk_plannen_bij(self._project_id, self._zaagplannen)
         # Een keuze voor een stuk dat nu anders ligt, klopt niet meer.
         self._zp_bijwerk_keuzes = {}
+        # Ter plekke bijwerken i.p.v. de kaart of het paneel opnieuw op te
+        # bouwen: dat duurde in de app een paar seconden en liet de pagina
+        # naar boven springen (Sven).
+        self._werk_plaat_bij(index)
         if was_gezaagd != self._heeft_gezaagd():
-            # Knoppen "Opnieuw genereren" / "Zaagplan bijwerken" wisselen.
             if not self._heeft_gezaagd():
                 self._zp_bijwerk_open = False
-            self._ververs_zaagplannen_paneel()
-        else:
-            self._ververs_plaat(index)
+            self._werk_opnieuw_knop_bij()
+            self._ververs_zaagplan_controle()
+        elif self._zp_bijwerk_open:
             self._ververs_zaagplan_controle()
         n, totaal = plan.aantal_gezaagd, len(plan.resultaat.plaatsingen)
         self._melding.toon("Gezaagd bijgewerkt", f"{plaat_naam(plan)}: {n} van {totaal} gezaagd")
 
-    def _ververs_plaat(self, index: int) -> None:
-        if index >= len(self._zp_plaat_houders):
+    def _werk_plaat_bij(self, index: int) -> None:
+        """Tekening, zaagstatus en tabelregels van één plaat bijwerken na
+        afvinken, zonder iets opnieuw op te bouwen."""
+        if index >= len(self._zp_plaat_refs) or not self._zp_plaat_refs[index]:
             return
-        houder = self._zp_plaat_houders[index]
-        _clear_layout(houder)
-        houder.addWidget(self._bouw_zaagplan_document(self._zaagplannen[index], index))
+        refs = self._zp_plaat_refs[index]
+        plan = self._zaagplannen[index]
+        refs["tekening"].update()
+        for p, (vinkje, labels) in zip(plan.resultaat.plaatsingen, refs["rijen"]):
+            aan = (p.onderdeel_id, p.instantie) in plan.gezaagd
+            vinkje.zet(aan)
+            for label in labels:
+                if bool(label.property("gezaagd")) != aan:
+                    label.setProperty("gezaagd", aan)
+                    label.style().unpolish(label)
+                    label.style().polish(label)
+        self._vul_plaat_status(index)
+
+    def _vul_plaat_status(self, index: int) -> None:
+        t = self._theme
+        plan = self._zaagplannen[index]
+        status = self._zp_plaat_refs[index]["status"]
+        _clear_layout(status)
+        n, totaal = plan.aantal_gezaagd, len(plan.resultaat.plaatsingen)
+        if n == 0:
+            status.addWidget(self._chip("Niet aangezaagd", t.surface_2, t.text_muted, t.text_faint))
+        elif n < totaal:
+            status.addWidget(self._chip(f"Aangezaagd · {n} van {totaal}", t.warning_soft, t.warning_ink, t.warning))
+        else:
+            status.addWidget(self._chip("Gezaagd", t.success_soft, t.success_ink, t.success))
+        if totaal:
+            alles = n < totaal
+            snel = QPushButton("Hele plaat gezaagd" if alles else "Niets gezaagd")
+            snel.setCursor(Qt.CursorShape.PointingHandCursor)
+            snel.setStyleSheet(
+                f"QPushButton {{ color: {t.accent_text}; font-size: 12.5px; font-weight: 600; background: transparent;"
+                " border: none; padding: 0 0 0 6px; }"
+            )
+            sleutels = {(p.onderdeel_id, p.instantie) for p in plan.resultaat.plaatsingen}
+            snel.clicked.connect(lambda _=False, i=index, k=sleutels, a=alles: self._zet_gezaagd(i, k, a))
+            status.addWidget(snel)
+
+    def _werk_opnieuw_knop_bij(self) -> None:
+        """De werkbalkknop wordt "Zaagplan bijwerken…" zodra er iets
+        gezaagd is, en weer "Opnieuw genereren" als niets meer gezaagd is."""
+        knop = self._zp_opnieuw_btn
+        if knop is None:
+            return
+        knop.setText("  Zaagplan bijwerken…" if self._heeft_gezaagd() else "  Opnieuw genereren")
+        knop.setEnabled(not self._zp_bijwerk_open)
 
     def _bruikbaar_filter(self):
         """Reststukken op blijvende platen mogen alleen meedoen als ze in de
@@ -4751,8 +4802,11 @@ class ProjectDetailPage(QWidget):
         opnieuw_btn.setIcon(icon("recycle", self._theme.text, 13))
         opnieuw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         opnieuw_btn.setEnabled(not self._zp_bijwerk_open)
-        opnieuw_btn.clicked.connect(self._open_bijwerk_paneel if gezaagd else self._genereer_zaagplannen)
+        opnieuw_btn.clicked.connect(
+            lambda: self._open_bijwerk_paneel() if self._heeft_gezaagd() else self._genereer_zaagplannen()
+        )
         toolbar.addWidget(opnieuw_btn)
+        self._zp_opnieuw_btn = opnieuw_btn
         n_nieuw = sum(1 for p in self._zaagplannen if p.is_nieuw_bij_bijwerking)
         pdf_btn = QPushButton("  Alles + zaaglijst als PDF")
         pdf_btn.setProperty("role", "ghost" if n_nieuw else "primary")
@@ -4821,14 +4875,8 @@ class ProjectDetailPage(QWidget):
             )
         layout.addLayout(stat_row)
 
-        self._zp_plaat_houders = []
         for index, plan in enumerate(self._zaagplannen):
-            houder = QWidget()
-            houder_layout = QVBoxLayout(houder)
-            houder_layout.setContentsMargins(0, 0, 0, 0)
-            houder_layout.addWidget(self._bouw_zaagplan_document(plan, index))
-            self._zp_plaat_houders.append(houder_layout)
-            layout.addWidget(houder)
+            layout.addWidget(self._bouw_zaagplan_document(plan, index))
 
         return wrapper
 
@@ -4869,24 +4917,13 @@ class ProjectDetailPage(QWidget):
         elif plan.bijwerking == "gebleven":
             tekst = "Gebleven, aangevuld" if plan.toegevoegd else "Gebleven"
             head_layout.addWidget(self._chip(tekst, t.surface_2, t.text_muted, t.text_faint))
-        n, totaal = plan.aantal_gezaagd, len(plan.resultaat.plaatsingen)
-        if n == 0:
-            head_layout.addWidget(self._chip("Niet aangezaagd", t.surface_2, t.text_muted, t.text_faint))
-        elif n < totaal:
-            head_layout.addWidget(self._chip(f"Aangezaagd · {n} van {totaal}", t.warning_soft, t.warning_ink, t.warning))
-        else:
-            head_layout.addWidget(self._chip("Gezaagd", t.success_soft, t.success_ink, t.success))
-        if totaal:
-            alles = n < totaal
-            snel = QPushButton("Hele plaat gezaagd" if alles else "Niets gezaagd")
-            snel.setCursor(Qt.CursorShape.PointingHandCursor)
-            snel.setStyleSheet(
-                f"QPushButton {{ color: {t.accent_text}; font-size: 12.5px; font-weight: 600; background: transparent;"
-                " border: none; padding: 0 0 0 6px; }"
-            )
-            sleutels = {(p.onderdeel_id, p.instantie) for p in plan.resultaat.plaatsingen}
-            snel.clicked.connect(lambda _=False, i=index, k=sleutels, a=alles: self._zet_gezaagd(i, k, a))
-            head_layout.addWidget(snel)
+        # Zaagstatus + "Hele plaat gezaagd" in een eigen houder: afvinken
+        # werkt alleen dit stukje bij (zie _werk_plaat_bij), niet de kaart.
+        status = QWidget()
+        status_layout = QHBoxLayout(status)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
+        head_layout.addWidget(status)
         layout.addWidget(head)
 
         plate_wrap = QFrame()
@@ -4904,7 +4941,12 @@ class ProjectDetailPage(QWidget):
         if plan.resultaat.niet_geplaatst:
             layout.addWidget(self._bouw_niet_geplaatst_banner(plan))
 
-        layout.addWidget(self._bouw_onderdelen_tabel(plan, index))
+        rijen: list[tuple[_Vinkje, list[QLabel]]] = []
+        layout.addWidget(self._bouw_onderdelen_tabel(plan, index, rijen))
+        while len(self._zp_plaat_refs) <= index:
+            self._zp_plaat_refs.append({})
+        self._zp_plaat_refs[index] = {"tekening": plaat_widget, "status": status_layout, "rijen": rijen}
+        self._vul_plaat_status(index)
         layout.addWidget(self._bouw_zaagplan_footer(plan))
 
         return kaart
@@ -4968,7 +5010,9 @@ class ProjectDetailPage(QWidget):
 
         return wrapper
 
-    def _bouw_onderdelen_tabel(self, plan: PlaatZaagplan, index: int) -> QTableWidget:
+    def _bouw_onderdelen_tabel(
+        self, plan: PlaatZaagplan, index: int, rijen: list[tuple["_Vinkje", list[QLabel]]] | None = None
+    ) -> QTableWidget:
         # Eén regel per onderdeel-exemplaar, zodat elk stuk los als gezaagd
         # af te vinken is (mockup deel-opnieuw-genereren-concept.html). De
         # "Nr"-kolom toont hetzelfde positienummer als het bolletje op de
@@ -5021,12 +5065,18 @@ class ProjectDetailPage(QWidget):
             tabel.setCellWidget(row, 0, cel)
 
             waarden = [str(row + 1), naam, f"{p.breedte:g} × {p.hoogte:g}", kantenband]
+            labels: list[QLabel] = []
             for col, tekst in enumerate(waarden, start=1):
                 cel_tekst = self._cel_tekst(tekst)
-                if is_gezaagd:
-                    cel_tekst.setStyleSheet(f"color: {self._theme.text_muted};")
+                label = cel_tekst.findChild(QLabel)
+                # Grijs via de stylesheet-regel QLabel[gezaagd="true"]: een
+                # eigen setStyleSheet per cel is traag onder de app-stylesheet.
+                label.setProperty("gezaagd", is_gezaagd)
+                labels.append(label)
                 tabel.setCellWidget(row, col, cel_tekst)
             tabel.setCellWidget(row, 5, self._cel_herkomst(herkomst))
+            if rijen is not None:
+                rijen.append((vinkje, labels))
 
         aantal_rijen = max(1, len(plaatsingen))
         header_hoogte = header.sizeHint().height()
