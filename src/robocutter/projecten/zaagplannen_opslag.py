@@ -147,6 +147,15 @@ class ZaagplannenOpslag:
         )
         self._db.commit()
 
+    def werk_plannen_bij(self, project_id: str, plannen: list[PlaatZaagplan]) -> None:
+        """Alleen de platen opnieuw wegschrijven (bv. na gezaagd afvinken);
+        herkomst en tijdstip van genereren blijven staan."""
+        self._db.execute(
+            "UPDATE zaagplannen SET plannen = ? WHERE project_id = ?",
+            (json.dumps([_plan_naar_dict(p) for p in plannen]), project_id),
+        )
+        self._db.commit()
+
     def verwijderen(self, project_id: str) -> None:
         self._db.execute("DELETE FROM zaagplannen WHERE project_id = ?", (project_id,))
         self._db.commit()
@@ -291,6 +300,10 @@ def _plan_naar_dict(p: PlaatZaagplan) -> dict:
         "platen_totaal": p.platen_totaal,
         "onderdeel_info": {k: _onderdeel_info_naar_dict(v) for k, v in p.onderdeel_info.items()},
         "reststuk_id": p.reststuk_id,
+        "revisie": p.revisie,
+        "gezaagd": sorted([oid, inst] for oid, inst in p.gezaagd),
+        "bijwerking": p.bijwerking,
+        "toegevoegd": sorted([oid, inst] for oid, inst in p.toegevoegd),
     }
 
 
@@ -303,4 +316,8 @@ def _dict_naar_plan(d: dict) -> PlaatZaagplan:
         platen_totaal=d["platen_totaal"],
         onderdeel_info={k: _dict_naar_onderdeel_info(v) for k, v in d["onderdeel_info"].items()},
         reststuk_id=d.get("reststuk_id"),
+        revisie=d.get("revisie", ""),
+        gezaagd={(oid, int(inst)) for oid, inst in d.get("gezaagd", [])},
+        bijwerking=d.get("bijwerking", ""),
+        toegevoegd={(oid, int(inst)) for oid, inst in d.get("toegevoegd", [])},
     )

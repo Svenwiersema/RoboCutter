@@ -1,0 +1,385 @@
+<title>Zaagplan bijwerken tijdens productie</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: één kolom met vier stappen (afvinken, bijwerken, resultaat, documenten), zoals de
+     andere RoboCutter-mockups. Tokens = theme.py (licht/donker). Papier is wit in beide thema's. */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF; --accent-soft-border:#CDD6FF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --critical:#C74F4F; --critical-soft:#FBEAEA; --critical-ink:#8E2F2F;
+    --indigo:#7B6FE0; --indigo-soft:#EFEDFB;
+    --part:#EEF2F6; --part-line:#C3CBD6; --part-done:#DCE3EC; --offcut:#E3F3E9; --offcut-ink:#2E7D46; --cut:#C0392B;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --critical:#E57373; --critical-soft:#3A2020; --critical-ink:#F3B5B5;
+      --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+      --part:#2E3442; --part-line:#4A5266; --part-done:#3A4254; --offcut:#1F3529; --offcut-ink:#8FD8A9; --cut:#E57373;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52; --accent-soft-border:#40447A;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --critical:#E57373; --critical-soft:#3A2020; --critical-ink:#F3B5B5;
+    --indigo:#A79CFF; --indigo-soft:#2C2A4D;
+    --part:#2E3442; --part-line:#4A5266; --part-done:#3A4254; --offcut:#1F3529; --offcut-ink:#8FD8A9; --cut:#E57373;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .view{max-width:1180px;margin:0 auto;padding:24px 16px 48px;display:flex;flex-direction:column;gap:24px;}
+  h1{font-size:22px;font-weight:800;margin:0 0 4px;text-wrap:balance;}
+  .lead{color:var(--text-muted);font-size:13px;line-height:1.55;margin:0;max-width:75ch;}
+
+  .stap{display:flex;flex-direction:column;gap:10px;}
+  .stap-kop{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .stap-nr{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent-text);}
+  .stap-titel{font-size:15px;font-weight:700;}
+  .stap-sub{color:var(--text-muted);font-size:12.5px;}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;}
+  .btn-primary{background:var(--accent);color:#12141B;}
+  .btn-primary:disabled{opacity:0.45;cursor:not-allowed;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+  .btn-sm{padding:6px 11px;font-size:12.5px;}
+  .btn:focus-visible,.chk:focus-visible,.seg:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .doc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--border);}
+  .doc-head .grow{flex:1;min-width:200px;}
+  .tag{font-weight:800;font-size:13px;letter-spacing:0.4px;}
+  .meta{color:var(--text-muted);font-size:12.5px;}
+  .rev-tag{font-family:var(--mono);font-size:11px;font-weight:700;border:1px solid var(--border);border-radius:8px;padding:2px 8px;background:var(--surface);}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;border-radius:10px;padding:3px 9px;white-space:nowrap;}
+  .chip .dot{width:7px;height:7px;border-radius:4px;}
+  .chip.open{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);}
+  .chip.open .dot{background:var(--text-faint);}
+  .chip.deels{background:var(--warning-soft);color:var(--warning-ink);}
+  .chip.deels .dot{background:var(--warning);}
+  .chip.klaar{background:var(--success-soft);color:var(--success-ink);}
+  .chip.klaar .dot{background:var(--success);}
+  .chip.nieuw{background:var(--accent-soft);color:var(--accent-text);}
+  .chip.nieuw .dot{background:var(--accent);}
+  .chip.niet{background:var(--critical-soft);color:var(--critical-ink);}
+  .chip.niet .dot{background:var(--critical);}
+
+  .plaat-rij{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:0;}
+  @media (max-width:820px){.plaat-rij{grid-template-columns:minmax(0,1fr);}}
+  .plaat-wrap{padding:16px;border-right:1px solid var(--border);display:flex;align-items:center;justify-content:center;background:var(--surface-2);}
+  @media (max-width:820px){.plaat-wrap{border-right:none;border-bottom:1px solid var(--border);}}
+  .plaat-wrap svg{width:100%;max-width:520px;height:auto;display:block;}
+  .tabel-wrap{overflow-x:auto;min-width:0;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th{text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:0.4px;text-transform:uppercase;padding:9px 10px;border-bottom:1px solid var(--border);background:var(--surface-2);white-space:nowrap;}
+  td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  td.num{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;}
+  tr.gezaagd td:not(:first-child){color:var(--text-muted);}
+  .chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--text-faint);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+  .chk[aria-checked="true"]{background:var(--success);border-color:var(--success);}
+  .chk[aria-checked="true"]::after{content:"";width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px);}
+  .tabel-voet{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);font-size:12.5px;}
+  .tabel-voet .grow{flex:1;min-width:160px;}
+  .link{color:var(--accent-text);font-weight:600;background:none;border:none;padding:0;font:inherit;cursor:pointer;}
+
+  .banner{border:1px solid var(--critical);background:var(--critical-soft);border-radius:10px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;color:var(--critical-ink);}
+  .banner .grow{flex:1;min-width:240px;font-size:12.5px;line-height:1.5;}
+  .banner ul{margin:6px 0 0;padding-left:18px;}
+
+  /* Bijwerk-paneel */
+  .paneel{border:1px solid var(--accent-soft-border);}
+  .paneel-kop{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:14px 18px 12px;border-bottom:1px solid var(--border);}
+  .paneel-kop h3{margin:0;font-size:15px;font-weight:700;}
+  .groepen{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:0;}
+  .groep{padding:14px 18px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .groep h4{margin:0;font-size:12px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--text-muted);display:flex;align-items:center;gap:8px;}
+  .groep h4 .n{font-family:var(--mono);color:var(--text);}
+  .regel{display:flex;gap:8px;align-items:baseline;font-size:12.5px;line-height:1.45;}
+  .regel .naam{font-weight:600;}
+  .regel .sub{color:var(--text-muted);}
+  .regel .maat{font-family:var(--mono);font-size:11.5px;color:var(--text-muted);margin-left:auto;white-space:nowrap;}
+  .overbodig{padding:14px 18px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--border);background:var(--warning-soft);}
+  .overbodig h4{margin:0;font-size:12px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--warning-ink);}
+  .ob-rij{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:9px 12px;}
+  .ob-rij .grow{flex:1;min-width:200px;font-size:12.5px;}
+  .ob-rij .sub{color:var(--text-muted);}
+  .segmented{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px;}
+  .seg{border:none;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--text-muted);padding:6px 12px;border-radius:7px;cursor:pointer;}
+  .seg[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,0.1);}
+  .paneel-voet{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px;}
+  .paneel-voet .grow{flex:1;min-width:200px;color:var(--text-muted);font-size:12.5px;}
+  .paneel-voet .grow b{color:var(--warning-ink);}
+
+  /* Resultaat */
+  .platen{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;}
+  .mini{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
+  .mini-kop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--border);}
+  .mini-kop .grow{flex:1;min-width:0;font-weight:700;}
+  .mini svg{width:100%;height:auto;display:block;background:var(--surface-2);}
+  .mini-voet{padding:8px 12px;color:var(--text-muted);font-size:12px;border-top:1px solid var(--border);}
+  .mini.vervallen{opacity:0.55;border-style:dashed;}
+
+  .uitleg{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+  .uitleg div{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--text-muted);line-height:1.5;}
+  .uitleg b{color:var(--text);}
+  .note{background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:10px 14px;color:var(--text-muted);font-size:12.5px;line-height:1.55;}
+  .note b{color:var(--text);}
+  .note ol,.note ul{margin:6px 0 0;padding-left:20px;}
+  .export-rij{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+
+  svg text{font-family:var(--mono);}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;}}
+</style>
+
+<div class="view">
+  <div>
+    <h1>Zaagplan bijwerken tijdens productie</h1>
+    <p class="lead">Als er al gezaagd is en de klant wil toch iets anders, genereer je niet het hele zaagplan opnieuw. Je vinkt per onderdeel af wat gezaagd is. Platen waar al iets uit gezaagd is blijven staan, de rest wordt opnieuw verdeeld, en reststukken van gezaagde platen mogen meedoen.</p>
+  </div>
+
+  <!-- STAP 1 -->
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">1</span><span class="stap-titel">Gezaagd afvinken</span><span class="stap-sub">Zaagplannen-paneel, per plaat. Eén regel per onderdeel; klik op het vinkje of op het onderdeel in de tekening.</span></div>
+    <div class="card">
+      <div class="doc-head">
+        <span class="tag">ZAAGPLAN</span>
+        <span>Wit meubelpaneel 18mm</span>
+        <span class="meta">2800 × 2070 mm · Plaat 1 van 3</span>
+        <span class="grow"></span>
+        <span class="chip deels" id="plaat1-chip"><span class="dot"></span><span id="plaat1-chip-tekst">Aangezaagd · 3 van 6</span></span>
+      </div>
+      <div class="plaat-rij">
+        <div class="plaat-wrap">
+          <svg id="plaat1" viewBox="0 0 560 414" role="img" aria-label="Plaat 1 met zes onderdelen, drie gezaagd">
+            <defs>
+              <pattern id="arcering" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="8" height="8" fill="var(--part-done)"/>
+                <line x1="0" y1="0" x2="0" y2="8" stroke="var(--part-line)" stroke-width="2"/>
+              </pattern>
+            </defs>
+            <rect x="0.5" y="0.5" width="559" height="413" fill="var(--surface)" stroke="var(--part-line)"/>
+            <!-- reststuk boven -->
+            <rect x="1" y="1" width="558" height="187" fill="var(--offcut)"/>
+            <text x="280" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="var(--offcut-ink)">R1</text>
+            <text x="280" y="108" text-anchor="middle" font-size="11" fill="var(--offcut-ink)">2800×944</text>
+          </svg>
+        </div>
+        <div class="tabel-wrap">
+          <table>
+            <thead><tr><th scope="col">Gezaagd</th><th scope="col">Nr</th><th scope="col">Onderdeel</th><th scope="col">Afmeting</th><th scope="col">Herkomst</th></tr></thead>
+            <tbody id="plaat1-tabel"></tbody>
+          </table>
+          <div class="tabel-voet">
+            <span class="grow" id="plaat1-voet">3 van 6 onderdelen gezaagd</span>
+            <button class="link" type="button" id="alles-gezaagd">Hele plaat gezaagd</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="uitleg">
+      <div><b>Plaatstatus:</b> <span class="chip open"><span class="dot"></span>Niet aangezaagd</span> zolang er niets is afgevinkt, <span class="chip deels"><span class="dot"></span>Aangezaagd</span> zodra er één onderdeel gezaagd is, <span class="chip klaar"><span class="dot"></span>Gezaagd</span> als alles klaar is.</div>
+      <div><b>Eén regel per onderdeel.</b> Nu staan gelijke onderdelen samen op één regel (“Nr 1, 2, 3, 4”). Om per stuk te kunnen afvinken krijgt elk stuk een eigen regel. Het afvinken wordt meteen bewaard, met de groene melding in de voettekst.</div>
+    </div>
+  </section>
+
+  <!-- STAP 2 -->
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">2</span><span class="stap-titel">Revisie tijdens productie: bijwerken</span><span class="stap-sub">De rode balk van “Niet gecontroleerd”. Is er al iets gezaagd, dan wordt “Opnieuw genereren” “Zaagplan bijwerken”.</span></div>
+    <div class="banner">
+      <div class="grow"><b>Niet gecontroleerd.</b> De samenstelling is veranderd sinds dit zaagplan gemaakt is:
+        <ul><li>Onderkast 60cm: aantal 3 → 2</li><li>Los onderdeel toegevoegd: Passtuk links</li></ul>
+      </div>
+      <button class="btn btn-primary btn-sm" type="button">Zaagplan bijwerken…</button>
+    </div>
+    <div class="card paneel">
+      <div class="paneel-kop">
+        <h3>Zaagplan bijwerken naar Rev B</h3>
+        <span class="meta">Wat er gebeurt, voordat er iets verandert. Niets wordt opgeslagen tot je op Bijwerken klikt.</span>
+      </div>
+      <div class="groepen">
+        <div class="groep">
+          <h4><span class="chip deels"><span class="dot"></span>Blijft staan</span><span class="n">1 plaat</span></h4>
+          <div class="regel"><span class="naam">Plaat 1</span><span class="sub">3 van 6 gezaagd</span><span class="maat">2800×2070</span></div>
+          <div class="regel"><span class="sub">De niet-gezaagde onderdelen blijven op hun plek en worden nog uit deze plaat gezaagd.</span></div>
+        </div>
+        <div class="groep">
+          <h4><span class="chip nieuw"><span class="dot"></span>Opnieuw verdeeld</span><span class="n">2 platen</span></h4>
+          <div class="regel"><span class="naam">Plaat 2, Plaat 3</span><span class="sub">nog niets gezaagd</span></div>
+          <div class="regel"><span class="naam">+ Passtuk links</span><span class="sub">nieuw</span><span class="maat">120×720</span></div>
+          <div class="regel"><span class="naam">− 2 onderdelen</span><span class="sub">van Onderkast 60cm, vervallen</span></div>
+        </div>
+        <div class="groep">
+          <h4><span class="chip klaar"><span class="dot"></span>Mag gebruikt</span><span class="n">3 reststukken</span></h4>
+          <div class="regel"><span class="naam">R1</span><span class="sub">van plaat 1</span><span class="maat">2800×944</span></div>
+          <div class="regel"><span class="naam">R2</span><span class="sub">van plaat 1</span><span class="maat">631×560</span></div>
+          <div class="regel"><span class="naam">R5</span><span class="sub">vrijgekomen plek, Bodem vervalt</span><span class="maat">564×540</span></div>
+        </div>
+      </div>
+      <div class="overbodig">
+        <h4>Gezaagd, maar niet meer nodig</h4>
+        <div class="ob-rij">
+          <div class="grow"><b>Zijwand</b> <span class="sub">· 720 × 560 · Onderkast 60cm · plaat 1, nr 3</span></div>
+          <div class="segmented" role="group" aria-label="Wat gebeurt er met Zijwand nr 3">
+            <button class="seg" type="button" aria-pressed="false" data-keuze="bewaren">Bewaren als reststuk</button>
+            <button class="seg" type="button" aria-pressed="false" data-keuze="afschrijven">Afschrijven</button>
+          </div>
+        </div>
+      </div>
+      <div class="paneel-voet">
+        <span class="grow" id="bijwerk-hint"><b>Kies eerst bij 1 onderdeel wat ermee gebeurt.</b></span>
+        <button class="btn btn-ghost btn-sm" type="button">Annuleren</button>
+        <button class="btn btn-primary btn-sm" type="button" id="btn-bijwerken" disabled>Bijwerken</button>
+      </div>
+    </div>
+    <div class="uitleg">
+      <div><b>Waarom blijft plaat 1 helemaal staan?</b> Een aangezaagde plaat ligt al open op de zaag. De onderdelen die er nog uit moeten, staan op de juiste plek. Alleen wat vervalt gaat eruit; die plek wordt een reststuk.</div>
+      <div><b>Reststukken van gezaagde platen</b> bestaan echt en houden hun code en label. De nieuwe verdeling probeert ze eerst, zoals nu ook met reststukken uit de bibliotheek.</div>
+      <div><b>Gezaagd maar niet meer nodig:</b> per stuk kies je bewaren (wordt een projectreststuk met status Bewaren, krijgt een reststuk-label) of afschrijven. Bijwerken kan pas als alles een keuze heeft.</div>
+    </div>
+  </section>
+
+  <!-- STAP 3 -->
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">3</span><span class="stap-titel">Na bijwerken</span><span class="stap-sub">Het zaagplan is weer gecontroleerd. Elke plaat laat zien of hij gebleven of nieuw is.</span></div>
+    <div class="card">
+      <div class="doc-head">
+        <div class="grow"><div style="font-weight:700;font-size:15px">Zaagplannen</div><div class="meta">3 platen · strategie Horizontaal · bijgewerkt 2026-10-21 14:05</div></div>
+        <span class="rev-tag">Rev B</span>
+        <span class="chip klaar"><span class="dot"></span>Gecontroleerd</span>
+      </div>
+      <div style="padding:16px">
+        <div class="platen">
+          <div class="mini">
+            <div class="mini-kop"><span class="grow">Plaat 1</span><span class="chip deels"><span class="dot"></span>Aangezaagd · gebleven</span></div>
+            <svg viewBox="0 0 280 207" aria-hidden="true"><rect x="1" y="1" width="278" height="205" fill="var(--surface)" stroke="var(--part-line)"/><rect x="2" y="2" width="276" height="92" fill="var(--offcut)"/><rect x="2" y="96" width="70" height="54" fill="url(#arcering)" stroke="var(--part-line)"/><rect x="74" y="96" width="56" height="54" fill="var(--part)" stroke="var(--part-line)"/><rect x="132" y="96" width="56" height="54" fill="var(--offcut)"/><rect x="2" y="152" width="70" height="53" fill="url(#arcering)" stroke="var(--part-line)"/><rect x="74" y="152" width="70" height="53" fill="url(#arcering)" stroke="var(--part-line)"/><rect x="146" y="152" width="70" height="53" fill="var(--offcut)"/><rect x="218" y="96" width="60" height="109" fill="var(--offcut)"/></svg>
+            <div class="mini-voet">Rev A · 4 nog te zagen · 1 vervallen plek is R5</div>
+          </div>
+          <div class="mini">
+            <div class="mini-kop"><span class="grow">Plaat 2</span><span class="chip nieuw"><span class="dot"></span>Nieuw in Rev B</span></div>
+            <svg viewBox="0 0 280 207" aria-hidden="true"><rect x="1" y="1" width="278" height="205" fill="var(--surface)" stroke="var(--part-line)"/><rect x="2" y="2" width="72" height="56" fill="var(--part)" stroke="var(--part-line)"/><rect x="76" y="2" width="72" height="56" fill="var(--part)" stroke="var(--part-line)"/><rect x="150" y="2" width="56" height="54" fill="var(--part)" stroke="var(--part-line)"/><rect x="208" y="2" width="12" height="72" fill="var(--part)" stroke="var(--part-line)"/><rect x="2" y="60" width="204" height="40" fill="var(--part)" stroke="var(--part-line)"/><rect x="2" y="102" width="276" height="103" fill="var(--offcut)"/></svg>
+            <div class="mini-voet">Rev B · 5 onderdelen · benutting 54%</div>
+          </div>
+          <div class="mini vervallen">
+            <div class="mini-kop"><span class="grow">Plaat 3</span><span class="chip open"><span class="dot"></span>Vervalt</span></div>
+            <svg viewBox="0 0 280 207" aria-hidden="true"><rect x="1" y="1" width="278" height="205" fill="var(--surface-2)" stroke="var(--part-line)" stroke-dasharray="4 3"/></svg>
+            <div class="mini-voet">Niet meer nodig: alles past op plaat 2 en de reststukken van plaat 1.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note">Platen houden hun nummer als ze blijven staan. Nieuwe platen krijgen het volgende vrije nummer, zodat “Plaat 1” op papier en in de werkplaats hetzelfde blijft. Een plaat die niet meer nodig is, valt weg.</div>
+  </section>
+
+  <!-- STAP 4 -->
+  <section class="stap">
+    <div class="stap-kop"><span class="stap-nr">4</span><span class="stap-titel">Documenten na bijwerken</span><span class="stap-sub">Alleen opnieuw printen wat veranderd is.</span></div>
+    <div class="card">
+      <div class="doc-head">
+        <div class="grow"><div style="font-weight:700">Exporteren</div><div class="meta">Na een bijwerking staat “alleen wat veranderd is” voorgeselecteerd.</div></div>
+        <div class="export-rij">
+          <button class="btn btn-ghost btn-sm" type="button">Alles + zaaglijst als PDF</button>
+          <button class="btn btn-primary btn-sm" type="button">Alleen nieuwe platen als PDF (1)</button>
+        </div>
+      </div>
+      <div class="doc-head" style="border-bottom:none">
+        <div class="grow"><div style="font-weight:700">Labels</div><div class="meta">Labels van onderdelen op plaat 1 blijven geldig (zelfde scancode).</div></div>
+        <div class="export-rij">
+          <button class="btn btn-ghost btn-sm" type="button">Alle labels als PDF</button>
+          <button class="btn btn-primary btn-sm" type="button">5 nieuwe labels als PDF</button>
+        </div>
+      </div>
+    </div>
+    <div class="uitleg">
+      <div><b>Revisie per plaat:</b> in de kop en voet van de PDF staat de revisie waarin díe plaat gemaakt is. Plaat 1 blijft “Rev A”, plaat 2 krijgt “Rev B”.</div>
+      <div><b>Reststuk-labels:</b> een gezaagd onderdeel dat je bewaart als reststuk krijgt een reststuk-label in het Labels-paneel, onder Reststukken.</div>
+    </div>
+  </section>
+
+  <div class="note"><b>Open punten om samen te beslissen</b>
+    <ol>
+      <li>Afvinken kan in elke projectstatus, maar het bijwerk-paneel verschijnt alleen als er iets gezaagd is. Zonder vinkjes blijft “Opnieuw genereren” werken zoals nu.</li>
+      <li>Een onderdeel dat van maat verandert en al gezaagd is, behandelen we als “vervallen + nieuw”. Het oude stuk komt in de lijst “gezaagd, maar niet meer nodig”. Later kan het programma voorstellen het kleinere stuk uit het oude te zagen.</li>
+      <li>Later kan afvinken ook door de QR-code op het label te scannen.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  // Plaat 1: zes onderdelen; drie al gezaagd. Coördinaten in mockup-pixels (0,2 px/mm), y omhoog zoals de app.
+  const onderdelen = [
+    {nr:1, naam:'Zijwand', maat:'720 × 560', herkomst:'Onderkast 60cm', x:1, y:302, b:144, h:111, gezaagd:true},
+    {nr:2, naam:'Zijwand', maat:'720 × 560', herkomst:'Onderkast 60cm', x:147, y:302, b:144, h:111, gezaagd:true},
+    {nr:3, naam:'Zijwand', maat:'720 × 560', herkomst:'Onderkast 60cm', x:293, y:302, b:144, h:111, gezaagd:true},
+    {nr:4, naam:'Zijwand', maat:'720 × 560', herkomst:'Onderkast 60cm', x:1, y:190, b:144, h:110, gezaagd:false},
+    {nr:5, naam:'Bodem', maat:'564 × 540', herkomst:'Onderkast 60cm', x:147, y:190, b:113, h:108, gezaagd:false},
+    {nr:6, naam:'Bodem', maat:'564 × 540', herkomst:'Onderkast 60cm', x:262, y:190, b:113, h:108, gezaagd:false},
+  ];
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('plaat1');
+  const tbody = document.getElementById('plaat1-tabel');
+
+  function maak(tag, attrs){ const el = document.createElementNS(svgNS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); return el; }
+
+  function teken(){
+    svg.querySelectorAll('.od').forEach(el => el.remove());
+    tbody.innerHTML = '';
+    onderdelen.forEach((o, i) => {
+      const g = maak('g', {class:'od', style:'cursor:pointer', tabindex:'-1'});
+      g.appendChild(maak('rect', {x:o.x, y:o.y, width:o.b, height:o.h, fill:o.gezaagd ? 'url(#arcering)' : 'var(--part)', stroke:'var(--part-line)'}));
+      const cx = o.x + o.b/2, cy = o.y + o.h/2;
+      const c = maak('circle', {cx:cx, cy:cy-8, r:10, fill:o.gezaagd ? 'var(--success)' : 'var(--offcut-ink)'});
+      g.appendChild(c);
+      const t = maak('text', {x:cx, y:cy-4, 'text-anchor':'middle', 'font-size':'11', 'font-weight':'700', fill:'#fff'});
+      t.textContent = o.gezaagd ? '✓' : o.nr;
+      g.appendChild(t);
+      const m = maak('text', {x:cx, y:cy+16, 'text-anchor':'middle', 'font-size':'10', fill:'var(--text-muted)'});
+      m.textContent = o.maat.replace(/ /g, '');
+      g.appendChild(m);
+      g.addEventListener('click', () => { o.gezaagd = !o.gezaagd; teken(); });
+      svg.appendChild(g);
+
+      const tr = document.createElement('tr');
+      if (o.gezaagd) tr.className = 'gezaagd';
+      tr.innerHTML = `<td><button class="chk" type="button" role="checkbox" aria-checked="${o.gezaagd}" aria-label="Nr ${o.nr} gezaagd"></button></td>
+        <td class="num">${o.nr}</td><td>${o.naam}</td><td class="num">${o.maat}</td><td>${o.herkomst}</td>`;
+      tr.querySelector('.chk').addEventListener('click', () => { o.gezaagd = !o.gezaagd; teken(); });
+      tbody.appendChild(tr);
+    });
+    // Zaagsnedes (rood gestippeld) boven de onderdelen
+    svg.appendChild(maak('line', {class:'od', x1:0, y1:188, x2:560, y2:188, stroke:'var(--cut)', 'stroke-dasharray':'6 4', 'stroke-width':'1.5'}));
+    svg.appendChild(maak('line', {class:'od', x1:0, y1:301, x2:560, y2:301, stroke:'var(--cut)', 'stroke-dasharray':'6 4', 'stroke-width':'1.5'}));
+    const n = onderdelen.filter(o => o.gezaagd).length;
+    const chip = document.getElementById('plaat1-chip');
+    chip.className = 'chip ' + (n === 0 ? 'open' : n === onderdelen.length ? 'klaar' : 'deels');
+    document.getElementById('plaat1-chip-tekst').textContent =
+      n === 0 ? 'Niet aangezaagd' : n === onderdelen.length ? 'Gezaagd' : `Aangezaagd · ${n} van ${onderdelen.length}`;
+    document.getElementById('plaat1-voet').textContent = `${n} van ${onderdelen.length} onderdelen gezaagd`;
+  }
+  document.getElementById('alles-gezaagd').addEventListener('click', () => { onderdelen.forEach(o => o.gezaagd = true); teken(); });
+  teken();
+
+  // Keuze bij "gezaagd, maar niet meer nodig"
+  const knoppen = document.querySelectorAll('.overbodig .seg');
+  const bijwerken = document.getElementById('btn-bijwerken');
+  const hint = document.getElementById('bijwerk-hint');
+  knoppen.forEach(k => k.addEventListener('click', () => {
+    knoppen.forEach(x => x.setAttribute('aria-pressed', String(x === k)));
+    bijwerken.disabled = false;
+    hint.textContent = k.dataset.keuze === 'bewaren'
+      ? 'Zijwand nr 3 wordt een projectreststuk (Bewaren). Plaat 2 en 3 worden opnieuw verdeeld.'
+      : 'Zijwand nr 3 wordt afgeschreven. Plaat 2 en 3 worden opnieuw verdeeld.';
+  }));
+</script>

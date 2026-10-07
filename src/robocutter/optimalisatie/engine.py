@@ -1058,7 +1058,7 @@ def _pak_rijen(
         rij_grenzen.append((cursor_y, rij_hoogte))
         # Restruimte rechts in de rij (indien nog iets overblijft binnen de rijhoogte).
         if x < x1 - 1e-6:
-            vrije_rechten.append((x - kerf if rij else x, cursor_y, x1 - x, rij_hoogte))
+            vrije_rechten.append((x, cursor_y, x1 - x, rij_hoogte))
 
         volgende_y = cursor_y + rij_hoogte + kerf
         resterend = overig_na_rij

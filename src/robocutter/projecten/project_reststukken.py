@@ -183,44 +183,30 @@ class ProjectReststukkenBibliotheek:
         return next((r.vrijgegeven_op for r in self.lijst(project_id) if r.vrijgegeven_op is not None), None)
 
     # -- vullen --------------------------------------------------------
-    def overnemen_uit_zaagplan(self, project_id: str, plannen: list[PlaatZaagplan]) -> list[ProjectReststuk]:
+    def overnemen_uit_zaagplan(
+        self, project_id: str, plannen: list[PlaatZaagplan], behoud_gebleven: bool = False
+    ) -> list[ProjectReststuk]:
         """Vervangt de reststukken uit het (vorige) zaagplan door die uit
         ``plannen``; handmatig toegevoegde blijven staan en schuiven in de
-        nummering achter de zaagplan-stukken."""
+        nummering achter de zaagplan-stukken.
+
+        ``behoud_gebleven`` (na "zaagplan bijwerken"): reststukken op platen
+        die bleven staan (``bijwerking == "gebleven"``) en nog op dezelfde
+        plek liggen, houden hun id, code, status en aanpassingen — die
+        liggen er echt en hebben misschien al een label. Nieuwe stukken
+        krijgen de volgende vrije nummers; niets schuift op."""
 
         self._controleer_niet_vrijgegeven(project_id)
         oud = self.lijst(project_id)
+        if behoud_gebleven:
+            return self._overnemen_met_behoud(project_id, plannen, oud)
         for r in oud:
             if r.bron == ProjectReststukBron.ZAAGPLAN:
                 self._verwijder(r.id)
         volgnummer = 1
         for plan in plannen:
-            mat = plan.resultaat.materiaal
             for rest in plan.resultaat.reststukken:
-                item = ProjectReststuk(
-                    id=uuid.uuid4().hex[:8],
-                    project_id=project_id,
-                    volgnummer=volgnummer,
-                    materiaal_id=plan.materiaal_id,
-                    lengte=rest.breedte,
-                    breedte=rest.hoogte,
-                    bron=ProjectReststukBron.ZAAGPLAN,
-                    plaat_nummer=plan.plaat_nummer,
-                    platen_totaal=plan.platen_totaal,
-                    plaat_lengte=mat.lengte,
-                    plaat_breedte=mat.breedte,
-                    x=rest.x,
-                    y=rest.y,
-                    oorspronkelijke_lengte=rest.breedte,
-                    oorspronkelijke_breedte=rest.hoogte,
-                    uit_bibliotheek_reststuk=plan.is_reststuk,
-                    fabriekskantenband_randen=_fabrieksranden_van(
-                        rest.x, rest.y, rest.breedte, rest.hoogte, mat.lengte, mat.breedte,
-                        mat.fabriekskantenband_randen,
-                    ),
-                )
-                self._items[item.id] = item
-                self._persisteer(item)
+                self._nieuw_uit_zaagplan(project_id, plan, rest, volgnummer)
                 volgnummer += 1
         for r in oud:
             if r.bron == ProjectReststukBron.HANDMATIG:
@@ -228,6 +214,67 @@ class ProjectReststukkenBibliotheek:
                 self._persisteer(r)
                 volgnummer += 1
         return self.lijst(project_id)
+
+    def _overnemen_met_behoud(
+        self, project_id: str, plannen: list[PlaatZaagplan], oud: list[ProjectReststuk]
+    ) -> list[ProjectReststuk]:
+        def plek(materiaal_id, plaat_nummer, uit_bib, x, y, lengte, breedte) -> tuple:
+            return (materiaal_id, plaat_nummer, uit_bib, round(x, 3), round(y, 3), round(lengte, 3), round(breedte, 3))
+
+        bestaand = {
+            plek(r.materiaal_id, r.plaat_nummer, r.uit_bibliotheek_reststuk, r.x, r.y,
+                 r.oorspronkelijke_lengte or 0.0, r.oorspronkelijke_breedte or 0.0): r
+            for r in oud
+            if r.bron == ProjectReststukBron.ZAAGPLAN
+        }
+        behouden: set[str] = set()
+        nieuw: list[tuple[PlaatZaagplan, object]] = []
+        for plan in plannen:
+            for rest in plan.resultaat.reststukken:
+                sleutel = plek(plan.materiaal_id, plan.plaat_nummer, plan.is_reststuk, rest.x, rest.y, rest.breedte, rest.hoogte)
+                r = bestaand.get(sleutel) if plan.bijwerking == "gebleven" else None
+                if r is not None and r.id not in behouden:
+                    behouden.add(r.id)
+                    r.platen_totaal = plan.platen_totaal
+                    self._persisteer(r)
+                else:
+                    nieuw.append((plan, rest))
+        for r in oud:
+            if r.bron == ProjectReststukBron.ZAAGPLAN and r.id not in behouden:
+                self._verwijder(r.id)
+        volgnummer = max((r.volgnummer for r in self.lijst(project_id)), default=0) + 1
+        for plan, rest in nieuw:
+            self._nieuw_uit_zaagplan(project_id, plan, rest, volgnummer)
+            volgnummer += 1
+        return self.lijst(project_id)
+
+    def _nieuw_uit_zaagplan(self, project_id: str, plan: PlaatZaagplan, rest, volgnummer: int) -> ProjectReststuk:
+        mat = plan.resultaat.materiaal
+        item = ProjectReststuk(
+            id=uuid.uuid4().hex[:8],
+            project_id=project_id,
+            volgnummer=volgnummer,
+            materiaal_id=plan.materiaal_id,
+            lengte=rest.breedte,
+            breedte=rest.hoogte,
+            bron=ProjectReststukBron.ZAAGPLAN,
+            plaat_nummer=plan.plaat_nummer,
+            platen_totaal=plan.platen_totaal,
+            plaat_lengte=mat.lengte,
+            plaat_breedte=mat.breedte,
+            x=rest.x,
+            y=rest.y,
+            oorspronkelijke_lengte=rest.breedte,
+            oorspronkelijke_breedte=rest.hoogte,
+            uit_bibliotheek_reststuk=plan.is_reststuk,
+            fabriekskantenband_randen=_fabrieksranden_van(
+                rest.x, rest.y, rest.breedte, rest.hoogte, mat.lengte, mat.breedte,
+                mat.fabriekskantenband_randen,
+            ),
+        )
+        self._items[item.id] = item
+        self._persisteer(item)
+        return item
 
     def toevoegen_handmatig(self, project_id: str, materiaal_id: str, lengte: float, breedte: float) -> ProjectReststuk:
         self._controleer_niet_vrijgegeven(project_id)

@@ -98,10 +98,36 @@ class PlaatZaagplan:
     # Gezaagd uit dit reststuk uit de Reststukkenbibliotheek i.p.v. een
     # volle plaat; plaat_nummer/platen_totaal tellen dan de reststukken.
     reststuk_id: str | None = None
+    # Revisie waarin deze plaatindeling gemaakt is ("" = onbekend/geen).
+    revisie: str = ""
+    # Al gezaagde onderdelen op deze plaat, als (onderdeel_id, instantie)
+    # van hun Plaatsing (zie zaagplan_bijwerken.py).
+    gezaagd: set[tuple[str, int]] = field(default_factory=set)
+    # Na "zaagplan bijwerken": "gebleven" (aangezaagde plaat die bleef
+    # staan) of "nieuw"; "" na een gewone (volledige) generatie.
+    bijwerking: str = ""
+    # Op een gebleven plaat: onderdelen die er bij het bijwerken bij kwamen
+    # (in een reststuk van deze plaat).
+    toegevoegd: set[tuple[str, int]] = field(default_factory=set)
 
     @property
     def is_reststuk(self) -> bool:
         return self.reststuk_id is not None
+
+    @property
+    def aantal_gezaagd(self) -> int:
+        sleutels = {(p.onderdeel_id, p.instantie) for p in self.resultaat.plaatsingen}
+        return len(self.gezaagd & sleutels)
+
+    @property
+    def is_aangezaagd(self) -> bool:
+        return self.aantal_gezaagd > 0
+
+    @property
+    def is_nieuw_bij_bijwerking(self) -> bool:
+        """Na de laatste bijwerking opnieuw te printen: een nieuwe plaat, of
+        een gebleven plaat waar onderdelen bij kwamen."""
+        return self.bijwerking == "nieuw" or bool(self.toegevoegd)
 
     def naam_voor(self, onderdeel_of_unit_id: str) -> str:
         """Zoekt de leesbare naam op voor een ``Plaatsing.onderdeel_id``
@@ -174,6 +200,7 @@ def genereer_zaagplannen_voor_project(
     voortgang: Callable[[ZaagplanVoortgang], None] | None = None,
     zaagsnede: float = 3.0,
     reststukken: list[Reststuk] | None = None,
+    revisie: str = "",
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -197,10 +224,42 @@ def genereer_zaagplannen_voor_project(
         verzoek niet meer per materiaal) — wordt de ``kerf`` van de motor.
     :param reststukken: reststukken die vóór volle platen geprobeerd worden
         (zie de module-docstring); alleen die met hetzelfde ``materiaal_id``
-        tellen per materiaal."""
+        tellen per materiaal.
+    :param revisie: komt op elke plaat (``PlaatZaagplan.revisie``)."""
+
+    return _genereer_voor_regels(
+        bouw_zaaglijst(project),
+        materialen,
+        strategie=strategie,
+        zoek_tijdsbudget=zoek_tijdsbudget,
+        min_zoek_tijdsbudget=min_zoek_tijdsbudget,
+        voortgang=voortgang,
+        zaagsnede=zaagsnede,
+        reststukken=reststukken,
+        revisie=revisie,
+    )
+
+
+def _genereer_voor_regels(
+    regels_alle: list[ZaaglijstRegel],
+    materialen: MaterialenBibliotheek,
+    strategie: str = "horizontaal",
+    zoek_tijdsbudget: float = 0.0,
+    min_zoek_tijdsbudget: float = 0.0,
+    voortgang: Callable[[ZaagplanVoortgang], None] | None = None,
+    zaagsnede: float = 3.0,
+    reststukken: list[Reststuk] | None = None,
+    revisie: str = "",
+    id_voorvoegsel: str = "r",
+) -> tuple[list[PlaatZaagplan], list[str]]:
+    """Zie ``genereer_zaagplannen_voor_project``; werkt op een losse lijst
+    zaaglijstregels (ook gebruikt door ``zaagplan_bijwerken``, die alleen
+    het nog niet gedekte deel laat genereren). ``id_voorvoegsel`` maakt de
+    onderdeel-id's (en dus de label-scancodes) uniek t.o.v. platen die bij
+    een bijwerking blijven staan."""
 
     per_materiaal: dict[str, list[ZaaglijstRegel]] = {}
-    for regel in bouw_zaaglijst(project):
+    for regel in regels_alle:
         per_materiaal.setdefault(regel.onderdeel.materiaal_id, []).append(regel)
 
     plannen: list[PlaatZaagplan] = []
@@ -221,7 +280,7 @@ def genereer_zaagplannen_voor_project(
         onderdeel_info: dict[str, OnderdeelInfo] = {}
         opt_onderdelen: list[OptOnderdeel] = []
         for i, regel in enumerate(regels):
-            oid = f"r{i}"
+            oid = f"{id_voorvoegsel}{i}"
             onderdeel_info[oid] = OnderdeelInfo(
                 naam=regel.onderdeel.naam,
                 herkomst=regel.herkomst,
@@ -289,6 +348,7 @@ def genereer_zaagplannen_voor_project(
                 resultaat=replace(resultaat, niet_geplaatst=[], niet_geplaatst_redenen={}),
                 onderdeel_info=onderdeel_info,
                 reststuk_id=reststuk.id,
+                revisie=revisie,
             )
             for reststuk, resultaat in verdeling
         ]
@@ -317,6 +377,7 @@ def genereer_zaagplannen_voor_project(
                     plaat_nummer=i,
                     platen_totaal=len(resultaten),
                     onderdeel_info=onderdeel_info,
+                    revisie=revisie,
                 )
             )
 

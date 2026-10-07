@@ -59,26 +59,42 @@ class OnderdeelLabel:
     kantenband_randen: frozenset[Rand]
     nerfrichting_vereist: Nerfrichting
     fabriekskantenband_vereist: bool
+    # Revisie van de plaat waar dit onderdeel op ligt ("" = onbekend).
+    revisie: str = ""
 
     @property
     def afmeting_tekst(self) -> str:
         return f"{self.breedte:g} × {self.hoogte:g} mm"
 
 
-def genereer_labels_voor_project(project: Project, plannen: list[PlaatZaagplan]) -> list[OnderdeelLabel]:
+def genereer_labels_voor_project(
+    project: Project, plannen: list[PlaatZaagplan], alleen_nieuw: bool = False
+) -> list[OnderdeelLabel]:
     """Eén label per ``Plaatsing`` in ``plannen`` (het resultaat van
     ``zaagplannen.genereer_zaagplannen_voor_project``) — dus inclusief
     dubbele exemplaren van hetzelfde onderdeel, want elk exemplaar wordt
-    fysiek apart uitgezaagd en moet dus ook een eigen label krijgen."""
+    fysiek apart uitgezaagd en moet dus ook een eigen label krijgen.
+
+    De scancode bevat de plaat (``P2``, of ``R1`` voor een reststuk): de
+    motor nummert de exemplaren per plaat opnieuw vanaf 1. Na "zaagplan
+    bijwerken" houden blijvende platen hun nummer, dus hun labels blijven
+    geldig. ``alleen_nieuw``: alleen onderdelen die bij de laatste
+    bijwerking nieuw zijn (nieuwe plaat, of erbij gekomen op een gebleven
+    plaat)."""
 
     labels: list[OnderdeelLabel] = []
     for plan in plannen:
+        plaat = f"{'R' if plan.is_reststuk else 'P'}{plan.plaat_nummer}"
         for plaatsing in plan.resultaat.plaatsingen:
+            if alleen_nieuw and not (
+                plan.bijwerking == "nieuw" or (plaatsing.onderdeel_id, plaatsing.instantie) in plan.toegevoegd
+            ):
+                continue
             info = plan.onderdeel_info.get(plaatsing.onderdeel_id)
             labels.append(
                 OnderdeelLabel(
                     scancode_waarde=(
-                        f"RC:onderdeel:{project.id}:{plan.materiaal_id}:"
+                        f"RC:onderdeel:{project.id}:{plan.materiaal_id}:{plaat}:"
                         f"{plaatsing.onderdeel_id}:{plaatsing.instantie}"
                     ),
                     onderdeel_naam=info.naam if info else plaatsing.onderdeel_id,
@@ -89,6 +105,7 @@ def genereer_labels_voor_project(project: Project, plannen: list[PlaatZaagplan])
                     kantenband_randen=info.kantenband_randen if info else frozenset(),
                     nerfrichting_vereist=info.nerfrichting_vereist if info else Nerfrichting.GEEN,
                     fabriekskantenband_vereist=info.fabriekskantenband_vereist if info else False,
+                    revisie=plan.revisie,
                 )
             )
     return labels
