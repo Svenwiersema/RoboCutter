@@ -3195,10 +3195,68 @@ houden.
   - Tests: +1 in `test_revisies.py`. Offscreen rookproef (onbekende
     herkomst, genereren, wijziging, export-bevestiging zaagplan + labels,
     thema-wissel) en PDF's met echte fonts gerenderd en bekeken. 249 tests.
-  - Volgende stap (Svens wens, nog te bespreken): een revisie tijdens
-    productie mag niet het hele zaagplan opnieuw genereren, want er is al
-    gezaagd; alleen een deel, met reststukken vastzetten en al klare
-    onderdelen uitzetten.
+- **Zaagplan bijwerken tijdens productie** (mockup
+  `design/assets/mockups/deel-opnieuw-genereren-concept.html`, goedgekeurd
+  "ja ziet er goed uit"). Keuzes van Sven (vooraf gevraagd): gezaagd
+  **per onderdeel** afvinken; platen waar nog niets uit gezaagd is worden
+  **opnieuw verdeeld**; reststukken van gezaagde platen **blijven en mogen
+  gebruikt worden**; "gezaagd maar niet meer nodig" wordt **gemeld en per
+  stuk gekozen** (bewaren als reststuk / afschrijven). Aanname (in de
+  mockup voorgelegd): een plaat met minstens één gezaagd onderdeel blijft
+  helemaal staan, ook de niet-gezaagde onderdelen erop.
+  - Backend `projecten/zaagplan_bijwerken.py`: `stel_bijwerking_voor`
+    (overzicht voor het paneel, geen motor) en `werk_zaagplannen_bij`
+    (doet het). Onderdelen worden herkend aan materiaal, naam, herkomst,
+    maat (rotatie maakt niet uit), kantenband, fabrieksrand en nerf; een
+    maatwijziging is dus "vervallen + nieuw". Een vervallen, nog niet
+    gezaagd onderdeel op een blijvende plaat laat een reststuk achter.
+    Nieuwe onderdelen gaan eerst in reststukken van blijvende platen (in de
+    plaat zelf; de zaagsnedes komen na de bestaande, met de grenzen van het
+    echte stuk plaat uit `_stukken`, dat de zaagvolgorde naspeelt), dan in
+    bibliotheek-reststukken, dan op volle platen. Blijvende platen houden
+    hun nummer, nieuwe vullen de vrije nummers. Nieuwe onderdeel-id's
+    krijgen een uniek voorvoegsel (`_genereer_voor_regels(...,
+    id_voorvoegsel=)`), zodat labels van blijvende platen geldig blijven.
+  - `PlaatZaagplan` kreeg `revisie`, `gezaagd` (set van (onderdeel_id,
+    instantie)), `bijwerking` ("", "gebleven", "nieuw") en `toegevoegd`;
+    alles wordt bewaard. `ZaagplannenOpslag.werk_plannen_bij` schrijft
+    alleen de platen weg (afvinken), herkomst blijft.
+    `ProjectReststukkenBibliotheek.overnemen_uit_zaagplan(...,
+    behoud_gebleven=True)` laat reststukken van gebleven platen hun id,
+    code, status en aanpassingen houden.
+  - UI: de onderdelentabel per plaat heeft nu één regel per exemplaar met
+    een Gezaagd-vinkje; klikken op een onderdeel in de tekening werkt ook
+    (`ZaagplaatWidget(..., gezaagd=, klikbaar=True)`, gearceerd met
+    vinkje). Kop per plaat: Niet aangezaagd / Aangezaagd · n van m /
+    Gezaagd, plus "Gebleven" of "Nieuw in Rev B", en "Hele plaat gezaagd".
+    Is er iets gezaagd, dan worden "Opnieuw genereren" (werkbalk en rode
+    balk) "Zaagplan bijwerken…": dat opent het inline bijwerk-paneel
+    (Blijft staan / Opnieuw verdeeld / Mag gebruikt / gezaagd maar niet
+    meer nodig met een keuze per stuk; Bijwerken pas als alles gekozen
+    is). Reststukken die in de projectlijst niet meer op Bewaren staan of
+    van maat veranderd zijn, doen niet mee (`_bruikbaar_filter`). Na
+    bijwerken: melding met de vervallen platen, "Alleen nieuwe platen als
+    PDF (n)" (zonder zaaglijst) en "n nieuwe labels als PDF".
+  - PDF/labels: elke plaat en elk onderdeel-label toont de revisie van de
+    eigen plaat (`PlaatZaagplan.revisie`, `OnderdeelLabel.revisie`).
+  - Twee bestaande fouten gevonden en hersteld:
+    1. **Motor** (`engine._pak_rijen`): het reststuk rechts in een rij lag
+       een zaagsnede te ver naar links (x op de snede i.p.v. erna). Oude
+       opgeslagen zaagplannen hebben dat nog; `zaagplan_bijwerken._oorsprong`
+       zet het bij gebruik recht.
+    2. **Labels**: de onderdeel-scancode was niet uniek over platen heen
+       (de motor nummert exemplaren per plaat opnieuw vanaf 1). De scancode
+       bevat nu de plaat: `RC:onderdeel:<project>:<materiaal>:P2:<id>:<n>`
+       (`R1` voor een reststuk). Al geprinte labels met het oude formaat
+       horen dus niet meer bij een label in de app.
+  - Tests: `test_zaagplan_bijwerken.py` (9), o.a. met een willekeurige
+    reeks die op elke plaat de paneelzaag-controles uit `test_engine.py`
+    draait (eenmalig ook 240 scenario's over alle drie strategieën: geen
+    fouten). Offscreen rookproef (afvinken + bewaren, revisie, paneel,
+    keuzes, echte worker, export nieuwe platen/labels, thema). 258 tests.
+  - Niet gebouwd: de mockup liet een vervallen plaat nog even zien
+    ("Plaat 3 · Vervalt"); dat staat nu alleen in de melding na bijwerken.
+    Gezaagd afvinken door labels te scannen: later.
 
 ## Werkwijze die Sven prettig vindt
 

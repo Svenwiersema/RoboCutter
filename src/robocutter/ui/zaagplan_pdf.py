@@ -123,6 +123,7 @@ def schrijf_zaagplannen_pdf(
     sort_niveaus: list[str],
     revisie: str = "",
     niet_gecontroleerd: bool = False,
+    met_zaaglijst: bool = True,
 ) -> None:
     """Schrijft alle platen van ``zaagplannen`` plus de volledige
     zaaglijst van ``project`` naar één PDF-bestand op ``pad`` — elke
@@ -131,7 +132,10 @@ def schrijf_zaagplannen_pdf(
     ``_teken_zaaglijst_paginas``). ``revisie`` komt in kop en voet ("Rev
     A*" = met niet-vastgelegde wijzigingen); ``niet_gecontroleerd`` zet
     het watermerk NIET GECONTROLEERD op elke pagina (mockup
-    ``design/assets/mockups/niet-gecontroleerd-concept.html``)."""
+    ``design/assets/mockups/niet-gecontroleerd-concept.html``). Een plaat
+    met een eigen ``PlaatZaagplan.revisie`` (na "zaagplan bijwerken") toont
+    die in plaats van ``revisie``. ``met_zaaglijst=False``: alleen de
+    platen (bv. alleen de nieuwe platen na een bijwerking)."""
 
     instellingen = InstellingenBeheer().huidige
     logo = _laad_logo(instellingen.bedrijfslogo_pad)
@@ -165,11 +169,14 @@ def schrijf_zaagplannen_pdf(
     for i, plan in enumerate(zaagplannen):
         if i > 0:
             printer.newPage()
+        ctx.revisie = plan.revisie or revisie
         _teken_plaat_pagina(ctx, plan, strategie_label)
+    ctx.revisie = revisie
 
-    if zaagplannen:
-        printer.newPage()
-    _teken_zaaglijst_paginas(ctx, project, materialen, sort_niveaus)
+    if met_zaaglijst:
+        if zaagplannen:
+            printer.newPage()
+        _teken_zaaglijst_paginas(ctx, project, materialen, sort_niveaus)
 
     painter.end()
 

@@ -197,6 +197,9 @@ def _teken_label(
     proj_rect = QRectF(ctx.px(x_mm + pad, y_mm + pad + 15.4), QPointF(ctx.mm(x_mm + pad + tekst_breedte), ctx.mm(y_mm + pad + 18.4)))
     p.setPen(QPen(_MUTED))
     if not is_reststuk:  # reststuk-label: bewust geen projectregel (hoofdstuk 6)
+        # De revisie van de eigen plaat (na "zaagplan bijwerken" kan die per
+        # plaat verschillen), anders die van het hele zaagplan.
+        revisie = label.revisie or revisie
         proj_tekst = f"Project: {label.projectnummer or (project.naam if project else '')}"
         if revisie:
             # "Project: OPD-2026-114 · Rev A*", de revisie vet.

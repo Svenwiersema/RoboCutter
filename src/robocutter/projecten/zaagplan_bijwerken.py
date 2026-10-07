@@ -148,8 +148,9 @@ def _plaatsing_sleutel(plan: PlaatZaagplan, p: Plaatsing) -> tuple | None:
     )
 
 
-def _omschrijving(sleutel: tuple) -> str:
+def _omschrijving(sleutel: tuple, maten: dict[tuple, tuple[float, float]]) -> str:
     _, naam, herkomst, (a, b), *_ = sleutel
+    a, b = maten.get(sleutel, (a, b))
     return f"{naam} ({herkomst}) {a:g} × {b:g}"
 
 
@@ -161,12 +162,17 @@ class _Analyse:
     rest_vraag: Counter
     oud: Counter
     nieuw: Counter
+    # Maten zoals in de zaaglijst (de sleutel sorteert ze), voor weergave.
+    maten: dict[tuple, tuple[float, float]] = field(default_factory=dict)
 
 
 def _analyseer(project: Project, plannen: list[PlaatZaagplan]) -> _Analyse:
     vraag = Counter()
+    maten: dict[tuple, tuple[float, float]] = {}
     for regel in bouw_zaaglijst(project):
-        vraag[_regel_sleutel(regel)] += regel.onderdeel.aantal
+        sleutel = _regel_sleutel(regel)
+        vraag[sleutel] += regel.onderdeel.aantal
+        maten.setdefault(sleutel, (regel.onderdeel.breedte, regel.onderdeel.hoogte))
     nieuw = Counter(vraag)
     oud = Counter()
     for plan in plannen:
@@ -174,6 +180,8 @@ def _analyseer(project: Project, plannen: list[PlaatZaagplan]) -> _Analyse:
             sleutel = _plaatsing_sleutel(plan, p)
             if sleutel is not None:
                 oud[sleutel] += 1
+                if sleutel not in maten:
+                    maten[sleutel] = (p.hoogte, p.breedte) if p.geroteerd else (p.breedte, p.hoogte)
 
     blijvend = [i for i, plan in enumerate(plannen) if plan.is_aangezaagd]
     overbodig: list[VervallenStuk] = []
@@ -205,7 +213,7 @@ def _analyseer(project: Project, plannen: list[PlaatZaagplan]) -> _Analyse:
                     gezaagd=is_gezaagd,
                 )
                 (overbodig if is_gezaagd else vervallen).append(stuk)
-    return _Analyse(blijvend, overbodig, vervallen, +vraag, oud, nieuw)
+    return _Analyse(blijvend, overbodig, vervallen, +vraag, oud, nieuw, maten)
 
 
 _Stuk = tuple[float, float, float, float]  # x0, y0, x1, y1
@@ -308,8 +316,8 @@ def stel_bijwerking_voor(
             for i in analyse.blijvend
         ],
         opnieuw=[plaat_naam(p) for i, p in enumerate(plannen) if i not in analyse.blijvend],
-        erbij=sorted((_omschrijving(k), n) for k, n in (analyse.nieuw - analyse.oud).items()),
-        eraf=sorted((_omschrijving(k), n) for k, n in (analyse.oud - analyse.nieuw).items()),
+        erbij=sorted((_omschrijving(k, analyse.maten), n) for k, n in (analyse.nieuw - analyse.oud).items()),
+        eraf=sorted((_omschrijving(k, analyse.maten), n) for k, n in (analyse.oud - analyse.nieuw).items()),
         overbodig_gezaagd=analyse.overbodig,
         vervallen_niet_gezaagd=analyse.vervallen,
     )
