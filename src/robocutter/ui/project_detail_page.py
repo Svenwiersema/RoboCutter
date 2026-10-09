@@ -3110,7 +3110,9 @@ class ProjectDetailPage(QWidget):
             kop_vinkje.move((44 - 16) // 2, max(0, (header.height() - 16) // 2))
             kop_vinkje.show()
 
-        QTimer.singleShot(0, plaats_kop_vinkje)
+        # Met de tabel als context: vervalt als het paneel intussen al
+        # opnieuw is opgebouwd (anders "already deleted").
+        QTimer.singleShot(0, tabel, plaats_kop_vinkje)
 
         per_id = {item.id: item for item in rs_items}
         rij_hoogte = 40
@@ -3162,7 +3164,7 @@ class ProjectDetailPage(QWidget):
             tabel.setFixedHeight(header.height() + rij_hoogte * len(labels) + 2)
 
         tabel.setFixedHeight(header.sizeHint().height() + rij_hoogte * len(labels) + 2)
-        QTimer.singleShot(0, zet_hoogte)
+        QTimer.singleShot(0, tabel, zet_hoogte)
         return tabel
 
     @staticmethod
