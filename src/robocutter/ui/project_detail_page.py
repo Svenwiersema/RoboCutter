@@ -120,6 +120,7 @@ from robocutter.projecten.revisies import ONBEKENDE_HERKOMST, GeenWijzigingenErr
 from robocutter.projecten.zaaglijst import SORTEERSLEUTELS, bouw_zaaglijst, sorteer_zaaglijst
 from robocutter.projecten.zaagplan_bijwerken import (
     BijwerkResultaat,
+    VervallenPlaat,
     BijwerkVoorstel,
     plaat_naam,
     stel_bijwerking_voor,
@@ -619,6 +620,9 @@ class ProjectDetailPage(QWidget):
         # de momentopname waarmee een lopende generatie begon, en welke
         # export (zaagplan / onderdeel-labels) op bevestiging wacht.
         self._zaagplan_herkomst = self._zaagplannen_opslag.laad_herkomst(self._project_id)
+        # Platen die bij de laatste bijwerking vervallen zijn: blijven als
+        # "Vervalt"-kaart staan tot het volgende genereren/bijwerken.
+        self._zaagplan_vervallen: list[VervallenPlaat] = self._zaagplannen_opslag.laad_vervallen(self._project_id)
         self._zaagplan_bron: tuple[Project, str] | None = None
         self._zp_export_bevestig: str | None = None  # "zaagplan", "labels-alles", "labels-selectie"
         self._zp_chip_box: QHBoxLayout | None = None
@@ -4015,8 +4019,10 @@ class ProjectDetailPage(QWidget):
         # genereren" overschrijft gewoon de eerder opgeslagen stand.
         bron, revisie = self._zaagplan_bron if self._zaagplan_bron is not None else (None, "")
         self._zaagplan_bron = None
+        self._zaagplan_vervallen = list(bijwerking.vervallen_platen) if bijwerking is not None else []
         self._zaagplannen_opslag.opslaan(
-            self._project_id, plannen, waarschuwingen, self._zaagplan_strategie, bron=bron, revisie=revisie
+            self._project_id, plannen, waarschuwingen, self._zaagplan_strategie, bron=bron, revisie=revisie,
+            vervallen=self._zaagplan_vervallen,
         )
         self._zaagplan_herkomst = self._zaagplannen_opslag.laad_herkomst(self._project_id)
         # Gebruikte bibliotheek-reststukken reserveren voor dit project (of
@@ -4049,7 +4055,7 @@ class ProjectDetailPage(QWidget):
             self._zp_bijwerk_open = False
             self._zp_bijwerk_keuzes = {}
             revisie = self._zaagplan_herkomst.revisie if self._zaagplan_herkomst is not None else ""
-            sub = "Vervallen: " + ", ".join(bijwerking.vervallen_platen) if bijwerking.vervallen_platen else ""
+            sub = "Vervallen: " + ", ".join(v.naam for v in bijwerking.vervallen_platen) if bijwerking.vervallen_platen else ""
             self._melding.toon(f"Zaagplan bijgewerkt{' naar ' + revisie if revisie else ''}", sub)
         self._ververs_zaagplannen_paneel()
         self._ververs_labels_paneel()
@@ -4877,10 +4883,75 @@ class ProjectDetailPage(QWidget):
             )
         layout.addLayout(stat_row)
 
+        # Een vervallen plaat staat na de laatste plaat van hetzelfde
+        # materiaal (mockup deel-opnieuw-genereren-concept.html, stap 3).
+        vervallen_na: dict[int, list[VervallenPlaat]] = {}
+        for v in self._zaagplan_vervallen:
+            na = max(
+                (i for i, p in enumerate(self._zaagplannen) if p.materiaal_naam == v.materiaal_naam),
+                default=len(self._zaagplannen) - 1,
+            )
+            vervallen_na.setdefault(na, []).append(v)
+        for v in vervallen_na.pop(-1, []):
+            layout.addWidget(self._bouw_vervallen_plaat(v))
         for index, plan in enumerate(self._zaagplannen):
             layout.addWidget(self._bouw_zaagplan_document(plan, index))
+            for v in vervallen_na.get(index, []):
+                layout.addWidget(self._bouw_vervallen_plaat(v))
 
         return wrapper
+
+    def _bouw_vervallen_plaat(self, v: VervallenPlaat) -> QWidget:
+        """Lege kaart voor een plaat die bij bijwerken is weggevallen, zodat
+        je ziet welk geprint zaagplan/welke labels niet meer kloppen."""
+        t = self._theme
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        head = QFrame()
+        head.setObjectName("ZaagplanDocHead")
+        head_layout = QHBoxLayout(head)
+        head_layout.setContentsMargins(18, 12, 18, 12)
+        head_layout.setSpacing(14)
+        tag = QLabel("RESTSTUK" if v.is_reststuk else "ZAAGPLAN")
+        tag.setProperty("role", "docTag")
+        head_layout.addWidget(tag)
+        naam_label = QLabel(v.materiaal_naam)
+        naam_label.setProperty("role", "docMetaStrong")
+        head_layout.addWidget(naam_label)
+        soort = "Reststuk" if v.is_reststuk else "Plaat"
+        afmeting_label = QLabel(f"{v.lengte:g} × {v.breedte:g} mm  ·  {soort} {v.plaat_nummer}")
+        afmeting_label.setProperty("role", "docMeta")
+        head_layout.addWidget(afmeting_label)
+        head_layout.addStretch(1)
+        head_layout.addWidget(
+            self._chip(f"Vervalt in {v.revisie}" if v.revisie else "Vervalt", t.surface_2, t.text_muted, t.text_faint)
+        )
+        layout.addWidget(head)
+
+        body = QFrame()
+        body.setObjectName("ZaagplanPlateWrap")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(16, 16, 16, 16)
+        body_layout.setSpacing(10)
+        leeg = QFrame()
+        leeg.setObjectName("VervallenPlaatVlak")
+        leeg.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        leeg.setStyleSheet(f"QFrame#VervallenPlaatVlak {{ background: transparent; border: 1px dashed {t.text_faint}; }}")
+        leeg.setFixedHeight(90)
+        body_layout.addWidget(leeg)
+        uitleg = QLabel(
+            f"Niet meer nodig{' na bijwerken naar ' + v.revisie if v.revisie else ''}: de onderdelen staan nu op "
+            "andere platen of reststukken. Een geprint zaagplan of labels van deze plaat kun je weggooien."
+        )
+        uitleg.setProperty("role", "matMeta")
+        uitleg.setWordWrap(True)
+        body_layout.addWidget(uitleg)
+        layout.addWidget(body)
+        return kaart
 
     def _bouw_zaagplan_document(self, plan: PlaatZaagplan, index: int) -> QWidget:
         kaart = QFrame()

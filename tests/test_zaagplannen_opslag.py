@@ -11,6 +11,7 @@ from robocutter.modellen.models import ModelOnderdeel, Rand
 from robocutter.projecten.bibliotheek import ProjectenBibliotheek
 from robocutter.projecten.models import Project
 from robocutter.projecten.zaagplannen import genereer_zaagplannen_voor_project
+from robocutter.projecten.zaagplan_bijwerken import VervallenPlaat
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag, open_verbinding
 
 
@@ -146,6 +147,26 @@ def test_opslaan_overschrijft_het_vorige_zaagplan_van_hetzelfde_project(tmp_path
     assert geladen[2] == "horizontaal"
     aantal_rijen = verbinding.execute("SELECT COUNT(*) AS n FROM zaagplannen").fetchone()["n"]
     assert aantal_rijen == 1
+    verbinding.close()
+
+
+def test_vervallen_platen_overleven_herstart_en_verdwijnen_bij_nieuw_zaagplan(tmp_path):
+    db_pad = tmp_path / "vervallen.db"
+    verbinding = open_verbinding(db_pad)
+    opslag = ZaagplannenOpslag(verbinding)
+    plannen, waarschuwingen, project = _project_met_zaagplan()
+    vervallen = [VervallenPlaat("Plaat 3 (Spaanplaat)", "Spaanplaat", 3, False, 2800, 2070, "Rev B")]
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal", vervallen=vervallen)
+    # Gezaagd afvinken schrijft alleen de platen weg: vervallen blijft staan.
+    opslag.werk_plannen_bij(project.id, plannen)
+    verbinding.close()
+
+    verbinding = open_verbinding(db_pad)
+    opslag = ZaagplannenOpslag(verbinding)
+    assert opslag.laad_vervallen(project.id) == vervallen
+    opslag.opslaan(project.id, plannen, waarschuwingen, "horizontaal")
+    assert opslag.laad_vervallen(project.id) == []
+    assert opslag.laad_vervallen("onbekend-project-id") == []
     verbinding.close()
 
 

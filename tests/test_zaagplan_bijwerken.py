@@ -156,6 +156,8 @@ def test_gezaagd_maar_niet_meer_nodig_en_vrijgekomen_plek():
     assert _geplaatst(res.plannen) == _vraag(project)
     assert len(res.plannen) == 1  # de andere platen vervallen
     assert res.vervallen_platen
+    assert all(v.revisie == "Rev B" and not v.is_reststuk for v in res.vervallen_platen)
+    assert {v.plaat_nummer for v in res.vervallen_platen}.isdisjoint({res.plannen[0].plaat_nummer})
     plaat = res.plannen[0]
     assert len(plaat.gezaagd) == 2
     assert not _overlapt(plaat)

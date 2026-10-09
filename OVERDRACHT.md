@@ -3254,9 +3254,18 @@ houden.
     draait (eenmalig ook 240 scenario's over alle drie strategieën: geen
     fouten). Offscreen rookproef (afvinken + bewaren, revisie, paneel,
     keuzes, echte worker, export nieuwe platen/labels, thema). 258 tests.
-  - Niet gebouwd: de mockup liet een vervallen plaat nog even zien
-    ("Plaat 3 · Vervalt"); dat staat nu alleen in de melding na bijwerken.
-    Gezaagd afvinken door labels te scannen: later.
+  - Gezaagd afvinken door labels te scannen: later.
+- **2026-10-09 — Vervallen platen zichtbaar + aanname bevestigd.** Sven
+  bevestigde: een plaat met minstens één gezaagd onderdeel blijft helemaal
+  staan ("punt 2 klopt"). En hij koos voor vervallen platen de weergave uit
+  de mockup (optie b, boven "alleen de melding" en "vaste regel boven het
+  zaagplan"): na bijwerken staat elke vervallen plaat als lege kaart
+  ("Vervalt in Rev B", gestippeld vlak, uitleg dat geprint papier weg kan)
+  na de laatste plaat van hetzelfde materiaal, tot het volgende genereren
+  of bijwerken. `VervallenPlaat` in `zaagplan_bijwerken.py`
+  (`BijwerkResultaat.vervallen_platen`), opgeslagen in de nieuwe kolom
+  `zaagplannen.vervallen` (`laad_vervallen`; `opslaan` zonder `vervallen`
+  maakt hem leeg, `werk_plannen_bij` laat hem staan). Niet in PDF/labels.
 
 ## Werkwijze die Sven prettig vindt
 

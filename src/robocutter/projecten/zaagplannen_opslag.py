@@ -42,6 +42,7 @@ from robocutter.optimalisatie.models import Materiaal as OptMateriaal
 from robocutter.optimalisatie.models import Plaatsing, Rand as OptRand, Reststuk, ZaagplanResultaat, Zaagsnede
 from robocutter.projecten.models import Project
 from robocutter.projecten.opslag import dict_naar_project, project_naar_dict
+from robocutter.projecten.zaagplan_bijwerken import VervallenPlaat
 from robocutter.projecten.zaagplannen import OnderdeelInfo, PlaatZaagplan
 
 _SCHEMA = """
@@ -57,7 +58,7 @@ CREATE TABLE IF NOT EXISTS zaagplannen (
 
 # Later toegevoegde kolommen (revisies, "Niet gecontroleerd"): oudere
 # databases krijgen ze erbij, met NULL voor bestaande zaagplannen.
-_EXTRA_KOLOMMEN = {"bron": "TEXT", "revisie": "TEXT"}
+_EXTRA_KOLOMMEN = {"bron": "TEXT", "revisie": "TEXT", "vervallen": "TEXT"}
 
 
 def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
@@ -118,6 +119,16 @@ class ZaagplannenOpslag:
             revisie=rij["revisie"] or "",
         )
 
+    def laad_vervallen(self, project_id: str) -> list[VervallenPlaat]:
+        """De platen die bij de laatste bijwerking vervallen zijn (leeg na
+        een volledig nieuw zaagplan)."""
+        rij = self._db.execute(
+            "SELECT vervallen FROM zaagplannen WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        if rij is None or not rij["vervallen"]:
+            return []
+        return [VervallenPlaat(**d) for d in json.loads(rij["vervallen"])]
+
     def opslaan(
         self,
         project_id: str,
@@ -126,14 +137,16 @@ class ZaagplannenOpslag:
         strategie: str,
         bron: Project | None = None,
         revisie: str = "",
+        vervallen: list[VervallenPlaat] | None = None,
     ) -> None:
         """``bron``: de samenstelling waaruit dit zaagplan gegenereerd is
-        (voor "Niet gecontroleerd"), ``revisie``: zie ``ZaagplanHerkomst``."""
+        (voor "Niet gecontroleerd"), ``revisie``: zie ``ZaagplanHerkomst``,
+        ``vervallen``: platen die bij deze bijwerking wegvielen."""
         self._db.execute(
             """
             INSERT OR REPLACE INTO zaagplannen (
-                project_id, strategie, gegenereerd_op, plannen, waarschuwingen, bron, revisie
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                project_id, strategie, gegenereerd_op, plannen, waarschuwingen, bron, revisie, vervallen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id,
@@ -143,6 +156,7 @@ class ZaagplannenOpslag:
                 json.dumps(list(waarschuwingen)),
                 json.dumps(project_naar_dict(bron)) if bron is not None else None,
                 revisie,
+                json.dumps([vars(v) for v in vervallen or []]),
             ),
         )
         self._db.commit()

@@ -48,6 +48,7 @@ __all__ = [
     "BijwerkResultaat",
     "BijwerkVoorstel",
     "BlijvendePlaat",
+    "VervallenPlaat",
     "VervallenStuk",
     "plaat_naam",
     "stel_bijwerking_voor",
@@ -103,10 +104,25 @@ class BijwerkVoorstel:
 
 
 @dataclass
+class VervallenPlaat:
+    """Een oude plaat die na bijwerken niet meer nodig is. Blijft als
+    "Vervalt"-kaart in het zaagplan staan tot het volgende genereren of
+    bijwerken, zodat je ziet welk geprint papier niet meer klopt."""
+
+    naam: str  # zie plaat_naam
+    materiaal_naam: str
+    plaat_nummer: int
+    is_reststuk: bool
+    lengte: float
+    breedte: float
+    revisie: str  # de revisie waarin de plaat vervalt
+
+
+@dataclass
 class BijwerkResultaat:
     plannen: list[PlaatZaagplan]
     waarschuwingen: list[str]
-    vervallen_platen: list[str]  # namen van oude platen die niet meer nodig zijn
+    vervallen_platen: list[VervallenPlaat]  # oude platen die niet meer nodig zijn
     overbodig_gezaagd: list[VervallenStuk]
 
 
@@ -460,7 +476,15 @@ def werk_zaagplannen_bij(
 
     nu = {(p.materiaal_id, p.is_reststuk, p.plaat_nummer) for p in resultaat}
     vervallen_platen = [
-        plaat_naam(p)
+        VervallenPlaat(
+            naam=plaat_naam(p),
+            materiaal_naam=p.materiaal_naam,
+            plaat_nummer=p.plaat_nummer,
+            is_reststuk=p.is_reststuk,
+            lengte=p.resultaat.materiaal.lengte,
+            breedte=p.resultaat.materiaal.breedte,
+            revisie=revisie,
+        )
         for i, p in enumerate(plannen)
         if i not in blijvend and (p.materiaal_id, p.is_reststuk, p.plaat_nummer) not in nu
     ]
