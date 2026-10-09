@@ -85,6 +85,12 @@ maakt.
 - Praktische consequentie voor de klant: bij Pro/Enterprise moet er één
   pc aangewezen worden die aan moet staan zolang andere werkplekken
   willen werken.
+- **Werkplaats-app (hoofdstuk 14):** de telefoon-/tablet-app voor de
+  werkplaats verbindt via het lokale netwerk met RoboCutter. Ook bij
+  Demo/Hobby (1 werkplek) krijgt RoboCutter daarvoor een kleine ingebouwde
+  server, die binnen het draaiende programma loopt (de bibliotheken houden
+  hun data in het geheugen). De app werkt dus zolang RoboCutter op die pc
+  open staat. Werkplaats-apparaten tellen niet als werkplek.
 - **Toekomstige overweging (bewust geparkeerd, geen besluit):** zodra
   RoboCutter een goedlopend product is, eventueel een cloud-gehoste
   database-optie aanbieden — vermoedelijk (nog) alleen voor Enterprise,

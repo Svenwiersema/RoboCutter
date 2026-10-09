@@ -725,6 +725,10 @@ in plaats van aan te nemen:
   nu allemaal wél hun kernfunctie-logica met SQLite-opslag; de eerste
   drie ook al een echt PySide6-scherm, Projectenbeheer nog niet (zie
   hierboven).
+- **Werkplaats-app** (hoofdstuk 14, vastgelegd 2026-10-09): labels scannen,
+  gezaagd afvinken en reststukken aanpassen komt in een aparte telefoon-/
+  tablet-app, **pas tegen het einde van het project** als de computer-app
+  werkt. Bouw scannen dus niet in RoboCutter zelf.
 - Labels (hoofdstuk 6), DXF/Vectorworks-import (hoofdstuk 10),
   ERP-koppeling (hoofdstuk 9), licentie/commerciële laag
   (hoofdstuk 7-8).

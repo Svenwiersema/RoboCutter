@@ -22,7 +22,10 @@ hoofdstuk heeft).
 
 - AI-ondersteunde optimalisatie
 - Cloud-synchronisatie
-- Mobiele app
+- Mobiele app — inmiddels in beperkte vorm uitgewerkt als de
+  werkplaats-app (scannen, afvinken, reststukken; hoofdstuk 14), te bouwen
+  tegen het einde van het project. Een volledige mobiele versie van
+  RoboCutter blijft geparkeerd.
 - CNC-export
 - Plugin-systeem
 - API (voor externe koppelingen buiten de al ontworpen ERP-/CAD-import)

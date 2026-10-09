@@ -56,6 +56,11 @@ instellingen en die keuze geldt daarna voor alle labels.
   terugverwijst naar het record in RoboCutter) wordt verder uitgewerkt
   bij de technische architectuur (hoofdstuk 8).
 
+Scannen in de werkplaats (onderdeel afvinken als gezaagd, reststuk
+aanpassen) gebeurt met de werkplaats-app, zie hoofdstuk 14. De huidige
+scancodes (`RC:onderdeel:…` en `RC:reststuk:<id>`) zijn daar al geschikt
+voor.
+
 ## Printen
 
 - Labels printen kan zowel via een **dedicated labelprinter** (kleine

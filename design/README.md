@@ -58,6 +58,7 @@ hoofdstukken. Deze indeling wordt samen bijgesteld naarmate we verder komen.
 | 11 | [UX/UI](chapters/11-ux-ui.md) | ✅ afgerond |
 | 12 | [Niet-functionele eisen](chapters/12-niet-functionele-eisen.md) | ✅ afgerond |
 | 13 | [Toekomstige uitbreidingen / expliciet buiten scope](chapters/13-toekomstige-uitbreidingen.md) | ✅ afgerond |
+| 14 | [Werkplaats-app (scannen in de werkplaats)](chapters/14-werkplaats-app.md) | 🟡 kernkeuzes vastgesteld, bouw tegen het einde van het project |
 
 Let op de begripsverwarring die we hebben rechtgezet: een **model** is een
 los, herbruikbaar ontwerp (dit is ook waar een "kast" onder valt) en mag

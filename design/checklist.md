@@ -3,7 +3,7 @@
 Bijgehouden overzicht van wat besproken/vastgesteld is en wat nog open staat.
 Wordt elke sessie bijgewerkt.
 
-_Laatst bijgewerkt: 2026-09-05 — zie ook `OVERDRACHT.md` voor de
+_Laatst bijgewerkt: 2026-10-09 — zie ook `OVERDRACHT.md` voor de
 actuele codestatus (dit bestand blijft de bronwaarheid voor
 ontwerpbeslissingen, `OVERDRACHT.md` voor bouwvoortgang)._
 
@@ -212,6 +212,17 @@ map.
   lijnstijl, via de open-source icon-set Phosphor Icons (gewicht
   "Bold"), gekleurd volgens thema-/statuskleuren
 
+- **Module 14 — Werkplaats-app: kernkeuzes vastgesteld** 🟡 (zie
+  `chapters/14-werkplaats-app.md`) — een aparte, kleine app voor de
+  werkplaats, **pas te bouwen tegen het einde van het project** als de
+  computer-app werkt; telefoon/tablet met camerascannen; echte app uit de
+  app stores; functies: onderdeel-label scannen en afvinken als gezaagd,
+  reststuk-label scannen en maat/status aanpassen, zaagplan per plaat
+  bekijken, reststuk zoeken; werkplaats-apparaten tellen niet als werkplek
+  (gratis bij elke editie); technische richting (Flutter, ingebouwde
+  server in RoboCutter, koppelen via QR) is een voorstel van Claude, nog
+  te bevestigen bij de bouw
+
 ## 🔲 Nog te bespreken (per hoofdstuk)
 
 - ~~Materiaalbibliotheek~~ — ✅ afgerond, zie
@@ -230,6 +241,9 @@ map.
   `chapters/12-niet-functionele-eisen.md`
 - ~~Toekomstige uitbreidingen / buiten scope~~ — ✅ afgerond, zie
   `chapters/13-toekomstige-uitbreidingen.md`
+- Werkplaats-app — 🟡 openstaande vragen (eerst alleen Android? werken
+  zonder wifi? wie heeft afgevinkt? welke reststuk-acties?) in
+  `chapters/14-werkplaats-app.md`, uit te werken vlak voor de bouw
 
 ## 💡 Suggesties van Claude (nog te bevestigen)
 
