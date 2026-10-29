@@ -3270,6 +3270,27 @@ houden.
   (`BijwerkResultaat.vervallen_platen`), opgeslagen in de nieuwe kolom
   `zaagplannen.vervallen` (`laad_vervallen`; `opslaan` zonder `vervallen`
   maakt hem leeg, `werk_plannen_bij` laat hem staan). Niet in PDF/labels.
+- **2026-10-29 — Bijwerk-flow getest, drie kleine reparaties.** Sven
+  testte de app; de bijwerk-flow zelf gaf geen opmerkingen.
+  - Los onderdeel in een project had geen vinkje "Fabriekskantenband
+    vereist" (het model-formulier wel), dus zo'n onderdeel kwam nooit
+    tegen een fabrieksrand. Toegevoegd in `project_detail_page.py`.
+  - Labels-paneel gaf na zaagplan genereren nog steeds "Internal C++ object
+    (QHeaderView) already deleted": de tabel bestond nog, maar de bewaarde
+    Python-verwijzing naar de kop was ongeldig. De uitgestelde stappen
+    vragen nu `tabel.horizontalHeader()` opnieuw op. (De QTimer-context
+    van 2026-10-09 was dus niet de oorzaak/oplossing.)
+  - Venster: start op 90% van het scherm, minimum 1280x760
+    (`main_window._MIN_VENSTER`); geen horizontale scrollbalk meer bij die
+    breedte. Daarvoor: `_Werkbalk` in `project_detail_page.py` (knoppen
+    onder de titel als ze er niet naast passen; Zaagplannen en Labels),
+    ondertitel Reststukkenbibliotheek mag afbreken, en de tabbladen staan in
+    een schuifstrook zonder scrollbalk (`_TabStripScroll`, muiswiel, actieve
+    tab in beeld). Gemeten met het echte Windows-platform (offscreen geeft
+    onbetrouwbare tekstbreedtes) via `WA_DontShowOnScreen` op een kopie van
+    de database. Let op bij zulke scripts: zonder event-loop worden
+    `deleteLater`-widgets niet opgeruimd en staan ze nog in een `grab()` —
+    `sendPostedEvents(None, QEvent.Type.DeferredDelete)` erbij.
 
 ## Werkwijze die Sven prettig vindt
 
