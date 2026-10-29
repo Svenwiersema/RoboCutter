@@ -712,35 +712,17 @@ in plaats van aan te nemen:
    moet de randafzaag als genummerde snede in de zaagvolgorde staan (nu
    begint de volgorde pas ná het afzagen van de randen)?
 
-## Nog niet gebouwd (bewust, dit was iteratie 1)
+## Nog niet gebouwd
 
-- Mes/groef-plaatsingsregels (hoofdstuk 5 noemt dit zelf nog als
-  "verder te detailleren").
-- Revisiegeschiedenis voor modellen (hoofdstuk 2; projectrevisies en
-  "project opslaan als nieuw model" zijn inmiddels wél gebouwd, zie het logboek), en echte zaagplan-generatie vanuit een
-  project (+ de daarvan afhankelijke reststukken-vrijgave bij
-  Afronding) — bewust uitgesteld, zie de Projectenbeheer-sectie
-  hierboven. Materialenbibliotheek, Reststukkenbibliotheek (Module 3),
-  Modellenbibliotheek (Module 2) en Projectenbeheer (Module 1+4) hebben
-  nu allemaal wél hun kernfunctie-logica met SQLite-opslag; de eerste
-  drie ook al een echt PySide6-scherm, Projectenbeheer nog niet (zie
-  hierboven).
-- **Werkplaats-app** (hoofdstuk 14, vastgelegd 2026-10-09): labels scannen,
-  gezaagd afvinken en reststukken aanpassen komt in een aparte telefoon-/
-  tablet-app, **pas tegen het einde van het project** als de computer-app
-  werkt. Bouw scannen dus niet in RoboCutter zelf.
-- Labels (hoofdstuk 6), DXF/Vectorworks-import (hoofdstuk 10),
-  ERP-koppeling (hoofdstuk 9), licentie/commerciële laag
-  (hoofdstuk 7-8).
-- Label-layout-opties in Opties/instellingen (bewust later, zie de
-  Opties-sectie hierboven — labels zelf bestaan nog niet als feature).
-- De rest van de UI (PySide6, hoofdstuk 11): het Dashboard (voorheen de
-  "Projecten"-tab), de Materialenbibliotheek, de
-  Reststukkenbibliotheek, de Modellenbibliotheek, het Opties-scherm en
-  nu ook de Projectenbibliotheek (lijst + basis-CRUD) staan er; het
-  losse, sleepbare detailtabblad per project (met model-instanties,
-  losse onderdelen en de zaaglijst-view — eigen HTML-mockup gepland)
-  nog niet.
+De actuele bouwstatus (gebouwd / deels / nog niet / nog te bevestigen)
+staat sinds 2026-10-29 in `design/checklist.md`, sectie "Bouwstatus" —
+houd die bij in plaats van een lijst hier. Kort, wat nog niet gebouwd is:
+modelrevisies + "Niet gecontroleerd" voor modellen, vervangingskeuze bij
+verwijderd materiaal + fuzzy matching, onderdelen importeren
+(CSV/Excel/DXF/Vectorworks), ERP-koppeling, licentie/edities, netwerkserver
++ updates, automatische back-up (statusbalk toont nu een placeholder),
+mes/groef-plaatsingsregels, en de werkplaats-app (hoofdstuk 14, pas tegen
+het einde — bouw scannen dus niet in RoboCutter zelf).
 
 ## Technische kaders om aan te houden (hoofdstuk 8)
 

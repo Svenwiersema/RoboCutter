@@ -3,7 +3,7 @@
 Bijgehouden overzicht van wat besproken/vastgesteld is en wat nog open staat.
 Wordt elke sessie bijgewerkt.
 
-_Laatst bijgewerkt: 2026-10-09 — zie ook `OVERDRACHT.md` voor de
+_Laatst bijgewerkt: 2026-10-29 — zie ook `OVERDRACHT.md` voor de
 actuele codestatus (dit bestand blijft de bronwaarheid voor
 ontwerpbeslissingen, `OVERDRACHT.md` voor bouwvoortgang)._
 
@@ -244,6 +244,72 @@ map.
 - Werkplaats-app — 🟡 openstaande vragen (eerst alleen Android? werken
   zonder wifi? wie heeft afgevinkt? welke reststuk-acties?) in
   `chapters/14-werkplaats-app.md`, uit te werken vlak voor de bouw
+
+## 🛠️ Bouwstatus (stand 2026-10-29)
+
+Wat er van het ontwerp in de code zit. Details per stap staan in het
+logboek van `OVERDRACHT.md`.
+
+**✅ Gebouwd**
+
+- Materialen (H3): bibliotheek met alle afgesproken velden, live validatie
+  zonder pop-ups, archiveren vóór verwijderen, autocomplete voor familie
+- Reststukkenbibliotheek (H3): incl. fabrieksranden, reserveren voor een
+  project, labels
+- Modellen (H2): bibliotheek, submodellen (nesting), mappen + tags,
+  groepen met vaste volgorde, eigen tabblad per model
+- Projecten (H1/H4): statusverloop Werkvoorbereiding → Afgerond,
+  archiveren, modelkopieën + losse onderdelen, modelkopie bewerken in het
+  project, project opslaan als model, revisies (Rev A/B, handmatig
+  vastleggen), "Niet gecontroleerd" met watermerk
+- Zaagmotor (H5): strategieën horizontaal, verticaal en guillotine;
+  nerfrichting, zaagsnede, randafzagen, fabriekskantenband, groepen,
+  reststukken eerst, zaagvolgorde (CNC-nesting bestaat, bewust niet
+  selecteerbaar)
+- Zaagplannen-scherm + PDF; zaagplan bijwerken tijdens productie (gezaagd
+  afvinken, vervallen platen)
+- Labels (H6): onderdelen + reststukken, QR/barcode, A4-PDF, revisie +
+  watermerk
+- Projectreststukken: Bewaren/Hergebruikt/Afgeschreven, vrijgeven naar de
+  bibliotheek bij Afgerond
+- UI (H11): licht/donker thema, eigen titelbalk, VS Code-stijl tabbladen,
+  opslagmeldingen, Phosphor-stijl iconen; venster schaalt mee met het
+  scherm (minimum 1280×760)
+- Instellingen: opslaglocatie, thema, zaagstrategie, zaagsnede, scancode
+- Demo-`.exe` + installer
+
+**🟡 Deels**
+
+- Mes/groef (H3/H5): veld bij materialen, nog geen plaatsingsregels in de
+  motor
+- Balken (H3): materiaaltype bestaat; nog niet nagelopen of de motor
+  balken goed behandelt (lengtezagen)
+- CSV/Excel-import materialen (H3): knop staat er, uitgeschakeld
+- Labelprinters (H6): alleen A4-raster, nog geen labelprinter-formaat
+- Lettertype Inter (H11): niet gebundeld, valt terug op Segoe UI
+- Bundelen (H8): nu PyInstaller i.p.v. Nuitka
+
+**🔲 Nog niet gebouwd**
+
+- Modelrevisies + "Niet gecontroleerd" voor modellen (H2) — Sven koos
+  eerder "eerst projecten"
+- Verplichte vervangingskeuze bij een verwijderd materiaal dat nog in een
+  project zit, en fuzzy matching ("bedoelde je…?") (H3)
+- Onderdelen importeren: CSV/Excel, DXF, Vectorworks (H10)
+- ERP-koppeling (H9; ontwerp wacht op Svens lijst met ERP's)
+- Licentie/edities (H7/H8): Keygen, Lemon Squeezy, Demo-projectlimiet,
+  logo-regels, werkplektelling — standaard uit tijdens ontwikkeling
+- Netwerkserver voor Pro/Enterprise en updates via Keygen (H8)
+- Automatische back-up (H12) — de statusbalk toont nu een vaste
+  placeholder-tekst "Laatste back-up: vandaag 06:00"
+- Werkplaats-app (H14) — pas tegen het einde van het project
+
+**❓ Nog te bevestigen door Sven**
+
+- Guillotine: praktijkcontrole door bètatesters, incl. of het randafzagen
+  als genummerde snede in de zaagvolgorde moet
+- Motor-aannames: de nerf van een plaat loopt langs de lengte; een
+  reststuk is bruikbaar als lengte én breedte boven het minimum zitten
 
 ## 💡 Suggesties van Claude (nog te bevestigen)
 
