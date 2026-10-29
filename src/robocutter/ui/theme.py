@@ -198,6 +198,10 @@ def build_stylesheet(t: Theme) -> str:
         background: {t.chrome_bg_raised};
         border-bottom: 1px solid {t.chrome_border};
     }}
+    QScrollArea#TabStripScroll, QWidget#TabStripViewport, QWidget#TabStripInhoud {{
+        background: transparent;
+        border: none;
+    }}
     QWidget#TabItem[active="true"] {{
         background: {t.bg};
         border-right: 1px solid {t.border};

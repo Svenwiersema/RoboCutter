@@ -367,6 +367,56 @@ class _ZaagplanWorker(QThread):
         self.klaar.emit(plannen, waarschuwingen)
 
 
+class _Werkbalk(QWidget):
+    """Titel links, knoppen rechts — en past dat niet naast elkaar, dan
+    komen de knoppen op een eigen regel onder de titel. Zo dwingt een lange
+    knoppenrij (bv. na bijwerken: "Alleen nieuwe platen als PDF (n)") geen
+    horizontale scrollbalk af bij een smaller venster."""
+
+    def __init__(self, titel_layout: QVBoxLayout, knoppen: list[QWidget], parent=None) -> None:
+        super().__init__(parent)
+        self._titels = QWidget()
+        titel_layout.setContentsMargins(0, 0, 0, 0)
+        self._titels.setLayout(titel_layout)
+        self._knoppen = QWidget()
+        knoppen_layout = QHBoxLayout(self._knoppen)
+        knoppen_layout.setContentsMargins(0, 0, 0, 0)
+        knoppen_layout.setSpacing(10)
+        for knop in knoppen:
+            knoppen_layout.addWidget(knop, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(10)
+        self._grid.setVerticalSpacing(12)
+        self._gestapeld: bool | None = None
+        self._zet_gestapeld(False)
+
+    def _zet_gestapeld(self, gestapeld: bool) -> None:
+        if gestapeld == self._gestapeld:
+            return
+        self._gestapeld = gestapeld
+        self._grid.removeWidget(self._titels)
+        self._grid.removeWidget(self._knoppen)
+        self._grid.addWidget(self._titels, 0, 0)
+        if gestapeld:
+            self._grid.addWidget(self._knoppen, 1, 0, Qt.AlignmentFlag.AlignLeft)
+            self._grid.setColumnStretch(1, 0)
+        else:
+            self._grid.addWidget(self._knoppen, 0, 1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._grid.setColumnStretch(0, 1)
+        self.updateGeometry()
+
+    def minimumSizeHint(self) -> QSize:
+        # Gestapeld past het altijd: de breedste van de twee is genoeg.
+        titels, knoppen = self._titels.minimumSizeHint(), self._knoppen.minimumSizeHint()
+        return QSize(max(titels.width(), knoppen.width()), super().minimumSizeHint().height())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        nodig = self._titels.sizeHint().width() + self._grid.horizontalSpacing() + self._knoppen.sizeHint().width()
+        self._zet_gestapeld(event.size().width() < nodig)
+
+
 class _Vinkje(QWidget):
     """Selectievakje voor de labeltabellen. Zelf getekend, net als
     ``_Schakelaar``: een QCheckBox krijgt in dit thema geen nette indicator.
@@ -2978,8 +3028,7 @@ class ProjectDetailPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(10)
+        knoppen: list[QWidget] = []
         titel_kolom = QVBoxLayout()
         titel_kolom.setSpacing(2)
         titel = QLabel("Labels")
@@ -2990,16 +3039,14 @@ class ProjectDetailPage(QWidget):
         sub = QLabel(f"{aantal} {'label' if aantal == 1 else 'labels'} · {uitleg}")
         sub.setProperty("role", "matMeta")
         titel_kolom.addWidget(sub)
-        toolbar.addLayout(titel_kolom)
-        toolbar.addStretch(1)
-        toolbar.addWidget(self._bouw_labels_schakelaar())
+        knoppen.append(self._bouw_labels_schakelaar())
 
         self._labels_selectie_btn = QPushButton()
         self._labels_selectie_btn.setProperty("role", "ghost")
         self._labels_selectie_btn.setIcon(icon("download", self._theme.text, 13))
         self._labels_selectie_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._labels_selectie_btn.clicked.connect(lambda: self._exporteer_labels_pdf(alleen_selectie=True))
-        toolbar.addWidget(self._labels_selectie_btn)
+        knoppen.append(self._labels_selectie_btn)
         n_nieuw = len(self._labels_nieuw) if not is_rest else 0
         alles_btn = QPushButton("  Alle labels als PDF")
         alles_btn.setProperty("role", "ghost" if n_nieuw else "primary")
@@ -3009,7 +3056,7 @@ class ProjectDetailPage(QWidget):
             alles_btn.setIcon(icon("download", self._theme.text, 13))
         alles_btn.setEnabled(aantal > 0)
         alles_btn.clicked.connect(lambda: self._exporteer_labels_pdf(alleen_selectie=False))
-        toolbar.addWidget(alles_btn)
+        knoppen.append(alles_btn)
         if n_nieuw:
             nieuw_btn = QPushButton(f"  {n_nieuw} nieuwe {'label' if n_nieuw == 1 else 'labels'} als PDF")
             nieuw_btn.setProperty("role", "primary")
@@ -3017,8 +3064,8 @@ class ProjectDetailPage(QWidget):
             nieuw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             nieuw_btn.setToolTip("Alleen de labels van onderdelen die bij de laatste bijwerking nieuw zijn")
             nieuw_btn.clicked.connect(lambda: self._exporteer_labels_pdf(alleen_selectie=False, alleen_nieuw=True))
-            toolbar.addWidget(nieuw_btn)
-        layout.addLayout(toolbar)
+            knoppen.append(nieuw_btn)
+        layout.addWidget(_Werkbalk(titel_kolom, knoppen))
 
         if not is_rest:
             self._lb_controle_box = self._controle_box(layout)
@@ -4790,8 +4837,7 @@ class ProjectDetailPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(10)
+        knoppen: list[QWidget] = []
         titel_kolom = QVBoxLayout()
         titel_kolom.setSpacing(2)
         titel = QLabel("Zaagplannen")
@@ -4805,14 +4851,12 @@ class ProjectDetailPage(QWidget):
         sub = QLabel(sub_tekst)
         sub.setProperty("role", "matMeta")
         titel_kolom.addWidget(sub)
-        toolbar.addLayout(titel_kolom)
-        toolbar.addStretch(1)
         chips = QWidget()
         self._zp_chip_box = QHBoxLayout(chips)
         self._zp_chip_box.setContentsMargins(0, 0, 6, 0)
         self._zp_chip_box.setSpacing(8)
-        toolbar.addWidget(chips, 0, Qt.AlignmentFlag.AlignVCenter)
-        toolbar.addWidget(self._bouw_strategie_combo())
+        knoppen.append(chips)
+        knoppen.append(self._bouw_strategie_combo())
         # Is er al gezaagd, dan nooit alles weggooien: bijwerken i.p.v.
         # opnieuw genereren (mockup deel-opnieuw-genereren-concept.html).
         gezaagd = self._heeft_gezaagd()
@@ -4824,7 +4868,7 @@ class ProjectDetailPage(QWidget):
         opnieuw_btn.clicked.connect(
             lambda: self._open_bijwerk_paneel() if self._heeft_gezaagd() else self._genereer_zaagplannen()
         )
-        toolbar.addWidget(opnieuw_btn)
+        knoppen.append(opnieuw_btn)
         self._zp_opnieuw_btn = opnieuw_btn
         n_nieuw = sum(1 for p in self._zaagplannen if p.is_nieuw_bij_bijwerking)
         pdf_btn = QPushButton("  Alles + zaaglijst als PDF")
@@ -4832,7 +4876,7 @@ class ProjectDetailPage(QWidget):
         pdf_btn.setIcon(icon("download", self._theme.text if n_nieuw else "#12141B", 13))
         pdf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         pdf_btn.clicked.connect(lambda: self._exporteer_pdf())
-        toolbar.addWidget(pdf_btn)
+        knoppen.append(pdf_btn)
         if n_nieuw:
             nieuw_btn = QPushButton(f"  Alleen nieuwe platen als PDF ({n_nieuw})")
             nieuw_btn.setProperty("role", "primary")
@@ -4840,8 +4884,8 @@ class ProjectDetailPage(QWidget):
             nieuw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             nieuw_btn.setToolTip("Platen die bij de laatste bijwerking nieuw zijn of onderdelen erbij kregen")
             nieuw_btn.clicked.connect(lambda: self._exporteer_pdf(alleen_nieuw=True))
-            toolbar.addWidget(nieuw_btn)
-        layout.addLayout(toolbar)
+            knoppen.append(nieuw_btn)
+        layout.addWidget(_Werkbalk(titel_kolom, knoppen))
 
         self._zp_controle_box = self._controle_box(layout)
         self._ververs_zaagplan_controle()

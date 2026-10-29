@@ -86,7 +86,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QMimeData, QSize, Qt, Signal
-from PySide6.QtGui import QDrag, QPainter, QPixmap
+from PySide6.QtGui import QDrag, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -166,6 +166,44 @@ _PAGE_TAB = {
 
 _TAB_MIME_TYPE = "application/x-robocutter-tab"
 _SLEEP_DREMPEL = 8  # pixels muisbeweging voordat een klik een sleepactie wordt
+
+
+class _TabStripScroll(QScrollArea):
+    """Schuifstrook voor de tabbladen: met veel open tabbladen wordt de
+    strook anders breder dan het venster en dwingt die een groter venster
+    af dan de minimumgrootte. Geen zichtbare scrollbalk (zoals VS Code);
+    het muiswiel schuift horizontaal."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("TabStripScroll")
+        self.viewport().setObjectName("TabStripViewport")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._actief: QWidget | None = None
+        # Pas als de tabbladen hun plek hebben (bereik bekend), kan het
+        # actieve tabblad in beeld geschoven worden.
+        self.horizontalScrollBar().rangeChanged.connect(lambda _min, _max: self._toon_actief())
+
+    def zet_actief(self, tab: QWidget) -> None:
+        self._actief = tab
+        self._toon_actief()
+
+    def _toon_actief(self) -> None:
+        if self._actief is not None:
+            self.ensureWidgetVisible(self._actief, 40, 0)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._toon_actief()
+
+    def wheelEvent(self, event) -> None:
+        delta = event.angleDelta().y() or event.angleDelta().x()
+        balk = self.horizontalScrollBar()
+        balk.setValue(balk.value() - delta)
+        event.accept()
 
 
 class _KlikbareTab(QWidget):
@@ -297,11 +335,16 @@ class _KlikbareTab(QWidget):
         self.style().polish(self)
 
 
+# Minimale venstergrootte (breedte, hoogte) in logische pixels, zie
+# MainWindow._zet_startgrootte.
+_MIN_VENSTER = (1280, 760)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("RoboCutter")
-        self.resize(1360, 860)
+        self._zet_startgrootte()
         # Eigen titelbalk: de donkere header vervangt de Windows-titelbalk
         # (zie vensterframe.py). Buiten Windows (bijv. offscreen-rooktests)
         # blijft het een gewoon venster zonder eigen vensterknoppen.
@@ -504,14 +547,28 @@ class MainWindow(QMainWindow):
         strip = QWidget()
         strip.setObjectName("TabStrip")
         strip.setFixedHeight(38)
-        layout = QHBoxLayout(strip)
-        layout.setContentsMargins(6, 0, 6, 0)
+        strip_layout = QHBoxLayout(strip)
+        strip_layout.setContentsMargins(6, 0, 6, 0)
+        strip_layout.setSpacing(0)
+        scroll = _TabStripScroll()
+        strip_layout.addWidget(scroll)
+        inhoud = QWidget()
+        inhoud.setObjectName("TabStripInhoud")
+        layout = QHBoxLayout(inhoud)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        actieve_tab: QWidget | None = None
         for key in self._open_tabs:
             titel, icon_naam = self._tab_titel_icoon(key)
-            layout.addWidget(self._build_tab_item(key, titel, icon_naam))
+            tab = self._build_tab_item(key, titel, icon_naam)
+            layout.addWidget(tab)
+            if key == self._active_tab:
+                actieve_tab = tab
         layout.addStretch(1)
+        scroll.setWidget(inhoud)
+        if actieve_tab is not None:
+            scroll.zet_actief(actieve_tab)
 
         return strip
 
@@ -1004,6 +1061,25 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.Type.WindowStateChange and self._vensterknoppen is not None:
             self._vensterknoppen.werk_status_bij()
         super().changeEvent(event)
+
+    def _zet_startgrootte(self) -> None:
+        # Het venster schaalt mee met het scherm: het opent op 90% van de
+        # beschikbare ruimte, gecentreerd. Kleiner dan _MIN_VENSTER kan niet
+        # (op een kleiner scherm: dat hele scherm), zodat alles leesbaar
+        # blijft — alle schermen passen bij die breedte zonder horizontale
+        # scrollbalk (Svens melding: bij opstarten te klein, scrollbalk).
+        scherm = QGuiApplication.primaryScreen()
+        if scherm is None:
+            self.resize(*_MIN_VENSTER)
+            return
+        ruimte = scherm.availableGeometry()
+        min_breedte = min(_MIN_VENSTER[0], ruimte.width())
+        min_hoogte = min(_MIN_VENSTER[1], ruimte.height())
+        self.setMinimumSize(min_breedte, min_hoogte)
+        breedte = max(min_breedte, round(ruimte.width() * 0.9))
+        hoogte = max(min_hoogte, round(ruimte.height() * 0.9))
+        self.resize(breedte, hoogte)
+        self.move(ruimte.x() + (ruimte.width() - breedte) // 2, ruimte.y() + (ruimte.height() - hoogte) // 2)
 
     def closeEvent(self, event) -> None:
         self._modellen_page.sluit_verbinding()

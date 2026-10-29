@@ -299,6 +299,9 @@ class ReststukkenPage(QWidget):
         titles.addWidget(title)
         self._page_sub = QLabel("")
         self._page_sub.setObjectName("PageSub")
+        # Mag afbreken: anders dwingt deze lange regel naast de zoekbalk een
+        # breder venster af dan de minimumgrootte.
+        self._page_sub.setWordWrap(True)
         titles.addWidget(self._page_sub)
         head.addLayout(titles)
         head.addStretch(1)
