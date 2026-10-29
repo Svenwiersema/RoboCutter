@@ -65,6 +65,7 @@ from PySide6.QtGui import QColor, QDoubleValidator, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QCompleter,
     QDoubleSpinBox,
@@ -2540,6 +2541,9 @@ class ProjectDetailPage(QWidget):
         self._lo_rand_diagram = RandenDiagram(self._theme)
         rechts_layout.addWidget(self._lo_rand_diagram)
 
+        self._lo_fabriek = QCheckBox("Fabriekskantenband vereist")
+        rechts_layout.addWidget(self._lo_fabriek)
+
         self._onderdeel_toevoegen_fout = QLabel("")
         self._onderdeel_toevoegen_fout.setProperty("role", "validationText")
         self._onderdeel_toevoegen_fout.setWordWrap(True)
@@ -2656,6 +2660,7 @@ class ProjectDetailPage(QWidget):
         self._lo_aantal.setValue(1)
         self._lo_nerf_group.buttons()[0].setChecked(True)
         self._lo_rand_diagram.set_geselecteerde_randen(frozenset())
+        self._lo_fabriek.setChecked(False)
         self._lo_ververs_rand_diagram()
         self._onderdeel_toevoegen_fout.hide()
 
@@ -2687,6 +2692,7 @@ class ProjectDetailPage(QWidget):
         for btn in self._lo_nerf_group.buttons():
             btn.setChecked(btn.property("waarde") == onderdeel.nerfrichting_vereist)
         self._lo_rand_diagram.set_geselecteerde_randen(onderdeel.kantenband_randen)
+        self._lo_fabriek.setChecked(onderdeel.fabriekskantenband_vereist)
         self._onderdeel_toevoegen_fout.hide()
 
     def _los_onderdeel_opslaan(self) -> None:
@@ -2700,6 +2706,7 @@ class ProjectDetailPage(QWidget):
             aantal=self._lo_aantal.value(),
             nerfrichting_vereist=nerf_waarde,
             kantenband_randen=self._lo_rand_diagram.geselecteerde_randen(),
+            fabriekskantenband_vereist=self._lo_fabriek.isChecked(),
         )
         try:
             if self._bewerk_los_onderdeel_id:
@@ -3110,8 +3117,12 @@ class ProjectDetailPage(QWidget):
         kop_vinkje.omgezet.connect(self._labels_alles_selecteren)
         self._labels_kop_vinkje = kop_vinkje
 
+        # De uitgestelde stappen vragen de kop opnieuw op bij de tabel: de
+        # Python-verwijzing ``header`` kan intussen ongeldig zijn terwijl de
+        # tabel nog bestaat (na zaagplan genereren: "Internal C++ object
+        # (QHeaderView) already deleted").
         def plaats_kop_vinkje() -> None:
-            kop_vinkje.move((44 - 16) // 2, max(0, (header.height() - 16) // 2))
+            kop_vinkje.move((44 - 16) // 2, max(0, (tabel.horizontalHeader().height() - 16) // 2))
             kop_vinkje.show()
 
         # Met de tabel als context: vervalt als het paneel intussen al
@@ -3165,7 +3176,7 @@ class ProjectDetailPage(QWidget):
         )
         # De kophoogte klopt pas als de stylesheet is toegepast (na tonen).
         def zet_hoogte() -> None:
-            tabel.setFixedHeight(header.height() + rij_hoogte * len(labels) + 2)
+            tabel.setFixedHeight(tabel.horizontalHeader().height() + rij_hoogte * len(labels) + 2)
 
         tabel.setFixedHeight(header.sizeHint().height() + rij_hoogte * len(labels) + 2)
         QTimer.singleShot(0, tabel, zet_hoogte)
