@@ -720,7 +720,7 @@ houd die bij in plaats van een lijst hier. Kort, wat nog niet gebouwd is:
 modelrevisies + "Niet gecontroleerd" voor modellen, vervangingskeuze bij
 verwijderd materiaal + fuzzy matching, onderdelen importeren
 (CSV/Excel/DXF/Vectorworks), ERP-koppeling, licentie/edities, netwerkserver
-+ updates, automatische back-up (statusbalk toont nu een placeholder),
++ updates,
 mes/groef-plaatsingsregels, en de werkplaats-app (hoofdstuk 14, pas tegen
 het einde — bouw scannen dus niet in RoboCutter zelf).
 
@@ -3273,6 +3273,38 @@ houden.
     de database. Let op bij zulke scripts: zonder event-loop worden
     `deleteLater`-widgets niet opgeruimd en staan ze nog in een `grab()` —
     `sendPostedEvents(None, QEvent.Type.DeferredDelete)` erbij.
+
+- **2026-10-29 — Automatische back-up (hoofdstuk 12)** (mockup
+  `design/assets/mockups/backup-concept.html`, goedgekeurd "ziet er goed
+  uit werk het uit"). Keuzes van Sven (vooraf gevraagd): frequentie
+  **instelbaar** (elk uur / dagelijks (standaard) / wekelijks); map **te
+  kiezen, met standaard** `backups` naast de database en een waarschuwing
+  als die op dezelfde schijf staat; bewaren **24 uur alles, 14 dagen per
+  dag, 8 weken per week**; **terugzetten in Instellingen**.
+  - Backend `src/robocutter/backup/beheer.py` (geen eigen tabel: de
+    bestandsnamen zijn de stand). Terugzetten controleert de back-up
+    (`PRAGMA integrity_check`) en bewaart eerst de huidige stand als
+    `…-voor-terugzetten.db` (pil "Voor terugzetten" in de lijst).
+    Instellingen `backup_frequentie`/`backup_map`,
+    `InstellingenBeheer.effectieve_backup_map()`. `data/backups/` staat in
+    `.gitignore`. Tests: `tests/test_backup.py` (18). Ruwe test-ui:
+    `scripts/test_backup_ui.py` (eigen testdatabase in `data/backup_test/`).
+  - UI: `ui/backup_planner.py` (`BackupPlanner`): 3 s na start en elke 10
+    minuten kijken of er een back-up nodig is, back-up in een `QThread`;
+    een mislukte poging komt vanzelf terug bij de volgende controle. De
+    statusbalk toont de echte stand (was een vaste placeholder): geel
+    stipje + "zelfde schijf", of rood "Back-up mislukt — zie
+    Instellingen" (link opent Instellingen). Back-up-blok onderaan
+    Instellingen: stand + "Nu back-up maken", gele/rode panelen, hoe vaak,
+    map, lijst (8 nieuwste, "Alle n tonen") met inline
+    terugzet-bevestiging. Terugzetten herstart RoboCutter
+    (`QProcess.startDetached`, ook voor de PyInstaller-exe) met
+    `--teruggezet`/`--veiliggesteld`; na de herstart opent Instellingen
+    met een groene melding.
+  - Rooktest met onzichtbaar venster op een kopie van de database (start,
+    nu maken, lijst, bevestiging, mislukt, thema-wissel, terugzetten via de
+    planner, argumenten), schermafbeeldingen licht en donker bekeken. De
+    echte herstart zelf is niet automatisch getest.
 
 ## Werkwijze die Sven prettig vindt
 

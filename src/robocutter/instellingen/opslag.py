@@ -7,7 +7,12 @@ import json
 import os
 from pathlib import Path
 
-from robocutter.instellingen.models import GELDIGE_ZAAGSTRATEGIEEN, Instellingen, normaliseer_zaagstrategie
+from robocutter.instellingen.models import (
+    GELDIGE_BACKUP_FREQUENTIES,
+    GELDIGE_ZAAGSTRATEGIEEN,
+    Instellingen,
+    normaliseer_zaagstrategie,
+)
 
 __all__ = ["standaard_instellingen_pad", "laad_instellingen", "sla_instellingen_op"]
 
@@ -37,6 +42,8 @@ def laad_instellingen(pad: Path | None = None) -> Instellingen:
     if instellingen.standaard_zaagstrategie not in GELDIGE_ZAAGSTRATEGIEEN:
         # Bv. "efficient" (CNC), dat geen keuze meer is.
         instellingen.standaard_zaagstrategie = Instellingen().standaard_zaagstrategie
+    if instellingen.backup_frequentie not in GELDIGE_BACKUP_FREQUENTIES:
+        instellingen.backup_frequentie = Instellingen().backup_frequentie
     return instellingen
 
 
@@ -53,5 +60,7 @@ def sla_instellingen_op(instellingen: Instellingen, pad: Path | None = None) -> 
         "label_scancode": instellingen.label_scancode,
         "label_kantenband_indicatie": instellingen.label_kantenband_indicatie,
         "label_nerfrichting_pijl": instellingen.label_nerfrichting_pijl,
+        "backup_frequentie": instellingen.backup_frequentie,
+        "backup_map": instellingen.backup_map,
     }
     bestand.write_text(json.dumps(data, indent=2), encoding="utf-8")

@@ -1,0 +1,287 @@
+<title>RoboCutter Back-up</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: één kolom zoals het Instellingen-scherm: een Back-up-kaart (status, hoe vaak, map,
+     lijst met back-ups) en daaronder de statusbalk onderin het venster. Tokens = theme.py. */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF;
+    --success:#4FA875; --success-ink:#1E5E3B; --success-soft:#E7F7EE;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --critical:#C74F4F; --critical-soft:#FBEAEA; --critical-ink:#8E2F2F;
+    --chrome:#15161C; --chrome-text:#C9CCD8; --chrome-muted:#8A8FA3; --chrome-border:#2A2C36;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52;
+      --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --critical:#E57373; --critical-soft:#3A2020; --critical-ink:#F3B5B5;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52;
+    --success:#6FCF97; --success-ink:#BFF0D4; --success-soft:#1D3226;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --critical:#E57373; --critical-soft:#3A2020; --critical-ink:#F3B5B5;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .view{max-width:1100px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:20px;}
+  h1{font-size:22px;font-weight:800;margin:0 0 4px;text-wrap:balance;}
+  .lead{color:var(--text-muted);font-size:13px;line-height:1.55;margin:0;max-width:78ch;}
+
+  .toestanden{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .toestanden .lbl{font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text-faint);margin-right:4px;}
+  .seg{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:8px;padding:6px 12px;font:600 12.5px var(--sans);cursor:pointer;}
+  .seg[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-text);border-color:var(--accent);}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:8px 15px;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:inherit;white-space:nowrap;}
+  .btn-primary{background:var(--accent);color:#12141B;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);}
+  .btn-danger{background:var(--critical);color:#FFFFFF;}
+  .btn-sm{padding:5px 11px;font-size:12px;}
+  .btn:focus-visible,.seg:focus-visible,.segbtn:focus-visible,.link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .btn svg{width:13px;height:13px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px;}
+  .sectie{font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-muted);}
+  .veld-label{font-weight:500;font-size:13px;margin-bottom:-6px;}
+  .hulp{color:var(--text-faint);font-size:12px;line-height:1.5;}
+
+  .status{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+  .status .stip{width:9px;height:9px;border-radius:5px;flex:none;}
+  .status .tekst{flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px;}
+  .status .hoofd{font-weight:600;font-size:13.5px;}
+  .status .sub{color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;}
+
+  .paneel{border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start;line-height:1.5;}
+  .paneel svg{width:16px;height:16px;flex:none;margin-top:1px;}
+  .paneel.waarschuwing{background:var(--warning-soft);color:var(--warning-ink);}
+  .paneel.kritiek{background:var(--critical-soft);color:var(--critical-ink);}
+  .paneel b{font-weight:700;}
+
+  .segmented{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:3px;max-width:520px;}
+  .segbtn{border:none;background:transparent;color:var(--text-muted);padding:7px 10px;border-radius:6px;font:500 13px var(--sans);cursor:pointer;}
+  .segbtn[aria-pressed="true"]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);}
+
+  .map-rij{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .invoer{flex:1;min-width:240px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:8px;padding:8px 12px;font:13px var(--mono);font-weight:600;font-size:12px;}
+  .link{background:none;border:none;color:var(--accent-text);font:600 12.5px var(--sans);cursor:pointer;padding:0;}
+  .voet{display:flex;justify-content:flex-end;}
+
+  .lijst-kop{display:flex;align-items:baseline;gap:10px;margin-top:6px;}
+  .lijst-kop .aantal{color:var(--text-faint);font-size:12px;}
+  .tabel-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;}
+  th{text-align:left;font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text-faint);padding:9px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+  td{padding:9px 14px;border-bottom:1px solid var(--border);}
+  tr:last-child td{border-bottom:none;}
+  td.rechts,th.rechts{text-align:right;}
+  .wanneer{font-weight:600;}
+  .klein{color:var(--text-muted);font-size:12px;}
+  .soort{font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);white-space:nowrap;}
+  tr.bevestig-rij td{background:var(--critical-soft);color:var(--critical-ink);}
+  .bevestig{display:flex;gap:14px;align-items:center;flex-wrap:wrap;line-height:1.5;}
+  .bevestig .tekst{flex:1;min-width:260px;}
+  .bevestig .knoppen{display:flex;gap:8px;}
+  tr.gekozen td{background:var(--surface-hover);}
+
+  .balk-wrap{display:flex;flex-direction:column;gap:6px;}
+  .balk-titel{font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text-faint);}
+  .statusbalk{background:var(--chrome);color:var(--chrome-text);border:1px solid var(--chrome-border);border-radius:8px;padding:7px 12px;display:flex;gap:18px;align-items:center;font-size:12px;flex-wrap:wrap;}
+  .statusbalk .stip{width:7px;height:7px;border-radius:4px;display:inline-block;margin-right:7px;vertical-align:middle;}
+  .statusbalk .rechts{margin-left:auto;color:var(--chrome-muted);}
+  .statusbalk .klik{text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
+
+  .melding{display:flex;gap:10px;align-items:flex-start;background:var(--success-soft);color:var(--success-ink);border-radius:10px;padding:12px 14px;}
+  .melding svg{width:16px;height:16px;flex:none;margin-top:1px;}
+  .melding .sub{opacity:0.85;font-size:12px;}
+
+  .notities{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+  .notitie{border:1px dashed var(--border);border-radius:10px;padding:12px 14px;color:var(--text-muted);line-height:1.55;font-size:12.5px;}
+  .notitie b{color:var(--text);}
+  @media (prefers-reduced-motion: no-preference){ .paneel,.melding,tr.bevestig-rij td{animation:in .18s ease-out;} @keyframes in{from{opacity:.4}to{opacity:1}} }
+</style>
+
+<div class="view">
+  <header>
+    <h1>Back-up</h1>
+    <p class="lead">Nieuw blok in Instellingen, onder Opslaglocatie. RoboCutter maakt zelf een back-up van de database, zo vaak als je hier kiest. Met de knoppen hieronder bekijk je de verschillende situaties.</p>
+  </header>
+
+  <div class="toestanden" role="group" aria-label="Situatie">
+    <span class="lbl">Situatie</span>
+    <button class="seg" id="t-ok" data-toestand="ok" aria-pressed="true">Alles in orde</button>
+    <button class="seg" id="t-schijf" data-toestand="schijf" aria-pressed="false">Zelfde schijf</button>
+    <button class="seg" id="t-mislukt" data-toestand="mislukt" aria-pressed="false">Back-up mislukt</button>
+    <button class="seg" id="t-terug" data-toestand="terug" aria-pressed="false">Terugzetten</button>
+    <button class="seg" id="t-na" data-toestand="na" aria-pressed="false">Na terugzetten</button>
+  </div>
+
+  <div class="melding" id="melding-na" hidden>
+    <svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"><polyline points="40 144 96 200 224 72"/></svg>
+    <div><b>Back-up van di 27 okt 13:50 teruggezet</b><div class="sub">De stand van daarvoor staat bewaard als back-up van vandaag 14:05.</div></div>
+  </div>
+
+  <section class="card" aria-label="Back-up">
+    <div class="sectie">Back-up</div>
+
+    <div class="status">
+      <span class="stip" id="status-stip" style="background:var(--success)"></span>
+      <div class="tekst">
+        <span class="hoofd" id="status-hoofd">Laatste back-up: vandaag 13:52</span>
+        <span class="sub" id="status-sub">192 kB · volgende: morgen rond 13:52 · 23 back-ups bewaard (4,4 MB)</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="nu-knop">
+        <svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"><path d="M128 40v120M80 112l48 48 48-48M40 200h176"/></svg>
+        Nu back-up maken
+      </button>
+    </div>
+
+    <div class="paneel waarschuwing" id="paneel-schijf" hidden>
+      <svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"><path d="M128 40 24 216h208z"/><path d="M128 104v48"/><circle cx="128" cy="184" r="4" fill="currentColor"/></svg>
+      <div>De back-ups staan op <b>dezelfde schijf (C:)</b> als de database. Gaat die schijf kapot, dan ben je de back-ups ook kwijt. Kies een map op een andere schijf, een USB-stick of een netwerkmap.</div>
+    </div>
+
+    <div class="paneel kritiek" id="paneel-mislukt" hidden>
+      <svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"><circle cx="128" cy="128" r="96"/><path d="M128 80v56"/><circle cx="128" cy="172" r="4" fill="currentColor"/></svg>
+      <div><b>De back-up van vandaag 13:52 is mislukt:</b> de map E:\RoboCutter-back-ups is niet bereikbaar. Staat de USB-stick erin? RoboCutter probeert het elke 10 minuten opnieuw, of klik op Nu back-up maken.</div>
+    </div>
+
+    <div class="veld-label">Hoe vaak</div>
+    <div class="segmented" role="group" aria-label="Hoe vaak">
+      <button class="segbtn" id="f-uur" aria-pressed="false">Elk uur</button>
+      <button class="segbtn" id="f-dag" aria-pressed="true">Dagelijks</button>
+      <button class="segbtn" id="f-week" aria-pressed="false">Wekelijks</button>
+    </div>
+    <div class="hulp">Bij het opstarten als de laatste back-up te oud is, en daarna zolang RoboCutter openstaat.</div>
+
+    <div class="veld-label">Back-upmap</div>
+    <div class="map-rij">
+      <input class="invoer" id="map" value="E:\RoboCutter-back-ups" aria-label="Back-upmap" readonly>
+      <button class="btn btn-ghost">Map kiezen…</button>
+    </div>
+    <div class="hulp">
+      <button class="link" id="standaard-link">Standaardmap gebruiken</button> (een map "backups" naast de database).
+      Bewaard blijven: alles van de laatste 24 uur, daarna één per dag (14 dagen) en één per week (8 weken). Oudere back-ups ruimt RoboCutter zelf op.
+    </div>
+    <div class="voet"><button class="btn btn-primary">Opslaan</button></div>
+
+    <div class="lijst-kop"><span class="sectie">Back-ups</span><span class="aantal">23 in deze map, nieuwste eerst</span></div>
+    <div class="tabel-wrap">
+      <table>
+        <thead><tr><th>Wanneer</th><th>Datum en tijd</th><th class="rechts">Grootte</th><th></th><th></th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div><button class="link">Alle 23 tonen</button></div>
+  </section>
+
+  <div class="balk-wrap">
+    <div class="balk-titel">Statusbalk onderin het venster</div>
+    <div class="statusbalk">
+      <span><span class="stip" style="background:#6FCF97"></span>Offline modus — lokale database</span>
+      <span id="balk-backup"></span>
+      <span class="rechts">25 onderdelen totaal</span>
+    </div>
+  </div>
+
+  <div class="notities">
+    <div class="notitie"><b>Terugzetten.</b> Eerst wordt de huidige stand zelf als back-up bewaard, dus terugzetten is altijd terug te draaien. Daarna start RoboCutter opnieuw, want open schermen tonen anders nog de oude gegevens.</div>
+    <div class="notitie"><b>Mislukt.</b> Een mislukte back-up blokkeert niets in de app. De statusbalk wordt rood met een link naar dit blok, tot een back-up weer lukt.</div>
+    <div class="notitie"><b>Soort.</b> "Voor terugzetten" markeert de back-up die RoboCutter zelf maakte vlak voor een terugzetting, zodat je die snel terugvindt.</div>
+  </div>
+</div>
+
+<script>
+  const backups = [
+    {wanneer:"Vandaag", tijd:"di 29 okt 2026 · 13:52", kb:"192 kB", soort:""},
+    {wanneer:"Gisteren", tijd:"ma 28 okt 2026 · 13:47", kb:"188 kB", soort:""},
+    {wanneer:"2 dagen geleden", tijd:"zo 27 okt 2026 · 13:50", kb:"188 kB", soort:""},
+    {wanneer:"3 dagen geleden", tijd:"za 26 okt 2026 · 09:12", kb:"184 kB", soort:"Voor terugzetten"},
+    {wanneer:"4 dagen geleden", tijd:"vr 25 okt 2026 · 08:05", kb:"184 kB", soort:""},
+    {wanneer:"1 week geleden", tijd:"di 22 okt 2026 · 08:31", kb:"176 kB", soort:""},
+    {wanneer:"3 weken geleden", tijd:"do 10 okt 2026 · 07:58", kb:"160 kB", soort:""},
+  ];
+  const TERUG = 2;
+  let toestand = "ok";
+
+  function teken(){
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
+    backups.forEach((b, i) => {
+      const tr = document.createElement("tr");
+      if (toestand === "terug" && i === TERUG) tr.className = "gekozen";
+      tr.innerHTML = `<td class="wanneer">${b.wanneer}</td><td class="klein">${b.tijd}</td>`+
+        `<td class="rechts klein">${b.kb}</td><td>${b.soort ? `<span class="soort">${b.soort}</span>` : ""}</td>`+
+        `<td class="rechts"><button class="btn btn-ghost btn-sm" data-i="${i}">Terugzetten</button></td>`;
+      tbody.appendChild(tr);
+      if (toestand === "terug" && i === TERUG){
+        const rij = document.createElement("tr");
+        rij.className = "bevestig-rij";
+        rij.innerHTML = `<td colspan="5"><div class="bevestig"><div class="tekst"><b>Terugzetten naar zo 27 okt 13:50?</b> Alles wat je daarna hebt gewijzigd is dan weg uit de app. De huidige stand wordt eerst als back-up bewaard, dus je kunt dit terugdraaien. RoboCutter start daarna opnieuw.</div>`+
+          `<div class="knoppen"><button class="btn btn-ghost btn-sm" data-annuleer>Annuleren</button><button class="btn btn-danger btn-sm">Terugzetten en herstarten</button></div></div></td>`;
+        tbody.appendChild(rij);
+      }
+    });
+    tbody.querySelectorAll("[data-i]").forEach(k => k.addEventListener("click", () => zet(Number(k.dataset.i) === TERUG ? "terug" : "terug")));
+    const annuleer = tbody.querySelector("[data-annuleer]");
+    if (annuleer) annuleer.addEventListener("click", () => zet("ok"));
+  }
+
+  function zet(nieuw){
+    toestand = nieuw;
+    document.querySelectorAll(".seg").forEach(s => s.setAttribute("aria-pressed", String(s.dataset.toestand === nieuw)));
+    const stip = document.getElementById("status-stip");
+    const hoofd = document.getElementById("status-hoofd");
+    const sub = document.getElementById("status-sub");
+    const map = document.getElementById("map");
+    const balk = document.getElementById("balk-backup");
+    document.getElementById("paneel-schijf").hidden = nieuw !== "schijf";
+    document.getElementById("paneel-mislukt").hidden = nieuw !== "mislukt";
+    document.getElementById("melding-na").hidden = nieuw !== "na";
+    map.value = nieuw === "schijf" ? "C:\\Users\\sven\\Documents\\RoboCutter\\data\\backups (standaard)" : "E:\\RoboCutter-back-ups";
+    if (nieuw === "mislukt"){
+      stip.style.background = "var(--critical)";
+      hoofd.textContent = "Back-up mislukt";
+      sub.textContent = "Laatste gelukte back-up: gisteren 13:47 · volgende poging over 10 minuten";
+      balk.innerHTML = `<span class="stip" style="background:#E57373"></span><span class="klik">Back-up mislukt — zie Instellingen</span>`;
+    } else if (nieuw === "schijf"){
+      stip.style.background = "var(--warning)";
+      hoofd.textContent = "Laatste back-up: vandaag 13:52";
+      sub.textContent = "192 kB · volgende: morgen rond 13:52 · op dezelfde schijf als de database";
+      balk.innerHTML = `<span class="stip" style="background:#E8B84B"></span>Laatste back-up: vandaag 13:52 · <span class="klik">zelfde schijf</span>`;
+    } else if (nieuw === "na"){
+      stip.style.background = "var(--success)";
+      hoofd.textContent = "Laatste back-up: vandaag 14:05 (voor terugzetten)";
+      sub.textContent = "192 kB · volgende: morgen rond 14:05 · 24 back-ups bewaard (4,6 MB)";
+      balk.textContent = "Laatste back-up: vandaag 14:05";
+    } else {
+      stip.style.background = "var(--success)";
+      hoofd.textContent = "Laatste back-up: vandaag 13:52";
+      sub.textContent = "192 kB · volgende: morgen rond 13:52 · 23 back-ups bewaard (4,4 MB)";
+      balk.textContent = "Laatste back-up: vandaag 13:52";
+    }
+    teken();
+  }
+
+  document.querySelectorAll(".seg").forEach(s => s.addEventListener("click", () => zet(s.dataset.toestand)));
+  document.querySelectorAll(".segbtn").forEach(s => s.addEventListener("click", () => {
+    document.querySelectorAll(".segbtn").forEach(x => x.setAttribute("aria-pressed", String(x === s)));
+    const sub = document.getElementById("status-sub");
+    const volgende = {"f-uur":"vandaag rond 14:52","f-dag":"morgen rond 13:52","f-week":"di 5 nov rond 13:52"}[s.id];
+    if (toestand === "ok") sub.textContent = `192 kB · volgende: ${volgende} · 23 back-ups bewaard (4,4 MB)`;
+  }));
+  document.getElementById("standaard-link").addEventListener("click", () => zet("schijf"));
+  zet("ok");
+</script>

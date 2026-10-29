@@ -40,6 +40,7 @@ __all__ = [
     "GELDIGE_THEMAS",
     "GELDIGE_ZAAGSTRATEGIEEN",
     "GELDIGE_LABEL_SCANCODES",
+    "GELDIGE_BACKUP_FREQUENTIES",
     "normaliseer_zaagstrategie",
 ]
 
@@ -64,6 +65,11 @@ def normaliseer_zaagstrategie(waarde: str) -> str:
 # bij het printen van een labelvel.
 GELDIGE_LABEL_SCANCODES = ("geen", "qr", "barcode")
 
+# Hoofdstuk 12: automatische periodieke back-up van de database. Hoe vaak
+# is op Svens verzoek instelbaar (standaard dagelijks), zie
+# ``robocutter.backup``.
+GELDIGE_BACKUP_FREQUENTIES = ("uur", "dag", "week")
+
 
 @dataclass
 class Instellingen:
@@ -80,3 +86,7 @@ class Instellingen:
     label_scancode: str = "qr"
     label_kantenband_indicatie: bool = True
     label_nerfrichting_pijl: bool = True
+    backup_frequentie: str = "dag"
+    # None = standaard: een "backups"-map naast de database. Een andere
+    # schijf (USB, netwerkmap) beschermt ook tegen een kapotte schijf.
+    backup_map: str | None = None

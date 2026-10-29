@@ -82,12 +82,13 @@ alleen de rest van de chrome/tabbladen te laten meewisselen.
 from __future__ import annotations
 
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QMimeData, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QMimeData, QProcess, QSize, Qt, Signal
 from PySide6.QtGui import QDrag, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QFrame,
     QGraphicsOpacityEffect,
@@ -103,6 +104,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from robocutter.backup.beheer import BackupBestand, BackupError
 from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.projecten.models import Project, ProjectStatus
 from robocutter.projecten.project_reststukken import ProjectReststukkenBibliotheek
@@ -114,6 +116,7 @@ from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.projecten.zaagplannen_opslag import open_verbinding as open_zaagplannen_verbinding
 from robocutter.reststukken.models import ReststukStatus
 from robocutter.ui import vensterframe
+from robocutter.ui.backup_planner import BackupPlanner, tijd_tekst
 from robocutter.ui.icons import icon, icon_pixmap
 from robocutter.ui.instellingen_page import InstellingenPage
 from robocutter.ui.materialen_page import MaterialenPage
@@ -341,7 +344,7 @@ _MIN_VENSTER = (1280, 760)
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, na_terugzetten: tuple[datetime, datetime | None] | None = None) -> None:
         super().__init__()
         self.setWindowTitle("RoboCutter")
         self._zet_startgrootte()
@@ -372,7 +375,16 @@ class MainWindow(QMainWindow):
             on_open_project=self._open_tab_project,
             on_project_verwijderd=self._on_project_verwijderd,
         )
-        self._instellingen_page = InstellingenPage(self._instellingen, self._theme, self._on_instellingen_gewijzigd)
+        # Automatische back-up (hoofdstuk 12), gedeeld door de statusbalk en
+        # het Back-up-blok in Instellingen.
+        self._backup_planner = BackupPlanner(self._instellingen, self)
+        self._instellingen_page = InstellingenPage(
+            self._instellingen,
+            self._theme,
+            self._on_instellingen_gewijzigd,
+            backup_planner=self._backup_planner,
+            on_terugzetten=self._terugzetten,
+        )
         # Eén gedeelde opslag voor het laatst gegenereerde zaagplan per
         # project (zie zaagplannen_opslag.py) — hier geopend i.p.v. per
         # ProjectDetailPage, want er kunnen meerdere tabbladen (dus
@@ -421,6 +433,13 @@ class MainWindow(QMainWindow):
 
         self._build_status_bar()
         self._apply_theme()
+        self._backup_planner.gewijzigd.connect(self._ververs_backup_status)
+        self._backup_planner.start()
+        if na_terugzetten is not None:
+            # Herstart na "Terugzetten": laat in Instellingen zien wat er gebeurd is.
+            teruggezet, veiliggesteld = na_terugzetten
+            self._open_tab("instellingen")
+            self._instellingen_page.meld_teruggezet(teruggezet, veiliggesteld)
 
     def _build_workspace(self) -> QHBoxLayout:
         workspace = QHBoxLayout()
@@ -1013,8 +1032,18 @@ class MainWindow(QMainWindow):
         dot.setFixedSize(7, 7)
         left_layout.addWidget(dot)
         left_layout.addWidget(QLabel("Offline modus — lokale database"))
-        left_layout.addWidget(QLabel("Laatste back-up: vandaag 06:00"))
+        backup_rij = QHBoxLayout()
+        backup_rij.setSpacing(7)
+        self._backup_stip = QLabel()
+        self._backup_stip.setFixedSize(7, 7)
+        backup_rij.addWidget(self._backup_stip)
+        self._backup_label = QLabel()
+        self._backup_label.setTextFormat(Qt.TextFormat.RichText)
+        self._backup_label.linkActivated.connect(lambda _link: self._open_tab("instellingen"))
+        backup_rij.addWidget(self._backup_label)
+        left_layout.addLayout(backup_rij)
         bar.addWidget(left)
+        self._ververs_backup_status()
 
         totaal = sum(len(bouw_zaaglijst(p)) for p in self._dashboard_alle_projecten())
         bar.addPermanentWidget(QLabel(f"{totaal} onderdelen totaal"))
@@ -1048,6 +1077,56 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self) -> None:
         self.setStyleSheet(build_stylesheet(self._theme))
+        self._ververs_backup_status()
+
+    # ------------------------------------------------------------------
+    # Back-up (hoofdstuk 12): statusbalk en terugzetten
+    # ------------------------------------------------------------------
+
+    def _ververs_backup_status(self) -> None:
+        if not hasattr(self, "_backup_label"):
+            return
+        planner = self._backup_planner
+        t = self._theme
+        stip_kleur: str | None = None
+        laatste = planner.laatste()
+        if planner.fout:
+            stip_kleur = t.critical
+            tekst = self._backup_link("Back-up mislukt — zie Instellingen", t.critical)
+        elif laatste is None:
+            tekst = "Back-up maken…" if planner.bezig else "Nog geen back-up"
+        else:
+            tekst = f"Laatste back-up: {tijd_tekst(laatste.tijdstip)}"
+            if planner.op_zelfde_schijf():
+                stip_kleur = t.warning
+                tekst += " · " + self._backup_link("zelfde schijf", t.chrome_text_muted)
+        self._backup_label.setText(tekst)
+        self._backup_stip.setVisible(stip_kleur is not None)
+        if stip_kleur is not None:
+            self._backup_stip.setStyleSheet(f"background: {stip_kleur}; border-radius: 3px;")
+
+    @staticmethod
+    def _backup_link(tekst: str, kleur: str) -> str:
+        return f'<a href="instellingen" style="color: {kleur}; text-decoration: underline;">{tekst}</a>'
+
+    def _terugzetten(self, backup: BackupBestand) -> str:
+        """Zet ``backup`` terug en herstart RoboCutter (de bibliotheken houden
+        hun gegevens in het geheugen, dus zonder herstart zou je nog de oude
+        stand zien). Geeft een foutmelding terug als het niet lukt."""
+        try:
+            veiliggesteld = self._backup_planner.zet_terug(backup)
+        except BackupError as exc:
+            return str(exc)
+        argumenten = ["--teruggezet", backup.tijdstip.isoformat()]
+        if veiliggesteld is not None:
+            argumenten += ["--veiliggesteld", veiliggesteld.tijdstip.isoformat()]
+        if getattr(sys, "frozen", False):
+            QProcess.startDetached(sys.executable, argumenten)
+        else:
+            QProcess.startDetached(sys.executable, ["-m", "robocutter.ui.app", *argumenten])
+        self.close()
+        QApplication.quit()
+        return ""
 
     def nativeEvent(self, event_type, message):
         if self._eigen_frame:
@@ -1082,6 +1161,7 @@ class MainWindow(QMainWindow):
         self.move(ruimte.x() + (ruimte.width() - breedte) // 2, ruimte.y() + (ruimte.height() - hoogte) // 2)
 
     def closeEvent(self, event) -> None:
+        self._backup_planner.stop()
         self._modellen_page.sluit_verbinding()
         self._reststukken_page.sluit_verbinding()
         self._materialen_page.sluit_verbinding()

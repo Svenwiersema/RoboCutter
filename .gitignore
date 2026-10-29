@@ -9,3 +9,5 @@ __pycache__/
 /data/*_test.db
 /data/instellingen_test_data/
 /*.pdf
+/data/backups/
+/data/backup_test/

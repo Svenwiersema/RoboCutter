@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from robocutter.instellingen.models import (
+    GELDIGE_BACKUP_FREQUENTIES,
     GELDIGE_LABEL_SCANCODES,
     GELDIGE_THEMAS,
     GELDIGE_ZAAGSTRATEGIEEN,
@@ -27,6 +28,7 @@ else:
     _REPO_ROOT = Path(__file__).resolve().parents[3]
     _STANDAARD_DATA_MAP = _REPO_ROOT / "data"
 _DB_BESTANDSNAAM = "robocutter.db"
+_BACKUP_MAPNAAM = "backups"
 
 
 class OpslagVerplaatsenError(Exception):
@@ -48,6 +50,11 @@ def valideer(instellingen: Instellingen) -> list[str]:
         fouten.append(
             f"Onbekende labelscancode: {instellingen.label_scancode!r} "
             f"(verwacht {', '.join(GELDIGE_LABEL_SCANCODES)})."
+        )
+    if instellingen.backup_frequentie not in GELDIGE_BACKUP_FREQUENTIES:
+        fouten.append(
+            f"Onbekende back-upfrequentie: {instellingen.backup_frequentie!r} "
+            f"(verwacht {', '.join(GELDIGE_BACKUP_FREQUENTIES)})."
         )
     return fouten
 
@@ -89,6 +96,11 @@ class InstellingenBeheer:
 
     def effectieve_db_pad(self) -> Path:
         return self.effectieve_data_map() / _DB_BESTANDSNAAM
+
+    def effectieve_backup_map(self) -> Path:
+        if self._instellingen.backup_map:
+            return Path(self._instellingen.backup_map)
+        return self.effectieve_data_map() / _BACKUP_MAPNAAM
 
     def wijzig_opslaglocatie(self, nieuwe_map: Path | str) -> Instellingen:
         """Verplaatst een bestaand databasebestand naar de nieuwe map

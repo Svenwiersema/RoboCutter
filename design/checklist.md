@@ -277,6 +277,10 @@ logboek van `OVERDRACHT.md`.
   scherm (minimum 1280×760)
 - Instellingen: opslaglocatie, thema, zaagstrategie, zaagsnede, scancode
 - Demo-`.exe` + installer
+- Automatische back-up (H12): instelbaar elk uur / dagelijks / wekelijks,
+  eigen map (waarschuwing bij dezelfde schijf), bewaren 24 uur alles +
+  14 dagen per dag + 8 weken per week, terugzetten vanuit Instellingen
+  (huidige stand eerst veiliggesteld, app herstart), stand in de statusbalk
 
 **🟡 Deels**
 
@@ -300,8 +304,6 @@ logboek van `OVERDRACHT.md`.
 - Licentie/edities (H7/H8): Keygen, Lemon Squeezy, Demo-projectlimiet,
   logo-regels, werkplektelling — standaard uit tijdens ontwikkeling
 - Netwerkserver voor Pro/Enterprise en updates via Keygen (H8)
-- Automatische back-up (H12) — de statusbalk toont nu een vaste
-  placeholder-tekst "Laatste back-up: vandaag 06:00"
 - Werkplaats-app (H14) — pas tegen het einde van het project
 
 **❓ Nog te bevestigen door Sven**
