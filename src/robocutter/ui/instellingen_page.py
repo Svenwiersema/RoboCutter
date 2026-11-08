@@ -73,6 +73,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from robocutter import __version__
+from robocutter.logboek import standaard_log_map
+from robocutter.ui.foutafhandeling import open_logmap
 from robocutter.backup.beheer import BackupBestand, lijst_backups
 from robocutter.instellingen.beheer import InstellingenBeheer, OpslagVerplaatsenError
 from robocutter.instellingen.models import (
@@ -198,6 +201,7 @@ class InstellingenPage(QWidget):
         layout.addWidget(self._build_opslag_kaart())
         if self._backup_planner is not None:
             layout.addWidget(self._build_backup_kaart())
+        layout.addWidget(self._build_over_kaart())
         layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -430,6 +434,38 @@ class InstellingenPage(QWidget):
         footer.addWidget(opslaan)
         layout.addLayout(footer)
 
+        return kaart
+
+    def _build_over_kaart(self) -> QFrame:
+        """Versie en logbestand (alphatest): bij een fout kun je zo zien
+        welke build je draait en waar het logbestand staat."""
+        kaart = QFrame()
+        kaart.setObjectName("TableCard")
+        layout = QVBoxLayout(kaart)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(10)
+        sectie_label = QLabel("OVER ROBOCUTTER")
+        sectie_label.setProperty("role", "fieldSectionLabel")
+        layout.addWidget(sectie_label)
+        versie = QLabel(f"Versie {__version__}")
+        versie.setProperty("role", "matName")
+        layout.addWidget(versie)
+        log_map = standaard_log_map()
+        uitleg = QLabel(
+            f"Onverwachte fouten worden bijgehouden in een logbestand in {log_map}. "
+            "Gaat er iets mis, bewaar dan dat bestand."
+        )
+        uitleg.setProperty("role", "fieldHint")
+        uitleg.setWordWrap(True)
+        layout.addWidget(uitleg)
+        rij = QHBoxLayout()
+        rij.addStretch(1)
+        logmap = QPushButton("Logmap openen")
+        logmap.setProperty("role", "ghost")
+        logmap.setCursor(Qt.CursorShape.PointingHandCursor)
+        logmap.clicked.connect(lambda: open_logmap(log_map / "robocutter.log"))
+        rij.addWidget(logmap)
+        layout.addLayout(rij)
         return kaart
 
     def _build_opslag_kaart(self) -> QFrame:

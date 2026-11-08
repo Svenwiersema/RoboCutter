@@ -3521,6 +3521,25 @@ houden.
     naam → pas dan een onthouden koppeling. De oude rij blijft staan maar
     doet niets meer.
 
+- **2026-11-08 — Alpha voor Svens eigen gebruik op het werk.** Sven:
+  "deze alpha test is voor mijzelf op werk", dus geen rondleiding,
+  "probleem melden", testinstructie of opruimronde. Afgesproken volgorde:
+  1 foutafhandeling + logbestand + versie, 2 werkende .exe/installer op
+  zijn werk-pc (openpyxl mee, schone `%APPDATA%`), 3 eigen materialen erin
+  (open vraag aan Sven: leeg beginnen + materialen-import, of de huidige
+  database meenemen), 4 optioneel: vervangingskeuze bij verwijderd
+  materiaal.
+  - **Stap 1 gebouwd:** `robocutter/logboek.py` (`start_logboek`,
+    `log_fout`, `stop_logboek`; `%APPDATA%\RoboCutter\logboekobocutter.log`,
+    roterend 1 MB × 5, plus `vastloper.log` via `faulthandler`),
+    `ui/foutafhandeling.py` (`sys.excepthook` + `threading.excepthook`:
+    loggen en een melding "Er ging iets mis" met "Logmap openen"; vanuit
+    een andere thread via een signaal; dezelfde fout binnen 10 s één
+    melding). `app.main` start het logboek vóór de QApplication en logt
+    het databasepad. Versie `robocutter.__version__ = "0.2.0a1"` (ook in
+    `pyproject.toml`), kaart "Over RoboCutter" onderaan Instellingen.
+    Tests `tests/test_logboek.py` (4, altijd een map in `tmp_path`).
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

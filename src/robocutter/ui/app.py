@@ -10,6 +10,9 @@ from datetime import datetime
 
 from PySide6.QtWidgets import QApplication
 
+from robocutter.instellingen.beheer import InstellingenBeheer
+from robocutter.logboek import log, start_logboek, stop_logboek
+from robocutter.ui.foutafhandeling import installeer_foutafhandeling
 from robocutter.ui.main_window import MainWindow
 from robocutter.ui.widgets.scrollwiel import ScrollwielFilter
 
@@ -35,8 +38,13 @@ def _na_terugzetten(argumenten: list[str]) -> tuple[datetime, datetime | None] |
 
 
 def main() -> int:
+    # Logbestand eerst: ook een fout tijdens het opstarten komt erin.
+    log_pad = start_logboek()
     app = QApplication(sys.argv)
     app.setApplicationName("RoboCutter")
+    installeer_foutafhandeling(app, log_pad)
+    app.aboutToQuit.connect(stop_logboek)
+    log.info("Database: %s", InstellingenBeheer().effectieve_db_pad())
     # Keuzelijsten veranderen niet meer per ongeluk door overheen te scrollen.
     scrollwiel = ScrollwielFilter(app)
     app.installEventFilter(scrollwiel)
