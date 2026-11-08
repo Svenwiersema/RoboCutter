@@ -3501,6 +3501,25 @@ houden.
     scrollen. Het importvenster onthoudt zelf gekozen koppelingen nu pas
     bij "Importeren". De drie foute rijen in `import_koppelingen` van de
     echte database heeft Sven zelf verwijderd (tabel nu leeg).
+  - Svens tweede test: import in Inbouwkast Willemsen gelukt (3 modellen,
+    7 losse onderdelen). Wens: "er was 1 materiaal die er totaal niet op
+    leek dus er moet eigenlijk een optie zijn om dit materiaal te kunnen
+    toevoegen aan je bibliotheek". Gebouwd (zonder aparte mockup, kleine
+    uitbreiding van het goedgekeurde venster): in stap 1 staat in elke
+    keuzelijst "+ Nieuw materiaal aanmaken…"; dat opent eronder een
+    formulier (naam uit het bestand voorgevuld, type, lengte, breedte,
+    dikte/hoogte, nerf; gevalideerd met `materialen.bibliotheek.valideer`).
+    "Aanmaken en koppelen" zet het meteen in de materialenbibliotheek
+    (ook als de import daarna wordt geannuleerd — dan een groene melding
+    "Niets geïmporteerd · nieuw in de materialenbibliotheek: …"); wijkt de
+    naam af van de tekst in het bestand, dan wordt die koppeling bij
+    Importeren onthouden. `MaterialenPage.showEvent` ververst nu de lijst.
+  - Daarna bleek: "beuken massief 26" stond nog onthouden als Melamine
+    grijs (uit de eerste test), en een onthouden koppeling ging vóór de
+    naam — dus het zelf aangemaakte "Beuken massief 26" zou genegeerd
+    worden. Volgorde omgedraaid in `koppelen.zoek_materiaal`: productcode →
+    naam → pas dan een onthouden koppeling. De oude rij blijft staan maar
+    doet niets meer.
 
 ## Werkwijze die Sven prettig vindt
 

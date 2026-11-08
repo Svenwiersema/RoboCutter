@@ -1,9 +1,12 @@
 """Materiaaltekst uit een importbestand koppelen aan een materiaal uit de
-bibliotheek (hoofdstuk 10, bevestigd door Sven): eerst een eerder door de
-gebruiker gekozen koppeling, dan de productcode, dan de naam — hoofdletters
-en spaties tellen niet. Wat niet gevonden wordt, krijgt "bedoelde je…?"-
-suggesties; kiest de gebruiker er één, dan onthoudt ``MateriaalKoppelingen``
-dat voor de volgende import.
+bibliotheek (hoofdstuk 10, bevestigd door Sven): eerst de productcode, dan
+de naam — hoofdletters en spaties tellen niet — en pas als niets precies
+past een eerder door de gebruiker gekozen koppeling (``MateriaalKoppelingen``).
+Een exacte productcode of naam gaat dus altijd voor: een onthouden keuze
+uit de tijd dat het materiaal nog niet bestond (Svens test: "Beuken massief
+26" eerst aan Melamine grijs gekoppeld, daarna zelf aangemaakt) mag die
+niet overschrijven. Wat niet gevonden wordt, krijgt "bedoelde je…?"-
+suggesties.
 """
 
 from __future__ import annotations
@@ -50,14 +53,6 @@ class MateriaalKoppelingen:
 
 def zoek_materiaal(tekst: str, materialen: MaterialenBibliotheek, onthouden: MateriaalKoppelingen | None = None) -> str | None:
     sleutel = normaliseer(tekst)
-    if onthouden is not None:
-        materiaal_id = onthouden.materiaal_voor(tekst)
-        if materiaal_id is not None:
-            try:
-                materialen.ophalen(materiaal_id)
-                return materiaal_id
-            except KeyError:
-                pass  # materiaal is intussen verwijderd: opnieuw zoeken
     kandidaten = sorted(materialen.lijst(), key=lambda m: m.status != MateriaalStatus.ACTIEF)
     for m in kandidaten:
         if m.productcode and normaliseer(m.productcode) == sleutel:
@@ -65,6 +60,14 @@ def zoek_materiaal(tekst: str, materialen: MaterialenBibliotheek, onthouden: Mat
     for m in kandidaten:
         if normaliseer(m.naam) == sleutel:
             return m.id
+    if onthouden is not None:
+        materiaal_id = onthouden.materiaal_voor(tekst)
+        if materiaal_id is not None:
+            try:
+                materialen.ophalen(materiaal_id)
+                return materiaal_id
+            except KeyError:
+                pass  # materiaal is intussen verwijderd
     return None
 
 

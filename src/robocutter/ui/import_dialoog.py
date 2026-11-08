@@ -9,7 +9,10 @@ Importeren):
 
 1. Materialen koppelen — per materiaaltekst uit het bestand; wat niet
    herkend is kies je, met "Bedoelde je…?" bovenaan, en die keuze wordt
-   onthouden (``MateriaalKoppelingen``).
+   onthouden (``MateriaalKoppelingen``). Lijkt niets erop, dan maak je via
+   "+ Nieuw materiaal aanmaken…" ter plekke een materiaal aan (Sven: "er
+   moet eigenlijk een optie zijn om dit materiaal te kunnen toevoegen aan
+   je bibliotheek"); dat staat meteen in de materialenbibliotheek.
 2. Nog aanvullen — alleen de regels met een fout, met per fout veld een
    invoer en de reden eronder; of de regel overslaan.
 3. Dit komt erbij — welke modellen (met ×aantal) en losse onderdelen, plus
@@ -46,8 +49,8 @@ from robocutter.importeren.koppelen import MateriaalKoppelingen, normaliseer, su
 from robocutter.importeren.lezen import lees_bestand, lees_regel, schrijf_sjabloon
 from robocutter.importeren.models import Ernst, ImportMelding, ImportRegel, LeesResultaat
 from robocutter.importeren.toepassen import controleer, importeer_in_model, importeer_in_project
-from robocutter.materialen.bibliotheek import MaterialenBibliotheek
-from robocutter.materialen.models import MateriaalStatus, MateriaalType
+from robocutter.materialen.bibliotheek import MaterialenBibliotheek, valideer as valideer_materiaal
+from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType, Nerfrichting
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
 from robocutter.projecten.bibliotheek import ProjectenBibliotheek
 from robocutter.ui.theme import Theme
@@ -55,6 +58,7 @@ from robocutter.ui.theme import Theme
 __all__ = ["ImportDialoog", "kies_importbestand"]
 
 _BESTANDSFILTER = "Zaaglijst (*.csv *.xlsx)"
+_NIEUW = "__nieuw__"  # keuzelijst-waarde voor "+ Nieuw materiaal aanmaken…"
 
 
 def kies_importbestand(parent: QWidget) -> str | None:
@@ -96,6 +100,9 @@ class ImportDialoog(QDialog):
         self._materialen, self._onthouden, self._theme = materialen, onthouden, theme
         self._projecten, self._modellen = projecten, modellen
         self.samenvatting = ""
+        # Namen van materialen die in dit venster zijn aangemaakt (staan al in
+        # de bibliotheek, ook als de import daarna wordt geannuleerd).
+        self.nieuwe_materialen: list[str] = []
         self.setWindowTitle("Onderdelen importeren")
         self.setObjectName("ImportDialoog")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -138,6 +145,8 @@ class ImportDialoog(QDialog):
         # Zelf gekozen koppelingen met het vinkje "onthouden": pas bij
         # Importeren opslaan (sleutel -> tekst uit het bestand).
         self._te_onthouden: dict[str, str] = {}
+        # Materiaaltekst waarvoor het formulier "nieuw materiaal" openstaat.
+        self._nieuw_open: str | None = None
         self._koppel_materialen()
         n = len(self._regels)
         self._bestand_label.setText(f"{Path(pad).name} · {n} {'regel' if n == 1 else 'regels'}")
@@ -154,12 +163,12 @@ class ImportDialoog(QDialog):
     def _hoe_herkend(self, tekst: str, materiaal_id: str | None) -> str:
         if materiaal_id is None:
             return ""
-        if self._onthouden.materiaal_voor(tekst) == materiaal_id:
-            return "eerder zo gekozen"
         m = self._materialen.ophalen(materiaal_id)
         if m.productcode and normaliseer(m.productcode) == normaliseer(tekst):
             return "herkend op productcode"
-        return "herkend op naam"
+        if normaliseer(m.naam) == normaliseer(tekst):
+            return "herkend op naam"
+        return "eerder zo gekozen"
 
     def _actieve_regels(self) -> list[ImportRegel]:
         return [r for r in self._regels if r.regelnummer not in self._overslaan]
@@ -340,10 +349,11 @@ class ImportDialoog(QDialog):
                 f"{self._herkomst.get(sleutel) or 'niet gevonden'}</span>"
             )
             links.setStyleSheet(f"color: {t.text}; background: transparent; font-size: 12.5px;")
-            raster.addWidget(links, rij, 0)
+            raster.addWidget(links, rij * 2, 0)
             combo = QComboBox()
             combo.setProperty("role", "field")
             combo.addItem("— kies een materiaal —", "")
+            combo.addItem("+ Nieuw materiaal aanmaken…", _NIEUW)
             voorstel = suggesties(tekst, self._materialen) if self._koppeling.get(sleutel) is None else []
             for mid in voorstel:
                 combo.addItem(f"Bedoelde je: {self._materiaal_label(mid)}", mid)
@@ -355,18 +365,150 @@ class ImportDialoog(QDialog):
             if gekozen:
                 # De regel in "alle materialen" (niet de suggestie erboven).
                 combo.setCurrentIndex(max(i for i in range(combo.count()) if combo.itemData(i) == gekozen))
-            raster.addWidget(combo, rij, 1)
+            elif self._nieuw_open == sleutel:
+                combo.setCurrentIndex(1)
+            raster.addWidget(combo, rij * 2, 1)
             onthoud = QCheckBox("onthouden")
             onthoud.setChecked(sleutel in self._te_onthouden or self._herkomst.get(sleutel) == "")
             onthoud.setVisible(self._herkomst.get(sleutel) in ("", "zelf gekozen"))
             onthoud.toggled.connect(lambda aan, s=sleutel, tx=tekst: self._zet_onthouden(s, tx, aan))
-            raster.addWidget(onthoud, rij, 2)
+            raster.addWidget(onthoud, rij * 2, 2)
             combo.currentIndexChanged.connect(
                 lambda _i, s=sleutel, tx=tekst, c=combo, o=onthoud: self._kies_materiaal(s, tx, c.currentData(), o.isChecked())
             )
+            if self._nieuw_open == sleutel:
+                raster.addWidget(self._bouw_nieuw_materiaal(sleutel, tekst), rij * 2 + 1, 0, 1, 3)
         body.addLayout(raster)
 
+    def _bouw_nieuw_materiaal(self, sleutel: str, tekst: str) -> QWidget:
+        """Klein formulier onder de keuzelijst: de naam uit het bestand staat
+        al ingevuld; de rest (randafzaag, fabriekskantenband, …) vul je later
+        aan in Materialen."""
+        t = self._theme
+        vak = QFrame()
+        vak.setObjectName("ImportNieuwMateriaal")
+        vak.setStyleSheet(
+            f"QFrame#ImportNieuwMateriaal {{ background: {t.surface_2}; border: 1px solid {t.accent}; border-radius: 10px; }}"
+        )
+        layout = QVBoxLayout(vak)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        kop = QLabel("Nieuw materiaal in de materialenbibliotheek")
+        kop.setStyleSheet(f"color: {t.text}; font-weight: 700; font-size: 12.5px; background: transparent;")
+        layout.addWidget(kop)
+
+        veldstijl = (
+            f"QLineEdit {{ background: {t.surface}; color: {t.text}; border: 1px solid {t.border}; border-radius: 7px;"
+            " padding: 5px 8px; font-size: 12.5px; }"
+        )
+        rij = QHBoxLayout()
+        rij.setSpacing(10)
+
+        def kolom(titel: str, widget: QWidget, stretch: int = 0) -> QLabel:
+            k = QVBoxLayout()
+            k.setSpacing(3)
+            label = QLabel(titel)
+            label.setStyleSheet(f"color: {t.text_muted}; font-size: 11.5px; font-weight: 600; background: transparent;")
+            k.addWidget(label)
+            k.addWidget(widget)
+            rij.addLayout(k, stretch)
+            return label
+
+        naam = QLineEdit(tekst)
+        naam.setStyleSheet(veldstijl)
+        kolom("Naam", naam, 3)
+        soort = QComboBox()
+        soort.setProperty("role", "field")
+        soort.addItem("Plaat", MateriaalType.PLAAT.value)
+        soort.addItem("Balk", MateriaalType.BALK.value)
+        kolom("Type", soort, 1)
+        maten: dict[str, QLineEdit] = {}
+        derde_label = None
+        for titel in ("Lengte", "Breedte", "Dikte"):
+            veld = QLineEdit()
+            veld.setStyleSheet(veldstijl)
+            veld.setPlaceholderText("mm")
+            veld.setMaximumWidth(110)
+            derde_label = kolom(f"{titel} mm", veld)
+            maten[titel] = veld
+        soort.currentIndexChanged.connect(
+            lambda _i: derde_label.setText("Hoogte mm" if soort.currentData() == MateriaalType.BALK.value else "Dikte mm")
+        )
+        nerf = QComboBox()
+        nerf.setProperty("role", "field")
+        for waarde, label in (
+            (Nerfrichting.GEEN, "Geen"), (Nerfrichting.LANGE_ZIJDE, "Over de lengte"), (Nerfrichting.KORTE_ZIJDE, "Over de breedte"),
+        ):
+            nerf.addItem(label, waarde.value)
+        kolom("Nerf", nerf, 1)
+        layout.addLayout(rij)
+
+        fout = QLabel("")
+        fout.setWordWrap(True)
+        fout.setStyleSheet(f"color: {t.critical_ink}; font-size: 12px; background: transparent;")
+        fout.hide()
+        layout.addWidget(fout)
+        knoppen = QHBoxLayout()
+        knoppen.addWidget(self._hint("Randafzaag, fabriekskantenband en de rest vul je later aan in Materialen."), 1)
+        annuleer = QPushButton("Annuleren")
+        annuleer.setProperty("role", "ghost")
+        annuleer.setCursor(Qt.CursorShape.PointingHandCursor)
+        annuleer.clicked.connect(self._sluit_nieuw_materiaal)
+        knoppen.addWidget(annuleer)
+        maak = QPushButton("Aanmaken en koppelen")
+        maak.setProperty("role", "primary")
+        maak.setCursor(Qt.CursorShape.PointingHandCursor)
+        maak.clicked.connect(lambda: self._maak_materiaal(sleutel, tekst, naam, soort, maten, nerf, fout))
+        knoppen.addWidget(maak)
+        layout.addLayout(knoppen)
+        return vak
+
+    def _sluit_nieuw_materiaal(self) -> None:
+        self._nieuw_open = None
+        QTimer.singleShot(0, self._vul_stap1)
+
+    def _maak_materiaal(
+        self, sleutel: str, tekst: str, naam: QLineEdit, soort: QComboBox, maten: dict[str, QLineEdit], nerf: QComboBox,
+        fout: QLabel,
+    ) -> None:
+        def getal(veld: QLineEdit) -> float:
+            tekst = veld.text().strip().replace(" ", "")
+            if "," in tekst:
+                tekst = tekst.replace(".", "").replace(",", ".")
+            try:
+                return float(tekst)
+            except ValueError:
+                return 0.0
+
+        kandidaat = Materiaal(
+            id="",
+            naam=naam.text().strip(),
+            type=MateriaalType(soort.currentData()),
+            lengte=getal(maten["Lengte"]),
+            breedte=getal(maten["Breedte"]),
+            derde_afmeting=getal(maten["Dikte"]),
+            nerfrichting=Nerfrichting(nerf.currentData()),
+        )
+        fouten = valideer_materiaal(kandidaat)
+        if fouten:
+            fout.setText("\n".join(f"• {f}" for f in fouten))
+            fout.show()
+            return
+        materiaal = self._materialen.toevoegen(kandidaat)
+        self.nieuwe_materialen.append(materiaal.naam)
+        self._koppeling[sleutel] = materiaal.id
+        self._herkomst[sleutel] = "nieuw aangemaakt"
+        if normaliseer(materiaal.naam) != sleutel:
+            # Andere naam dan in het bestand: koppeling onthouden (bij Importeren).
+            self._te_onthouden[sleutel] = tekst
+        self._nieuw_open = None
+        self._vul_stap2()
+        self._werk_stand_bij()
+        QTimer.singleShot(0, self._vul_stap1)
+
     def _zet_onthouden(self, sleutel: str, tekst: str, aan: bool) -> None:
+        if self._herkomst.get(sleutel) == "nieuw aangemaakt":
+            return  # zie _maak_materiaal
         if aan and self._herkomst.get(sleutel) == "zelf gekozen":
             self._te_onthouden[sleutel] = tekst
         else:
@@ -379,6 +521,17 @@ class ImportDialoog(QDialog):
         return f"{m.naam}{soort}{archief}"
 
     def _kies_materiaal(self, sleutel: str, tekst: str, materiaal_id: str, onthouden: bool) -> None:
+        if materiaal_id == _NIEUW:
+            self._nieuw_open = sleutel
+            self._koppeling[sleutel] = None
+            self._herkomst[sleutel] = ""
+            self._te_onthouden.pop(sleutel, None)
+            self._vul_stap2()
+            self._werk_stand_bij()
+            QTimer.singleShot(0, self._vul_stap1)
+            return
+        if self._nieuw_open == sleutel:
+            self._nieuw_open = None
         self._koppeling[sleutel] = materiaal_id or None
         self._herkomst[sleutel] = "zelf gekozen" if materiaal_id else ""
         self._zet_onthouden(sleutel, tekst, onthouden)
@@ -627,6 +780,8 @@ class ImportDialoog(QDialog):
             if self._doel == "model":
                 importeer_in_model(self._modellen, self._doel_id, regels, self._koppeling, self._materialen)
                 self.samenvatting = f"{len(regels)} onderdelen toegevoegd aan {self._doel_naam}"
+                if self.nieuwe_materialen:
+                    self.samenvatting += f" · nieuw materiaal: {', '.join(self.nieuwe_materialen)}"
             else:
                 importeer_in_project(self._projecten, self._doel_id, regels, self._koppeling, self._materialen)
                 n_model = len({r.model.casefold() for r in regels if r.model})
@@ -637,6 +792,8 @@ class ImportDialoog(QDialog):
                 if n_los:
                     delen.append(f"{n_los} {'los onderdeel' if n_los == 1 else 'losse onderdelen'}")
                 self.samenvatting = " en ".join(delen) + " geïmporteerd"
+            if self.nieuwe_materialen:
+                self.samenvatting += f" · nieuw materiaal: {', '.join(self.nieuwe_materialen)}"
         except ValueError as exc:
             # Mag niet voorkomen (de knop staat dan uit), maar nooit stil falen.
             self._stand.setText(f"Niet geïmporteerd: {exc}")

@@ -178,21 +178,30 @@ def test_koppelen_op_productcode_en_naam_zonder_hoofdletters_en_spaties():
     }
 
 
-def test_onthouden_koppeling_gaat_voor_en_overleeft_herstart(tmp_path):
+def test_onthouden_koppeling_overleeft_herstart_maar_exacte_naam_of_code_gaat_voor(tmp_path):
     materialen, _, _, eiken, regel = _bibliotheken()
     db = tmp_path / "koppelingen.db"
     onthouden = MateriaalKoppelingen(open_verbinding(db))
     onthouden.onthoud("Beuken  18", eiken.id)
-    onthouden.onthoud("EMP18", regel.id)  # bewuste keuze gaat vóór de productcode
+    onthouden.onthoud("EMP18", regel.id)  # productcode van eiken bestaat: die gaat voor
 
     herstart = MateriaalKoppelingen(open_verbinding(db))
     regels = lees_rijen([["Naam", "Materiaal", "Lengte"], ["A", "beuken 18", 100], ["B", "EMP18", 100]]).regels
-    assert stel_koppeling_voor(regels, materialen, herstart) == {"beuken 18": eiken.id, "emp18": regel.id}
+    assert stel_koppeling_voor(regels, materialen, herstart) == {"beuken 18": eiken.id, "emp18": eiken.id}
 
-    # Is het gekoppelde materiaal weg, dan gewoon opnieuw zoeken.
-    materialen.archiveren(regel.id)
-    materialen.verwijderen_definitief(regel.id)
-    assert stel_koppeling_voor(regels, materialen, herstart)["emp18"] == eiken.id
+    # Svens test: eerst aan een ander materiaal gekoppeld, daarna een
+    # materiaal met precies die naam aangemaakt -> dat nieuwe wint.
+    beuken = materialen.toevoegen(Materiaal(
+        id="", naam="Beuken 18", type=MateriaalType.PLAAT, lengte=2500, breedte=1250, derde_afmeting=18,
+    ))
+    assert stel_koppeling_voor(regels, materialen, herstart)["beuken 18"] == beuken.id
+
+    # Is het onthouden materiaal weg, dan geen koppeling.
+    materialen.archiveren(beuken.id)
+    materialen.verwijderen_definitief(beuken.id)
+    materialen.archiveren(eiken.id)
+    materialen.verwijderen_definitief(eiken.id)
+    assert stel_koppeling_voor(regels, materialen, herstart)["beuken 18"] is None
     herstart.vergeet("beuken 18")
     assert MateriaalKoppelingen(open_verbinding(db)).materiaal_voor("Beuken 18") is None
 

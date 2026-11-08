@@ -2756,6 +2756,11 @@ class ProjectDetailPage(QWidget):
             projecten=self._projecten, parent=self,
         )
         if not dialoog.exec():
+            if dialoog.nieuwe_materialen:
+                self._ververs_samenstelling()
+                self._melding.toon(
+                    "Niets geïmporteerd", f"nieuw in de materialenbibliotheek: {', '.join(dialoog.nieuwe_materialen)}"
+                )
             return
         self._ververs_samenstelling()
         self._ververs_zaaglijst_paneel()

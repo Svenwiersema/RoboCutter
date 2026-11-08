@@ -826,6 +826,8 @@ class ModelDetailPage(QWidget):
             modellen=self.bibliotheek, parent=self,
         )
         if not dialoog.exec():
+            if dialoog.nieuwe_materialen:
+                self._toon_bevestiging(f"Nieuw in de materialenbibliotheek: {', '.join(dialoog.nieuwe_materialen)}")
             return
         # De import komt achteraan; gemarkeerde verwijderingen houden hun index.
         self._werk_onderdelen = [replace(o) for o in self.bibliotheek.ophalen(self._model_id).onderdelen]

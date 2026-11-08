@@ -370,6 +370,11 @@ class MaterialenPage(QWidget):
     # ------------------------------------------------------------------
     # Verversen (in-place, geen volledige herbouw — behoudt focus/scroll)
     # ------------------------------------------------------------------
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt-signatuur)
+        # Een materiaal kan ook elders aangemaakt zijn (importvenster).
+        super().showEvent(event)
+        self._ververs_alles()
+
     def _ververs_alles(self) -> None:
         self._ververs_sidebar()
         self._ververs_tabel()
