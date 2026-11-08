@@ -11,3 +11,4 @@ __pycache__/
 /*.pdf
 /data/backups/
 /data/backup_test/
+/data/import_test/

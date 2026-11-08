@@ -46,6 +46,52 @@ vanuit Vectorworks" — het zijn twee aparte importroutes.
 - De bounding-box-regel voor niet-rechthoekige onderdelen (zie hierboven
   bij DXF-import) geldt hier op dezelfde manier.
 
+## RoboCutter-importformaat (bevestigd 2026-11-08)
+
+Afgesproken met Sven: RoboCutter krijgt **één eigen importformaat**. Een
+latere Vectorworks-plugin (en eventueel een DXF-omzetter) schrijft dat
+formaat, zodat RoboCutter maar één importroute heeft en het slimme werk
+(materiaal koppelen, balken herkennen, waarschuwen) in RoboCutter zit.
+Het formaat is ook met de hand in Excel in te vullen.
+
+**Bevestigd door Sven:**
+
+- Bestand: **CSV én Excel (.xlsx)**, met dezelfde kolommen. RoboCutter
+  levert een leeg Excel-sjabloon mee.
+- Bestemming: de kolom **Model** bepaalt het. Bij importeren in een
+  project worden regels met dezelfde modelnaam samen één model in het
+  project; regels zonder modelnaam worden losse onderdelen. Bij
+  importeren in een model worden alle regels onderdeel van dat model.
+- Materiaal: herkend op **productcode, anders naam** (hoofdletters en
+  spaties tellen niet). Wat niet herkend wordt, koppel je één keer in het
+  importscherm, met "bedoelde je…?"-suggesties; RoboCutter onthoudt die
+  koppeling voor de volgende import.
+
+**Kolommen (bevestigd 2026-11-08):** eerste regel is de kop, één
+onderdeel per regel, maten in mm (komma of punt als decimaalteken).
+Kolomnamen maken niet uit voor hoofdletters; de volgorde van de kolommen
+is vrij.
+
+| Kolom | Verplicht | Inhoud |
+|---|---|---|
+| Naam | ja | Naam van het onderdeel, bv. "Zijkant links" |
+| Materiaal | ja | Productcode of naam uit de materialenbibliotheek |
+| Lengte | ja | mm; horizontaal in de tekening (langs de randen B en O) |
+| Breedte | ja, behalve bij een balk | mm; verticaal (langs de randen L en R). Een balk heeft alleen een lengte |
+| Aantal | nee (standaard 1) | aantal stuks per model (of totaal bij een los onderdeel) |
+| Model | nee | modelnaam; leeg = los onderdeel |
+| Modelaantal | nee (standaard 1) | hoe vaak dit model in het project zit; hoort per model gelijk te zijn (anders een waarschuwing). De Vectorworks-plugin vult dit zelf in |
+| Nerf | nee | `lang`, `kort` of leeg (= geen eis): welke zijde langs de nerf |
+| Kantenband | nee | randen met kantenband: letters `B` (boven), `O` (onder), `L` (links), `R` (rechts), bv. `BO` |
+| Fabriekskantenband | nee | `ja` als het onderdeel een fabriekskantenband nodig heeft |
+| Groep | nee | groepsnaam (vaste volgorde, doorlopende nerf) |
+| Volgorde | nee | plaats binnen de groep |
+
+Sven koos **Lengte × Breedte** (gangbaar in zaaglijsten) i.p.v. de
+Breedte × Hoogte van de onderdeelformulieren in de app. Bij het inlezen
+wordt Lengte de breedte (x) en Breedte de hoogte (y) van het onderdeel in
+RoboCutter, zodat de kantenbandletters op dezelfde randen blijven.
+
 ## Waar dit gebruikt wordt
 
 Beide importroutes gelden op dezelfde plekken waar onderdelen voorkomen:
@@ -60,5 +106,5 @@ Beide importroutes gelden op dezelfde plekken waar onderdelen voorkomen:
   wanneer dit geïmplementeerd wordt.
 - Haalbaarheid en scope van een eigen Vectorworks-plugin (wat Vectorworks
   precies aan zaaglijst-exportdata kan aanleveren, en hoe een plugin dit
-  naar RoboCutter's importformaat vertaalt) — verder te onderzoeken zodra
-  dit relevant wordt.
+  naar het RoboCutter-importformaat hierboven vertaalt) — verder te
+  onderzoeken zodra dit relevant wordt.

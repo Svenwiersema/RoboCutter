@@ -11,6 +11,7 @@ from datetime import datetime
 from PySide6.QtWidgets import QApplication
 
 from robocutter.ui.main_window import MainWindow
+from robocutter.ui.widgets.scrollwiel import ScrollwielFilter
 
 # Inter (design/chapters/11-ux-ui.md) is nog niet als lettertypebestand
 # gebundeld; de stylesheet valt terug op "Segoe UI" totdat dat is toegevoegd.
@@ -36,6 +37,9 @@ def _na_terugzetten(argumenten: list[str]) -> tuple[datetime, datetime | None] |
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("RoboCutter")
+    # Keuzelijsten veranderen niet meer per ongeluk door overheen te scrollen.
+    scrollwiel = ScrollwielFilter(app)
+    app.installEventFilter(scrollwiel)
 
     window = MainWindow(na_terugzetten=_na_terugzetten(sys.argv[1:]))
     window.show()

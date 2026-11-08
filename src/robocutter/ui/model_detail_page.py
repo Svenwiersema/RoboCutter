@@ -69,7 +69,11 @@ from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType
 from robocutter.modellen.bibliotheek import ModellenBibliotheek, valideer
 from robocutter.modellen.models import Model, ModelOnderdeel, Nerfrichting, Rand, SubModelVerwijzing
+from robocutter.importeren import opslag as import_opslag
+from robocutter.importeren.koppelen import MateriaalKoppelingen
+from robocutter.instellingen.beheer import InstellingenBeheer
 from robocutter.ui.icons import icon, icon_pixmap
+from robocutter.ui.import_dialoog import ImportDialoog, kies_importbestand
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.randen_diagram import RandenDiagram
 
@@ -254,6 +258,13 @@ class ModelDetailPage(QWidget):
 
     def _ververs_head(self) -> None:
         model = self._model()
+        if hasattr(self, "_import_btn"):
+            # Importeren schrijft in het opgeslagen model: eerst opslaan.
+            self._import_btn.setEnabled(self._model_id is not None)
+            self._import_btn.setToolTip(
+                "Onderdelen importeren uit een zaaglijst (CSV of Excel)" if self._model_id is not None
+                else "Sla het model eerst op, dan kun je onderdelen importeren"
+            )
         self._titel_label.setText(model.naam or ("Nieuw model" if self._model_id is None else "Naamloos model"))
         delen = [
             f"{len(model.onderdelen)} onderdeel" if len(model.onderdelen) == 1 else f"{len(model.onderdelen)} onderdelen",
@@ -495,7 +506,17 @@ class ModelDetailPage(QWidget):
         section.setSpacing(10)
         self._onderdelen_label = QLabel("ONDERDELEN (0)")
         self._onderdelen_label.setProperty("role", "fieldSectionLabel")
-        section.addWidget(self._onderdelen_label)
+        kop = QHBoxLayout()
+        kop.addWidget(self._onderdelen_label)
+        kop.addStretch(1)
+        # Onderdelen importeren uit een zaaglijst (hoofdstuk 10).
+        self._import_btn = QPushButton("  Importeren…")
+        self._import_btn.setProperty("role", "ghost")
+        self._import_btn.setIcon(icon("download", self._theme.text, 13))
+        self._import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._import_btn.clicked.connect(self._importeer_onderdelen)
+        kop.addWidget(self._import_btn)
+        section.addLayout(kop)
         section.addWidget(self._build_onderdelen_kaart())
         return section
 
@@ -791,6 +812,27 @@ class ModelDetailPage(QWidget):
         layout.addWidget(del_btn)
 
         return row
+
+    def _importeer_onderdelen(self) -> None:
+        if self._model_id is None:
+            return
+        pad = kies_importbestand(self)
+        if not pad:
+            return
+        model = self.bibliotheek.ophalen(self._model_id)
+        onthouden = MateriaalKoppelingen(import_opslag.open_verbinding(InstellingenBeheer().effectieve_db_pad()))
+        dialoog = ImportDialoog(
+            pad, "model", self._model_id, model.naam, self.materialen, onthouden, self._theme,
+            modellen=self.bibliotheek, parent=self,
+        )
+        if not dialoog.exec():
+            return
+        # De import komt achteraan; gemarkeerde verwijderingen houden hun index.
+        self._werk_onderdelen = [replace(o) for o in self.bibliotheek.ophalen(self._model_id).onderdelen]
+        self._ververs_onderdelen()
+        self._ververs_head()
+        self._toon_bevestiging(dialoog.samenvatting)
+        self._meld_gewijzigd()
 
     def _of_balk(self) -> Materiaal | None:
         """Het gekozen materiaal als het een balk is, anders ``None``."""

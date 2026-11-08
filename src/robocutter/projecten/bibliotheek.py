@@ -397,6 +397,30 @@ class ProjectenBibliotheek:
         self._persisteer(project)
         return project
 
+    def voeg_import_toe(
+        self, project_id: str, instanties: list[ProjectModelInstantie], losse: list[ModelOnderdeel]
+    ) -> Project:
+        """Importeren (hoofdstuk 10, zie ``importeren.toepassen``): de
+        modelkopieën en losse onderdelen in één keer, alles of niets. De
+        losse onderdelen gaan door ``valideer``; een geïmporteerde
+        modelkopie heeft geen bibliotheekmodel (``model_id`` leeg)."""
+
+        project = self._projecten[project_id]
+        kandidaat = replace(
+            project,
+            modelinstanties=[*project.modelinstanties, *instanties],
+            losse_onderdelen=[*project.losse_onderdelen, *losse],
+        )
+        fouten = valideer(kandidaat, self._materialen) + _valideer_onderdelen(
+            [o for i in instanties for o in i.onderdelen], self._materialen
+        )
+        if fouten:
+            raise ValueError("; ".join(fouten))
+        project.modelinstanties = kandidaat.modelinstanties
+        project.losse_onderdelen = kandidaat.losse_onderdelen
+        self._persisteer(project)
+        return project
+
     def los_onderdeel_bijwerken(self, project_id: str, onderdeel: ModelOnderdeel) -> Project:
         project = self._projecten[project_id]
         index = next((i for i, o in enumerate(project.losse_onderdelen) if o.id == onderdeel.id), None)

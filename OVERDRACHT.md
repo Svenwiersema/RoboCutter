@@ -3423,6 +3423,85 @@ houden.
     alleen Breedte (`_ZL_SORTEEROPTIES`). De pdf-zaaglijst blijft één
     doorlopende lijst en sorteert daarom zelf eerst op materiaal.
 
+- **2026-11-08 — RoboCutter-importformaat vastgelegd** (hoofdstuk 10,
+  nog niets gebouwd). Sven: "dat wij een methode aanhouden en dan later
+  een plugin maken voor bijvoorbeeld vectorworks dat deze zo word
+  geexporteerd". Eén formaat, CSV + Excel (sjabloon erbij); kolom Model
+  maakt modellen in het project (leeg = los onderdeel), Modelaantal
+  (plugin vult het in); materiaal op productcode, anders naam, onbekende
+  één keer koppelen en onthouden; kolommen Lengte × Breedte (Sven's
+  keuze; Lengte → breedte/x, Breedte → hoogte/y). Volgende stap: backend
+  (inlezen, koppelen, importeren in project/model) + tests, daarna een
+  mockup van het importscherm.
+  - **Backend gebouwd** (zelfde dag): module `src/robocutter/importeren/`
+    — `lezen.py` (CSV met ; , of tab, UTF-8 of Windows-1252; .xlsx via
+    `openpyxl`, nu de enige runtime-afhankelijkheid in `pyproject.toml`;
+    kolomnamen zonder hoofdletter/spatie-gevoeligheid, onbekende kolom =
+    waarschuwing, ontbrekende verplichte kolom = niets ingelezen; per
+    regel fouten met regelnummer; komma of punt als decimaalteken;
+    ongelijk Modelaantal binnen een model = waarschuwing, eerste telt;
+    `schrijf_sjabloon` met blad Onderdelen + Uitleg), `koppelen.py` +
+    `opslag.py` (onthouden keuze → productcode → naam, `suggesties` via
+    difflib; tabel `import_koppelingen`), `toepassen.py` (`controleer`:
+    balk-velden die vervallen, plaat zonder breedte, past niet op de
+    plaat/balk, niet gekoppeld; `importeer_in_project` via
+    `ProjectenBibliotheek.voeg_import_toe`, alles of niets;
+    `importeer_in_model`). Een geïmporteerd model is een modelkopie zonder
+    bibliotheekmodel (`model_id` leeg) — de bestaande code vangt dat al op
+    ("bronmodel bestaat niet"); in het echte scherm verdient dat een eigen
+    tekst ("geïmporteerd"). Tests: `tests/test_importeren.py` (24, totaal
+    321). Ruwe test-ui: `scripts/test_importeren_ui.py` (eigen kopie van de
+    echte database in `data/import_test/`, gitignored). Volgende stap:
+    mockup van het importscherm.
+  - Sven: "in plaats van niet importeren een soort pop up menu laten zien
+    wat er allemaal mist en dan de gebruiker zelf het kunnen laten
+    invullen". Backend daarop aangepast: een regel met een fout blijft
+    bewaard (`ImportRegel.problemen` per kolom, `waarden` = tekst per
+    kolom, `LeesResultaat.onvolledig`); `lezen.lees_regel` leest hem
+    opnieuw na aanvullen; `controleer` geeft ook die problemen terug, met
+    `ImportMelding.kolom`; importeren lukt pas als alles klopt (of de regel
+    is weggelaten). Tests 28 (totaal 325). Mockup
+    `design/assets/mockups/importeren-concept.html`: geen modale pop-up
+    (UX-principe) maar een inline paneel bovenaan Samenstelling met
+    1 materialen koppelen, 2 nog aanvullen (rode velden, Overslaan),
+    3 dit komt erbij, en een importknop die pas actief wordt als alles
+    klopt; een geïmporteerd model krijgt het label "geïmporteerd".
+  - Sven daarna: een pop-up is hier juist wél goed ("met importeren kan
+    al gou soms veel fout zijn dus dan is het beter dat je dit als
+    apparte menu hebt") — uitzondering vastgelegd in hoofdstuk 11, mockup
+    aangepast naar een eigen venster, goedgekeurd ("ziet er goed uit je
+    mag import en de popup toevoegen aan de app").
+  - **Gebouwd:** `ui/import_dialoog.py` (`ImportDialoog`, `QDialog`,
+    ~80% van het venster): vaste kop (bestand, Ander bestand…, Sjabloon
+    opslaan…) en voet (stand + "Importeren (n stuks)", pas actief als er
+    geen fout over is), scrollend midden met 1 materialen koppelen
+    (herkend op productcode/naam/eerder gekozen, anders kiezen met
+    "Bedoelde je…" bovenaan + vinkje onthouden), 2 nog aanvullen (per
+    foute regel alleen de foute velden, rood met reden, ter plekke
+    opnieuw gelezen via `lees_regel`, of Overslaan/Toch meenemen),
+    3 dit komt erbij (modellen ×aantal, losse onderdelen, waarschuwingen
+    in-/uitklapbaar). Knop "Importeren…" in de Modellen-kaart van
+    Samenstelling (`ProjectDetailPage._importeer_onderdelen`) en boven de
+    onderdelen in `ModelDetailPage` (uit zolang het model nog niet
+    opgeslagen is). Koppelingen worden onthouden in de echte database
+    (`import_koppelingen`). Een geïmporteerde modelkopie toont
+    "geïmporteerd uit een zaaglijst" en heeft geen "bijwerken naar
+    laatste versie". Rooktest met onzichtbaar venster en een voorbeeld-
+    xlsx (koppelen, aanvullen, overslaan, importeren: 2 modellen + 1 los
+    onderdeel, 19 stuks in de zaaglijst). Nog niet door Sven in de app
+    bekeken.
+  - Svens eerste test: drie onthouden koppelingen kwamen door elkaar
+    (meubelpaneel → Vuren regel enz.) — scrollen over de keuzelijsten
+    veranderde ze, en het venster onthield elke wijziging meteen. Sven:
+    "kan je ook voor zorgen dat de dropdown inputs niet scrollbaar zijn
+    als je er met de muis overheen hovert". Opgelost voor de hele app:
+    `ui/widgets/scrollwiel.py` (`ScrollwielFilter`, op de QApplication in
+    `app.main`) zet elke QComboBox op StrongFocus en stuurt het scrollwiel
+    zonder focus door naar het dichtstbijzijnde scrollgebied dat kan
+    scrollen. Het importvenster onthoudt zelf gekozen koppelingen nu pas
+    bij "Importeren". De drie foute rijen in `import_koppelingen` van de
+    echte database heeft Sven zelf verwijderd (tabel nu leeg).
+
 ## Werkwijze die Sven prettig vindt
 
 - Bij ambiguïteit of ruimte voor aannames: **eerst vragen, niet

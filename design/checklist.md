@@ -302,7 +302,11 @@ logboek van `OVERDRACHT.md`.
   eerder "eerst projecten"
 - Verplichte vervangingskeuze bij een verwijderd materiaal dat nog in een
   project zit, en fuzzy matching ("bedoelde je…?") (H3)
-- Onderdelen importeren: CSV/Excel, DXF, Vectorworks (H10)
+- Onderdelen importeren: CSV/Excel, DXF, Vectorworks (H10) — het eigen
+  RoboCutter-importformaat (CSV + Excel) is vastgelegd op 2026-11-08 en de
+  importvenster (koppelen, aanvullen, importeren in project of model) is
+  gebouwd. Nog niet: DXF en de Vectorworks-plugin, die later datzelfde
+  formaat schrijft
 - ERP-koppeling (H9; ontwerp wacht op Svens lijst met ERP's)
 - Licentie/edities (H7/H8): Keygen, Lemon Squeezy, Demo-projectlimiet,
   logo-regels, werkplektelling — standaard uit tijdens ontwikkeling

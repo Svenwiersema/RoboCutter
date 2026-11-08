@@ -142,7 +142,10 @@ from robocutter.projecten.zaagplannen import (
 )
 from robocutter.projecten.zaagplannen_opslag import ZaagplannenOpslag
 from robocutter.reststukken.models import Reststuk
+from robocutter.importeren import opslag as import_opslag
+from robocutter.importeren.koppelen import MateriaalKoppelingen
 from robocutter.ui.icons import icon, icon_pixmap
+from robocutter.ui.import_dialoog import ImportDialoog, kies_importbestand
 from robocutter.ui.label_pdf import schrijf_labels_pdf
 from robocutter.ui.theme import Theme
 from robocutter.ui.widgets.randen_diagram import RandenDiagram
@@ -2539,6 +2542,15 @@ class ProjectDetailPage(QWidget):
         self._modellen_count_label = QLabel("")
         self._modellen_count_label.setProperty("role", "cardCount")
         head.addWidget(self._modellen_count_label)
+        # Onderdelen importeren uit een zaaglijst (hoofdstuk 10): modellen en
+        # losse onderdelen in één keer, in een eigen venster.
+        import_btn = QPushButton("  Importeren…")
+        import_btn.setProperty("role", "ghost")
+        import_btn.setIcon(icon("download", self._theme.text, 13))
+        import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        import_btn.setToolTip("Onderdelen importeren uit een zaaglijst (CSV of Excel)")
+        import_btn.clicked.connect(self._importeer_onderdelen)
+        head.addWidget(import_btn)
         head_widget = QWidget()
         head_widget.setLayout(head)
         links_layout.addWidget(head_widget)
@@ -2632,7 +2644,9 @@ class ProjectDetailPage(QWidget):
         titel = QLabel(titel_tekst)
         titel.setProperty("role", "matName")
         info_col.addWidget(titel)
-        sub = QLabel(f"{len(instantie.onderdelen)} onderdelen (platgeslagen kopie) · toegevoegd vanuit Modellenbibliotheek")
+        # Een geïmporteerd model heeft (nog) geen bibliotheekmodel.
+        herkomst = "geïmporteerd uit een zaaglijst" if not instantie.model_id else "toegevoegd vanuit Modellenbibliotheek"
+        sub = QLabel(f"{len(instantie.onderdelen)} onderdelen (platgeslagen kopie) · {herkomst}")
         sub.setProperty("role", "matMeta")
         info_col.addWidget(sub)
         layout.addLayout(info_col, 1)
@@ -2654,6 +2668,7 @@ class ProjectDetailPage(QWidget):
         bijwerken_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         bijwerken_btn.setToolTip("Bijwerken naar laatste versie")
         bijwerken_btn.clicked.connect(lambda: self._model_instantie_bijwerken(instantie.id))
+        bijwerken_btn.setVisible(bool(instantie.model_id))
         layout.addWidget(bijwerken_btn)
 
         del_btn = QToolButton()
@@ -2729,6 +2744,24 @@ class ProjectDetailPage(QWidget):
         modellen = sorted(self._modellen.lijst(), key=lambda m: m.naam.lower())
         self._model_naam_naar_id = {m.naam: m.id for m in modellen}
         self._model_completer.setModel(QStringListModel([m.naam for m in modellen], self._model_completer))
+
+    def _importeer_onderdelen(self) -> None:
+        pad = kies_importbestand(self)
+        if not pad:
+            return
+        project = self._project()
+        onthouden = MateriaalKoppelingen(import_opslag.open_verbinding(InstellingenBeheer().effectieve_db_pad()))
+        dialoog = ImportDialoog(
+            pad, "project", self._project_id, project.naam, self._materialen, onthouden, self._theme,
+            projecten=self._projecten, parent=self,
+        )
+        if not dialoog.exec():
+            return
+        self._ververs_samenstelling()
+        self._ververs_zaaglijst_paneel()
+        self._ververs_zaagplan_controle()
+        self._meld_gewijzigd()
+        self._melding.toon(dialoog.samenvatting, f"in project {project.naam}")
 
     def _model_toevoegen(self) -> None:
         model_id = self._model_naam_naar_id.get(self._model_search.text().strip())

@@ -2,7 +2,7 @@
 name = "robocutter"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["openpyxl"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pillow"]

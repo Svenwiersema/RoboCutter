@@ -48,6 +48,11 @@ Kernprincipe (letterlijk zoals geformuleerd tijdens het ontwerp):
   modale dialogen (sluit aan bij de live-validatie uit Module 3 en
   het "expliciet waarschuwen i.p.v. stil doorgaan"-principe uit
   hoofdstuk 12).
+  **Uitzondering (Sven, 2026-11-08): onderdelen importeren** opent wel
+  een eigen venster, omdat er bij een import al snel veel tegelijk
+  aangevuld of gekoppeld moet worden: "robocutter heeft geen overbodige
+  popups, maar met importeren kan al gou soms veel fout zijn dus dan is
+  het beter dat je dit als apparte menu hebt".
 
 Zie de conceptafbeelding
 [`assets/mockups/projectoverzicht-concept.png`](../assets/mockups/projectoverzicht-concept.png)
