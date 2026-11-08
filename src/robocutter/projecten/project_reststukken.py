@@ -337,6 +337,7 @@ class ProjectReststukkenBibliotheek:
                             breedte=item.breedte,
                             herkomst_project=project.naam,
                             fabriekskantenband_randen=item.fabriekskantenband_randen,
+                            decor=project.decors.get(item.materiaal_id, "").strip(),
                         )
                     )
                 )

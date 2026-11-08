@@ -21,6 +21,7 @@ from robocutter.modellen.bibliotheek import ModellenBibliotheek
 from robocutter.modellen.models import Model, ModelOnderdeel, SubModelVerwijzing
 from robocutter.projecten import opslag
 from robocutter.projecten.models import Project, ProjectModelInstantie, ProjectStatus
+from robocutter.projecten.zaaglijst import bouw_zaaglijst
 
 
 class OngeldigeStatusOvergangError(Exception):
@@ -409,6 +410,56 @@ class ProjectenBibliotheek:
             raise ValueError("; ".join(fouten))
         self._persisteer(project)
         return project
+
+    def decor_zetten(self, project_id: str, materiaal_id: str, decor: str) -> Project:
+        """Het decor van een generiek materiaal in dit project (vrije tekst,
+        leeg = nog niet ingevuld)."""
+
+        project = self._projecten[project_id]
+        decor = decor.strip()
+        # Nieuwe dict i.p.v. ter plekke wijzigen: een momentopname (revisie,
+        # bron van het zaagplan) mag niet stilletjes mee veranderen.
+        project.decors = {k: v for k, v in project.decors.items() if k != materiaal_id}
+        if decor:
+            project.decors[materiaal_id] = decor
+        self._persisteer(project)
+        return project
+
+    def generieke_materialen_in_project(self, project_id: str) -> list[str]:
+        """De generieke materialen (id's) die in de zaaglijst van dit
+        project voorkomen, in volgorde van eerste voorkomen."""
+
+        gezien: list[str] = []
+        for regel in bouw_zaaglijst(self._projecten[project_id]):
+            mid = regel.onderdeel.materiaal_id
+            if mid in gezien:
+                continue
+            try:
+                if self._materialen.ophalen(mid).generiek:
+                    gezien.append(mid)
+            except KeyError:
+                continue
+        return gezien
+
+    def eerder_gebruikte_decors(self, materiaal_id: str, behalve_project_id: str = "") -> list[str]:
+        """Decors die andere projecten voor dit materiaal gebruikten,
+        nieuwste project (startdatum) eerst, zonder dubbele (hoofdletters
+        tellen niet). Geen aparte lijst: Sven wil vrije tekst die onthoudt
+        wat eerder gebruikt is."""
+
+        projecten = sorted(
+            (p for p in self._projecten.values() if p.id != behalve_project_id and p.decors.get(materiaal_id)),
+            key=lambda p: (p.startdatum is not None, p.startdatum),
+            reverse=True,
+        )
+        resultaat: list[str] = []
+        gezien: set[str] = set()
+        for p in projecten:
+            decor = p.decors[materiaal_id].strip()
+            if decor.casefold() not in gezien:
+                gezien.add(decor.casefold())
+                resultaat.append(decor)
+        return resultaat
 
     def los_onderdeel_verwijderen(self, project_id: str, onderdeel_id: str) -> Project:
         project = self._projecten[project_id]

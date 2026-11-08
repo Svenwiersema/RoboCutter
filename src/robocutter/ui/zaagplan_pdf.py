@@ -490,11 +490,11 @@ def _kantenband_tekst(info) -> str:
 
 def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) -> None:
     mat = plan.resultaat.materiaal
-    afmeting = f"{mat.lengte:g} × {mat.breedte:g} mm"
+    afmeting = f"{mat.lengte:g} mm" if mat.is_balk else f"{mat.lengte:g} × {mat.breedte:g} mm"
     if plan.is_reststuk:
         plaat_tekst = f"Reststuk uit de bibliotheek {plan.plaat_nummer} van {plan.platen_totaal}"
     else:
-        plaat_tekst = f"Plaat {plan.plaat_nummer} van {plan.platen_totaal}"
+        plaat_tekst = f"{'Balk' if mat.is_balk else 'Plaat'} {plan.plaat_nummer} van {plan.platen_totaal}"
     regel2 = f"{mat.naam}  ·  {plaat_tekst}  ·  strategie {strategie_label}"
     kop_onder = _teken_kop(ctx, regel2)
 
@@ -534,7 +534,11 @@ def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) ->
         herkomst = info.herkomst if info else "—"
         nr_tekst = ", ".join(str(n) for n in posities[oid])
         tabel_rijen.append(
-            ["[ ]", nr_tekst, naam, str(len(plaatsingen)), f"{eerste.breedte:g} × {eerste.hoogte:g}", _kantenband_tekst(info), herkomst]
+            [
+                "[ ]", nr_tekst, naam, str(len(plaatsingen)),
+                f"{eerste.breedte:g}" if mat.is_balk else f"{eerste.breedte:g} × {eerste.hoogte:g}",
+                _kantenband_tekst(info), herkomst,
+            ]
         )
 
     header_h = 6.5
@@ -569,8 +573,8 @@ def _teken_plaat_pagina(ctx: _Ctx, plan: PlaatZaagplan, strategie_label: str) ->
         y,
         [
             ("Materiaal", plan.materiaal_naam),
-            ("Formaat", afmeting),
-            ("Dikte", f"{mat.dikte:g} mm"),
+            ("Lengte" if mat.is_balk else "Formaat", afmeting),
+            ("Doorsnede", f"{mat.breedte:g} × {mat.dikte:g} mm") if mat.is_balk else ("Dikte", f"{mat.dikte:g} mm"),
             ("Zaagsnede", f"{mat.kerf:g} mm"),
             ("Benutting", f"{plan.resultaat.benuttingspercentage:g}%".replace(".", ",")),
             *_revisie_cel(ctx),
@@ -590,16 +594,21 @@ def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zo
     marge = 6.0
     beschikbaar_w = ctx.breedte_mm - 2 * marge
     beschikbaar_h = zone_h_mm - 2 * marge
-    schaal_mm_per_mm = min(beschikbaar_w / mat.lengte, beschikbaar_h / mat.breedte)
-    plaat_w = mat.lengte * schaal_mm_per_mm
-    plaat_h = mat.breedte * schaal_mm_per_mm
+    if mat.is_balk:
+        # Strook van vaste hoogte in de lengte, zoals ZaagplaatWidget.
+        schaal_x = beschikbaar_w / mat.lengte
+        schaal_y = min(beschikbaar_h, 18.0) / mat.breedte
+    else:
+        schaal_x = schaal_y = min(beschikbaar_w / mat.lengte, beschikbaar_h / mat.breedte)
+    plaat_w = mat.lengte * schaal_x
+    plaat_h = mat.breedte * schaal_y
     ox = marge + (beschikbaar_w - plaat_w) / 2
     oy = zone_top_mm + marge + (beschikbaar_h - plaat_h) / 2
 
     # y loopt omhoog: de motor legt y=0 aan de rand ONDER, zelfde
     # oriëntatie als ZaagplaatWidget (zie daar).
     def px(x_stuk: float, y_stuk: float) -> QPointF:
-        return ctx.px(ox + x_stuk * schaal_mm_per_mm, oy + (mat.breedte - y_stuk) * schaal_mm_per_mm)
+        return ctx.px(ox + x_stuk * schaal_x, oy + (mat.breedte - y_stuk) * schaal_y)
 
     def rect_mm(x: float, y: float, b: float, h: float) -> QRectF:
         return QRectF(px(x, y), px(x + b, y + h)).normalized()
@@ -615,7 +624,8 @@ def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zo
         p.setPen(QPen(_OFFCUT_LINE, ctx.mm(0.25)))
         p.setBrush(_OFFCUT_FILL)
         p.drawRect(rect)
-        _teken_stuk_label(ctx, rect, f"R{i}", f"{r.breedte:g}×{r.hoogte:g}", "herbruikbaar", _OFFCUT_INK, cirkel=False)
+        maat = f"{r.breedte:g}" if mat.is_balk else f"{r.breedte:g}×{r.hoogte:g}"
+        _teken_stuk_label(ctx, rect, f"R{i}", maat, "herbruikbaar", _OFFCUT_INK, cirkel=False)
 
     # Geplaatste onderdelen — neutraal grijsblauw, groen nummerbolletje.
     for i, pl in enumerate(resultaat.plaatsingen, start=1):
@@ -623,7 +633,8 @@ def _teken_plaat(ctx: _Ctx, resultaat: ZaagplanResultaat, zone_top_mm: float, zo
         p.setPen(QPen(_PART_LINE, ctx.mm(0.25)))
         p.setBrush(_PART_FILL)
         p.drawRect(rect)
-        _teken_stuk_label(ctx, rect, str(i), f"{pl.breedte:g}×{pl.hoogte:g}", None, _MUTED, cirkel=True)
+        maat = f"{pl.breedte:g}" if mat.is_balk else f"{pl.breedte:g}×{pl.hoogte:g}"
+        _teken_stuk_label(ctx, rect, str(i), maat, None, _MUTED, cirkel=True)
 
     # Fabriekskantenband: dikke donkere lijn net buiten de betreffende rand.
     for rand in mat.fabriekskantenband_randen:
@@ -737,6 +748,9 @@ def _materiaal_naam(materiaal_id: str, materialen: MaterialenBibliotheek) -> str
 
 
 def _teken_zaaglijst_paginas(ctx: _Ctx, project: Project, materialen: MaterialenBibliotheek, sort_niveaus: list[str]) -> None:
+    # In de app staat elk materiaal op een eigen tabblad; de pdf heeft één
+    # doorlopende lijst, dus daar eerst op materiaal.
+    sort_niveaus = ["materiaal", *(s for s in sort_niveaus if s != "materiaal")]
     alle_regels = sorteer_zaaglijst(bouw_zaaglijst(project), sort_niveaus, materialen)
     aantal_materialen = len({r.onderdeel.materiaal_id for r in alle_regels})
     aantal_onderdelen = sum(r.onderdeel.aantal for r in alle_regels)

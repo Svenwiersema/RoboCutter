@@ -77,3 +77,6 @@ class Project:
     gearchiveerd: bool = False
     modelinstanties: list[ProjectModelInstantie] = field(default_factory=list)
     losse_onderdelen: list[ModelOnderdeel] = field(default_factory=list)
+    # Decor per generiek materiaal (materiaal_id -> vrije tekst, bv.
+    # "Egger H1145 ST10"), één voor het hele project (Sven 2026-11-08).
+    decors: dict[str, str] = field(default_factory=dict)

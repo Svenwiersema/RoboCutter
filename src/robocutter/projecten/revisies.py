@@ -185,6 +185,12 @@ def vergelijk_projecten(
     regels.extend(f"Los onderdeel toegevoegd: {naam}" for naam in toegevoegd)
     regels.extend(f"Los onderdeel verwijderd: {naam}" for naam in verwijderd)
     regels.extend(f"Los onderdeel gewijzigd: {tekst}" for tekst in gewijzigd)
+
+    # Een ander decor is een andere plaat: telt mee voor "Niet gecontroleerd".
+    for materiaal_id in sorted(set(oud.decors) | set(nieuw.decors)):
+        a, b = oud.decors.get(materiaal_id, "").strip(), nieuw.decors.get(materiaal_id, "").strip()
+        if a != b:
+            regels.append(f"Decor {materiaal_naam(materiaal_id)}: {a or '—'} → {b or '—'}")
     return regels
 
 

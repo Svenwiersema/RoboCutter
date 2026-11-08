@@ -153,6 +153,33 @@ def test_nerfrichting_korte_zijde_is_tegenovergesteld_van_lange_zijde():
     assert p.breedte == 300 and p.hoogte == 800
 
 
+@pytest.mark.parametrize("strategie", ["cnc", "horizontaal", "verticaal", "guillotine"])
+def test_nerf_over_de_breedte_keert_de_nerf_eis_om(strategie):
+    # Sven: bij een materiaal kies je of de nerf over de lengte of over de
+    # breedte loopt. Over de breedte = langs y, dus "lange zijde langs de
+    # nerf" betekent dan de lange zijde (800) evenwijdig aan de y-as.
+    mat = _standaard_materiaal(nerfrichting=Nerfrichting.KORTE_ZIJDE)
+    lang = Onderdeel(id="a", breedte=800, hoogte=300, aantal=1, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE)
+    kort = Onderdeel(id="b", breedte=800, hoogte=300, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE)
+    resultaat = genereer_zaagplan(mat, [lang, kort], strategie=strategie)
+    op_id = {p.onderdeel_id: p for p in resultaat.plaatsingen}
+    assert (op_id["a"].breedte, op_id["a"].hoogte) == (300, 800)
+    assert (op_id["b"].breedte, op_id["b"].hoogte) == (800, 300)
+
+
+def test_nerf_eis_vervalt_op_materiaal_zonder_nerf():
+    # 2500 lang met "korte zijde langs de nerf" moet op een plaat met nerf
+    # over de lengte rechtop (300×2500) — past niet in 2070. Zonder nerf
+    # mag het gewoon liggend.
+    onderdeel = Onderdeel(id="a", breedte=2500, hoogte=300, aantal=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE)
+    met_nerf = genereer_zaagplan(_standaard_materiaal(), [onderdeel], strategie="horizontaal")
+    assert not met_nerf.plaatsingen and met_nerf.niet_geplaatst
+    assert "korte zijde langs de nerf" in next(iter(met_nerf.niet_geplaatst_redenen.values()))
+
+    zonder_nerf = genereer_zaagplan(_standaard_materiaal(nerfrichting=Nerfrichting.GEEN), [onderdeel], strategie="horizontaal")
+    assert len(zonder_nerf.plaatsingen) == 1 and not zonder_nerf.niet_geplaatst
+
+
 def test_groep_wordt_aaneengesloten_en_in_volgorde_geplaatst():
     mat = _standaard_materiaal()
     onderdelen = [
@@ -1607,3 +1634,77 @@ def test_cnc_heeft_in_totaal_niet_meer_platen_nodig_dan_de_zaagstrategieen():
         for strategie in _ALLE_STRATEGIEEN:
             platen[strategie] += len(genereer_zaagplannen(mat, onderdelen, strategie=strategie))
     assert platen["cnc"] <= min(platen[s] for s in _ZAAGSTRATEGIEEN), platen
+
+
+# ----------------------------------------------------------------------
+# Balken (lengtemateriaal): alleen afkorten
+# ----------------------------------------------------------------------
+
+
+def _balk(**overrides) -> Materiaal:
+    basis = dict(naam="Regel 40x70", lengte=3000, breedte=70, dikte=40, kerf=4, min_reststukgrootte=300, is_balk=True)
+    basis.update(overrides)
+    return Materiaal(**basis)
+
+
+def test_balk_kort_lang_naar_kort_af_met_zaagsnede_ertussen():
+    mat = _balk()
+    onderdelen = [
+        Onderdeel(id="kort", breedte=500, hoogte=70, aantal=2),
+        Onderdeel(id="lang", breedte=1200, hoogte=70, aantal=1),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen)
+    xs = [(p.onderdeel_id, p.x, p.breedte) for p in resultaat.plaatsingen]
+    assert xs == [("lang", 0.0, 1200), ("kort", 1204.0, 500), ("kort", 1708.0, 500)]
+    assert all(p.y == 0 and p.hoogte == 70 and not p.geroteerd for p in resultaat.plaatsingen)
+    assert [s.positie for s in resultaat.zaagvolgorde] == [1200, 1704, 2208]
+    assert all(s.richting == "verticaal" and s.start == 0 and s.einde == 70 for s in resultaat.zaagvolgorde)
+    # Eindstuk 3000 - 2212 = 788 >= 300 -> reststuk over de volle breedte.
+    assert len(resultaat.reststukken) == 1
+    r = resultaat.reststukken[0]
+    assert (r.x, r.breedte, r.hoogte) == (pytest.approx(2212), pytest.approx(788), 70)
+    _geldig_zaagplan(resultaat, mat)
+    assert _paneelzaag_fouten(resultaat) == []
+    assert abs(_onverantwoord_oppervlak(resultaat)) < 1e-6
+
+
+def test_balk_reststuk_telt_alleen_op_lengte_en_kort_eind_is_afval():
+    # De breedte (70) ligt onder het minimum, maar bij een balk ligt die
+    # vast — alleen de lengte telt.
+    resultaat = genereer_zaagplan(_balk(min_reststukgrootte=900), [Onderdeel(id="a", breedte=2500, hoogte=70)])
+    assert resultaat.reststukken == []
+    assert resultaat.afval_oppervlak == pytest.approx((3000 - 2504) * 70)
+
+
+def test_balk_negeert_nerf_groepen_en_randafzaag_boven_onder():
+    mat = _balk(
+        randafzaag_marge=10, randafzaag_randen=frozenset({Rand.LINKS, Rand.RECHTS, Rand.BOVEN}),
+        nerfrichting=Nerfrichting.LANGE_ZIJDE,
+    )
+    onderdelen = [
+        Onderdeel(id="g1", breedte=800, hoogte=70, groep_id="g", groep_volgorde=1, nerfrichting_vereist=Nerfrichting.KORTE_ZIJDE),
+        Onderdeel(id="g2", breedte=800, hoogte=70, groep_id="g", groep_volgorde=2),
+    ]
+    resultaat = genereer_zaagplan(mat, onderdelen)
+    assert [(p.x, p.y, p.breedte, p.hoogte) for p in resultaat.plaatsingen] == [(10, 0, 800, 70), (814, 0, 800, 70)]
+
+
+def test_balk_overloop_naar_volgende_balk_en_te_lang_stuk():
+    mat = _balk()
+    onderdelen = [Onderdeel(id="a", breedte=1400, hoogte=70, aantal=5), Onderdeel(id="te_lang", breedte=3200, hoogte=70)]
+    resultaten = genereer_zaagplannen(mat, onderdelen)
+    assert [len(r.plaatsingen) for r in resultaten] == [2, 2, 1]
+    assert resultaten[-1].niet_geplaatst == ["te_lang#1"]
+    assert "langer dan een balk" in resultaten[-1].niet_geplaatst_redenen["te_lang#1"]
+    assert all(not r.niet_geplaatst for r in resultaten[:-1])
+    assert schat_aantal_platen(mat, onderdelen) >= 3
+
+
+def test_balk_groepslid_gaat_mee_naar_volgende_balk():
+    mat = _balk(lengte=1000)
+    onderdelen = [
+        Onderdeel(id="g1", breedte=900, hoogte=70, groep_id="g", groep_volgorde=1),
+        Onderdeel(id="g2", breedte=900, hoogte=70, groep_id="g", groep_volgorde=2),
+    ]
+    resultaten = genereer_zaagplannen(mat, onderdelen)
+    assert sorted(p.onderdeel_id for r in resultaten for p in r.plaatsingen) == ["g1", "g2"]

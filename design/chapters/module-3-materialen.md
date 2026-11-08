@@ -54,10 +54,20 @@ definitieve actie.**
 - Naam/omschrijving
 - Type: plaat of balk
 - Afmetingen (bij platen: lengte × breedte + dikte; bij balken: lengte +
-  breedte × hoogte)
+  breedte × hoogte). Een balk wordt alleen afgekort (bevestigd 2026-11-08,
+  "die kan je maar op 1 manier zagen"): een onderdeel op een balk heeft
+  alleen een lengte, de doorsnede komt van de balk.
 - Materiaalfamilie-koppeling
 - Kleur/afwerking
-- Nerfrichting: lange zijde / korte zijde / geen (zie hoofdstuk 5)
+- Nerfrichting van de plaat: geen / over de lengte / over de breedte
+  (bevestigd 2026-11-08; de motor volgt deze keuze, zie hoofdstuk 5)
+- **Generiek materiaal** (bevestigd 2026-11-08): één record voor alle
+  decors, bv. "HPL met nerf 3050×1300", zodat je niet voor elke textuur een
+  eigen materiaal aanmaakt. Het decor vul je **per project** in (één per
+  generiek materiaal, vrije tekst met eerder gebruikte decors als
+  suggestie). Het decor staat op zaagplan, pdf en labels, telt mee voor
+  "Niet gecontroleerd", en een reststuk onthoudt het decor (de motor
+  gebruikt alleen reststukken met hetzelfde decor).
 - ~~Zaagsnede/kerf-breedte~~ — sinds oktober 2026 geen materiaalveld meer:
   de zaagsnede-breedte is een centrale instelling (zie hoofdstuk 5)
 - Randafzaag-marge + welke randen (zie hoofdstuk 5)

@@ -29,7 +29,7 @@ from robocutter.materialen.bibliotheek import MaterialenBibliotheek
 from robocutter.modellen.models import Nerfrichting, Rand
 from robocutter.projecten.models import Project
 from robocutter.projecten.project_reststukken import ProjectReststuk, ProjectReststukStatus
-from robocutter.projecten.zaagplannen import PlaatZaagplan
+from robocutter.projecten.zaagplannen import PlaatZaagplan, materiaal_naam_met_decor
 
 from robocutter.reststukken.models import Reststuk
 
@@ -114,8 +114,8 @@ def genereer_labels_voor_project(
 @dataclass
 class ReststukLabel:
     """Eén label voor een reststuk dat bewaard wordt. Lengte loopt langs de
-    lengte-as van de plaat, dus langs de nerf als het materiaal er een heeft
-    (zie de nerf-aanname in ``engine.py``)."""
+    lengte-as van de plaat; ``nerfrichting`` is die van het materiaal
+    (over de lengte = ``LANGE_ZIJDE``, over de breedte = ``KORTE_ZIJDE``)."""
 
     scancode_waarde: str
     reststuk_id: str
@@ -124,16 +124,20 @@ class ReststukLabel:
     lengte: float  # mm, huidige (eventueel aangepaste) maat
     breedte: float  # mm
     fabriekskantenband_randen: frozenset[Rand]
-    nerf_langs_lengte: bool
+    nerfrichting: Nerfrichting
 
     @property
     def afmeting_tekst(self) -> str:
         return f"{self.lengte:g} × {self.breedte:g} mm"
 
 
-def genereer_reststuk_labels(items: list[ProjectReststuk], materialen: MaterialenBibliotheek) -> list[ReststukLabel]:
+def genereer_reststuk_labels(
+    items: list[ProjectReststuk], materialen: MaterialenBibliotheek, decors: dict[str, str] | None = None
+) -> list[ReststukLabel]:
     """Eén label per reststuk in ``items`` dat op Bewaren staat; hergebruikte
-    en afgeschreven stukken gaan het magazijn niet in en krijgen er geen."""
+    en afgeschreven stukken gaan het magazijn niet in en krijgen er geen.
+    ``decors`` (``Project.decors``): bij een generiek materiaal komt het
+    decor achter de materiaalnaam."""
 
     labels: list[ReststukLabel] = []
     for item in items:
@@ -141,9 +145,10 @@ def genereer_reststuk_labels(items: list[ProjectReststuk], materialen: Materiale
             continue
         try:
             materiaal = materialen.ophalen(item.materiaal_id)
-            materiaal_naam, nerf = materiaal.naam, materiaal.nerfrichting != Nerfrichting.GEEN
+            decor = (decors or {}).get(item.materiaal_id, "").strip() if materiaal.generiek else None
+            materiaal_naam, nerf = materiaal_naam_met_decor(materiaal.naam, decor), materiaal.nerfrichting
         except KeyError:
-            materiaal_naam, nerf = "onbekend materiaal", False
+            materiaal_naam, nerf = "onbekend materiaal", Nerfrichting.GEEN
         labels.append(
             ReststukLabel(
                 scancode_waarde=f"RC:reststuk:{item.id}",
@@ -153,7 +158,7 @@ def genereer_reststuk_labels(items: list[ProjectReststuk], materialen: Materiale
                 lengte=item.lengte,
                 breedte=item.breedte,
                 fabriekskantenband_randen=item.fabriekskantenband_randen,
-                nerf_langs_lengte=nerf,
+                nerfrichting=nerf,
             )
         )
     return labels
@@ -171,9 +176,10 @@ def genereer_bibliotheek_reststuk_labels(
     for r in reststukken:
         try:
             materiaal = materialen.ophalen(r.materiaal_id)
-            materiaal_naam, nerf = materiaal.naam, materiaal.nerfrichting != Nerfrichting.GEEN
+            decor = r.decor.strip() if materiaal.generiek else None
+            materiaal_naam, nerf = materiaal_naam_met_decor(materiaal.naam, decor), materiaal.nerfrichting
         except KeyError:
-            materiaal_naam, nerf = "onbekend materiaal", False
+            materiaal_naam, nerf = "onbekend materiaal", Nerfrichting.GEEN
         labels.append(
             ReststukLabel(
                 scancode_waarde=f"RC:reststuk:{r.id}",
@@ -183,7 +189,7 @@ def genereer_bibliotheek_reststuk_labels(
                 lengte=r.lengte,
                 breedte=r.breedte,
                 fabriekskantenband_randen=r.fabriekskantenband_randen,
-                nerf_langs_lengte=nerf,
+                nerfrichting=nerf,
             )
         )
     return labels

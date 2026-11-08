@@ -1,0 +1,278 @@
+<title>RoboCutter Balken en decors</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: één kolom met vier genummerde schermdelen (materiaal, onderdeel op een balk, zaagplan
+     van een balk, decor per project), elk als kaart zoals in de app. Tokens = theme.py. */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF;
+    --success:#4FA875; --success-soft:#E7F7EE; --success-ink:#1E5E3B;
+    --warning:#B5872A; --warning-ink:#7A5A15; --warning-soft:#FBF1DC;
+    --deel:#DCE4FF; --deel-rand:#7D95F0; --rest:#E3F4EA; --rest-rand:#6FB98D; --afval:#ECEDF1;
+    --hout:#D9C6A5; --hout-rand:#B49A6E;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52;
+      --success:#6FCF97; --success-soft:#1D3226; --success-ink:#BFF0D4;
+      --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+      --deel:#2F3A66; --deel-rand:#6D8AFF; --rest:#1F3A2B; --rest-rand:#6FCF97; --afval:#30323F;
+      --hout:#5A4A33; --hout-rand:#8C7550;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52;
+    --success:#6FCF97; --success-soft:#1D3226; --success-ink:#BFF0D4;
+    --warning:#E8B84B; --warning-ink:#F6DFA9; --warning-soft:#382C13;
+    --deel:#2F3A66; --deel-rand:#6D8AFF; --rest:#1F3A2B; --rest-rand:#6FCF97; --afval:#30323F;
+    --hout:#5A4A33; --hout-rand:#8C7550;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .view{max-width:1000px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:22px;}
+  h1{font-size:22px;font-weight:800;margin:0 0 4px;text-wrap:balance;}
+  h2{font-size:15px;font-weight:700;margin:0;text-wrap:balance;display:flex;gap:10px;align-items:baseline;}
+  h2 .nr{font:700 12px var(--mono);color:var(--accent-text);}
+  .lead{color:var(--text-muted);line-height:1.55;margin:0;max-width:78ch;}
+  .uitleg{color:var(--text-muted);line-height:1.55;margin:0;max-width:78ch;font-size:12.5px;}
+  .blok{display:flex;flex-direction:column;gap:10px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;min-width:0;}
+  .sectie{font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-muted);}
+  .veld-label{font-weight:500;font-size:13px;margin-bottom:-6px;}
+  .hulp{color:var(--text-faint);font-size:12px;line-height:1.5;}
+  .rij{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+  .rij > div{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .invoer{border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:8px;padding:8px 12px;font:500 13px var(--sans);min-width:0;}
+  .invoer.mono{font:600 12.5px var(--mono);width:110px;}
+  .invoer:focus-visible,.segbtn:focus-visible,.seg:focus-visible,.schakel:focus-visible,.sugg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .segmented{display:inline-grid;grid-auto-flow:column;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:3px;max-width:100%;}
+  .segbtn{border:none;background:transparent;color:var(--text-muted);padding:7px 12px;border-radius:6px;font:500 13px var(--sans);cursor:pointer;white-space:nowrap;}
+  .segbtn[aria-pressed="true"]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);}
+  .nieuw{font-size:10.5px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--accent-text);background:var(--accent-soft);border-radius:10px;padding:2px 8px;}
+  .toestanden{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .toestanden .lbl{font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text-faint);margin-right:4px;}
+  .seg{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:8px;padding:6px 12px;font:600 12.5px var(--sans);cursor:pointer;}
+  .seg[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-text);border-color:var(--accent);}
+
+  .schakel-rij{display:flex;gap:12px;align-items:flex-start;}
+  .schakel{flex:none;width:36px;height:20px;border-radius:10px;border:none;background:var(--border);position:relative;cursor:pointer;margin-top:1px;}
+  .schakel::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:7px;background:var(--surface);transition:left .15s;}
+  .schakel[aria-checked="true"]{background:var(--accent);}
+  .schakel[aria-checked="true"]::after{left:19px;}
+  .schakel-rij b{font-weight:600;}
+
+  .doorsnede{display:flex;gap:10px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text-muted);line-height:1.5;}
+  .doorsnede b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .weg{color:var(--text-faint);font-size:12px;line-height:1.5;border:1px dashed var(--border);border-radius:10px;padding:10px 12px;}
+
+  /* Balk-zaagplan */
+  .balk-kop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;}
+  .balk-kop b{font-size:13.5px;}
+  .balk-kop .cijfers{color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;}
+  .strook-wrap{overflow-x:auto;}
+  .strook{display:flex;height:46px;border:1px solid var(--hout-rand);border-radius:4px;overflow:hidden;min-width:560px;background:var(--hout);}
+  .stuk{display:flex;flex-direction:column;justify-content:center;align-items:center;font-size:11px;line-height:1.25;overflow:hidden;white-space:nowrap;border-right:1px solid var(--hout-rand);}
+  .stuk.deel{background:var(--deel);}
+  .stuk.deel b{font-weight:700;}
+  .stuk.rest{background:var(--rest);color:var(--success-ink);}
+  .stuk.afval{background:var(--afval);color:var(--text-faint);}
+  .snede{flex:none;width:3px;background:var(--text);opacity:.55;}
+  .stuk .mm{font:600 10.5px var(--mono);color:var(--text-muted);}
+  .liniaal{display:flex;justify-content:space-between;font:600 10px var(--mono);color:var(--text-faint);min-width:560px;}
+  .volgorde{display:flex;gap:6px;flex-wrap:wrap;}
+  .volgorde span{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text-muted);}
+
+  /* Decors */
+  table{width:100%;border-collapse:collapse;}
+  .tabel-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;}
+  th{text-align:left;font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:var(--text-faint);padding:9px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+  td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  td .invoer{width:100%;min-width:200px;}
+  .klein{color:var(--text-muted);font-size:12px;}
+  .sugg{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .sugg button{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:12px;padding:3px 10px;font:500 12px var(--sans);cursor:pointer;}
+  .sugg button:hover{background:var(--surface-hover);color:var(--text);}
+  .ontbreekt{display:inline-flex;gap:6px;align-items:center;color:var(--warning-ink);background:var(--warning-soft);border-radius:10px;padding:2px 9px;font-size:11.5px;font-weight:600;margin-top:8px;}
+  .plaatkop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+  .plaatkop .decor{font-weight:700;}
+  .pil{font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px;background:var(--surface);color:var(--text-muted);border:1px solid var(--border);}
+
+  .notities{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;}
+  .notitie{border:1px dashed var(--border);border-radius:10px;padding:12px 14px;color:var(--text-muted);line-height:1.55;font-size:12.5px;}
+  .notitie b{color:var(--text);}
+</style>
+
+<div class="view">
+  <header>
+    <h1>Balken, nerfrichting en generieke materialen</h1>
+    <p class="lead">Vier aanpassingen op bestaande schermen. De motor werkt al (balken afkorten, nerf over lengte of breedte); dit gaat over hoe je het invult en ziet. Klik op de knoppen om de situaties te bekijken.</p>
+  </header>
+
+  <!-- 1. Materiaal -->
+  <section class="blok" aria-labelledby="k1">
+    <h2 id="k1"><span class="nr">1</span>Materiaal bewerken (lade rechts in Materialen)</h2>
+    <div class="card">
+      <div class="sectie">Eigenschappen</div>
+      <div class="veld-label">Nerfrichting <span class="nieuw">Nieuwe namen</span></div>
+      <div class="segmented" role="group" aria-label="Nerfrichting">
+        <button class="segbtn" aria-pressed="false" id="n-geen">Geen</button>
+        <button class="segbtn" aria-pressed="true" id="n-lengte">Over de lengte</button>
+        <button class="segbtn" aria-pressed="false" id="n-breedte">Over de breedte</button>
+      </div>
+      <div class="hulp">Was "Lange zijde / Korte zijde". Over de lengte = langs de 3050 mm, over de breedte = langs de 1300 mm. Geen nerf: een onderdeel mag dan altijd draaien, ook als het een nerfeis heeft.</div>
+
+      <div class="schakel-rij">
+        <button class="schakel" role="switch" aria-checked="true" id="generiek" aria-label="Generiek materiaal"></button>
+        <div><b>Generiek materiaal</b> <span class="nieuw">Nieuw</span>
+          <div class="hulp">Eén materiaal voor alle decors, bijvoorbeeld "HPL met nerf 3050×1300". Welk decor het wordt, vul je per project in.</div>
+        </div>
+      </div>
+      <div class="rij">
+        <div><span class="veld-label">Naam</span><input class="invoer" id="mat-naam" value="HPL met nerf 0,8 mm" style="width:260px"></div>
+        <div><span class="veld-label">Kleur/afwerking</span><input class="invoer" id="mat-kleur" value="" placeholder="Per project" disabled style="width:180px"></div>
+      </div>
+      <div class="hulp">Bij een generiek materiaal is Kleur/afwerking leeg. Daar komt per project het decor.</div>
+    </div>
+  </section>
+
+  <!-- 2. Onderdeel op een balk -->
+  <section class="blok" aria-labelledby="k2">
+    <h2 id="k2"><span class="nr">2</span>Onderdeel toevoegen (model, projectmodel en los onderdeel)</h2>
+    <div class="toestanden" role="group" aria-label="Materiaal van het onderdeel">
+      <span class="lbl">Materiaal</span>
+      <button class="seg" data-mat="plaat" aria-pressed="false" id="m-plaat">Plaat (Eiken multiplex)</button>
+      <button class="seg" data-mat="balk" aria-pressed="true" id="m-balk">Balk (Vuren regel 40×70)</button>
+    </div>
+    <div class="card">
+      <div class="rij">
+        <div><span class="veld-label">Naam</span><input class="invoer" id="o-naam" value="Stijl" style="width:200px"></div>
+        <div><span class="veld-label">Aantal</span><input class="invoer mono" id="o-aantal" value="4" style="width:70px"></div>
+      </div>
+      <div id="vorm-balk" class="blok">
+        <div class="rij">
+          <div><span class="veld-label">Lengte mm</span><input class="invoer mono" id="o-lengte" value="1000"></div>
+        </div>
+        <div class="doorsnede">Doorsnede <b>40 × 70 mm</b> komt van de balk. Je vult alleen de lengte in, de balk wordt alleen afgekort.</div>
+        <div class="weg">Bij een balk verdwijnen: breedte/hoogte omwisselen, nerfrichting, kantenband en fabriekskantenband. In de lijst staat het onderdeel als "1000 mm · Vuren regel 40×70".</div>
+      </div>
+      <div id="vorm-plaat" class="blok" hidden>
+        <div class="rij">
+          <div><span class="veld-label">Breedte mm</span><input class="invoer mono" id="o-breedte" value="600"></div>
+          <div><span class="veld-label">Hoogte mm</span><input class="invoer mono" id="o-hoogte" value="720"></div>
+        </div>
+        <div class="hulp">Zoals nu: breedte × hoogte, nerfrichting, kantenband en fabriekskantenband.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Zaagplan van een balk -->
+  <section class="blok" aria-labelledby="k3">
+    <h2 id="k3"><span class="nr">3</span>Zaagplan van een balk (Zaagplannen in het project, en in de pdf)</h2>
+    <div class="card">
+      <div class="balk-kop"><b>Balk 1 · Vuren regel 40×70 · 3000 mm</b><span class="cijfers">3 stukken · 1 reststuk · zaagsnede 4 mm</span></div>
+      <div class="strook-wrap">
+        <div class="strook" role="img" aria-label="Balk van 3000 mm: Regel 1200, twee Stijlen van 500, reststuk 788">
+          <div class="stuk deel" style="flex:1200"><b>Regel</b><span class="mm">1200</span></div><div class="snede"></div>
+          <div class="stuk deel" style="flex:500"><b>Stijl</b><span class="mm">500</span></div><div class="snede"></div>
+          <div class="stuk deel" style="flex:500"><b>Stijl</b><span class="mm">500</span></div><div class="snede"></div>
+          <div class="stuk rest" style="flex:788"><b>R1</b><span class="mm">788</span></div>
+        </div>
+      </div>
+      <div class="liniaal"><span>0</span><span>1000</span><span>2000</span><span>3000 mm</span></div>
+      <div class="volgorde" aria-label="Zaagvolgorde"><span>1 · op 1200</span><span>2 · op 1704</span><span>3 · op 2208</span></div>
+      <div class="hulp">De balk staat als één strook in de lengte, niet op schaal in de breedte (anders is 70 mm een streepje). Een eindstuk is een reststuk als het langer is dan de minimale reststukgrootte; de breedte telt bij een balk niet mee. Het afzagen van de kopse kanten (randafzaag links/rechts) telt wel. Labels per stuk zoals bij platen.</div>
+    </div>
+  </section>
+
+  <!-- 4. Decor per project -->
+  <section class="blok" aria-labelledby="k4">
+    <h2 id="k4"><span class="nr">4</span>Decor per project (Overzicht van het project)</h2>
+    <div class="toestanden" role="group" aria-label="Situatie">
+      <span class="lbl">Situatie</span>
+      <button class="seg" data-decor="leeg" aria-pressed="true" id="d-leeg">Nog niet ingevuld</button>
+      <button class="seg" data-decor="vol" aria-pressed="false" id="d-vol">Ingevuld</button>
+    </div>
+    <div class="card">
+      <div class="sectie">Decors</div>
+      <div class="hulp">Verschijnt alleen als het project een generiek materiaal gebruikt. Per generiek materiaal één decor voor het hele project.</div>
+      <div class="tabel-wrap">
+        <table>
+          <thead><tr><th>Generiek materiaal</th><th>Decor</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>HPL met nerf 0,8 mm</b><div class="klein">3050 × 1300 · 9 onderdelen</div></td>
+              <td>
+                <input class="invoer" id="decor-hpl" placeholder="Typ het decor, bv. Egger H1145 ST10" value="">
+                <div class="sugg" aria-label="Eerder gebruikt"><span class="klein">Eerder gebruikt:</span>
+                  <button data-sugg="Egger H1145 ST10 Bardolino eiken">Egger H1145 ST10 Bardolino eiken</button>
+                  <button data-sugg="Polyrey Chêne Naturel">Polyrey Chêne Naturel</button>
+                  <button data-sugg="Formica F7927 Folkstone">Formica F7927 Folkstone</button>
+                </div>
+                <div class="ontbreekt" id="decor-melding">Nog geen decor. Zaagplan maken kan wel, maar labels en pdf tonen dan "decor onbekend".</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sectie">Zo staat het daarna in Zaagplannen</div>
+      <div class="plaatkop"><span class="pil">Plaat 1</span><span>HPL met nerf 0,8 mm ·</span><span class="decor" id="plaat-decor">decor onbekend</span><span class="klein">3050 × 1300</span></div>
+    </div>
+  </section>
+
+  <section class="notities" aria-label="Keuzes">
+    <div class="notitie"><b>Reststukken onthouden het decor.</b> Een reststuk van een generiek materiaal krijgt het decor mee. "Reststukken eerst" gebruikt alleen stukken met hetzelfde decor, en het decor staat op het reststuklabel.</div>
+    <div class="notitie"><b>Decor wijzigen = gewijzigde samenstelling.</b> Pas je het decor aan na het genereren, dan wordt het zaagplan "Niet gecontroleerd", net als bij andere wijzigingen.</div>
+    <div class="notitie"><b>Eerder gebruikt</b> komt uit je andere projecten (nieuwste eerst, per materiaal). Er is geen aparte lijst om bij te houden.</div>
+  </section>
+</div>
+
+<script>
+  function kies(groep, knop){ groep.forEach(b => b.setAttribute("aria-pressed", String(b === knop))); }
+  const nerf = [...document.querySelectorAll(".segmented .segbtn")];
+  nerf.forEach(b => b.addEventListener("click", () => kies(nerf, b)));
+
+  const gen = document.getElementById("generiek");
+  const kleur = document.getElementById("mat-kleur");
+  gen.addEventListener("click", () => {
+    const aan = gen.getAttribute("aria-checked") !== "true";
+    gen.setAttribute("aria-checked", String(aan));
+    kleur.disabled = aan;
+    kleur.placeholder = aan ? "Per project" : "Bv. Wit";
+  });
+
+  const mats = [...document.querySelectorAll("[data-mat]")];
+  mats.forEach(b => b.addEventListener("click", () => {
+    kies(mats, b);
+    const balk = b.dataset.mat === "balk";
+    document.getElementById("vorm-balk").hidden = !balk;
+    document.getElementById("vorm-plaat").hidden = balk;
+  }));
+
+  const invoer = document.getElementById("decor-hpl");
+  const melding = document.getElementById("decor-melding");
+  const plaat = document.getElementById("plaat-decor");
+  function ververs(){
+    const v = invoer.value.trim();
+    melding.hidden = !!v;
+    plaat.textContent = v || "decor onbekend";
+    decors.forEach(b => b.setAttribute("aria-pressed", String((b.dataset.decor === "vol") === !!v)));
+  }
+  const decors = [...document.querySelectorAll("[data-decor]")];
+  decors.forEach(b => b.addEventListener("click", () => {
+    invoer.value = b.dataset.decor === "vol" ? "Egger H1145 ST10 Bardolino eiken" : "";
+    ververs();
+  }));
+  document.querySelectorAll("[data-sugg]").forEach(b => b.addEventListener("click", () => { invoer.value = b.dataset.sugg; ververs(); }));
+  invoer.addEventListener("input", ververs);
+  ververs();
+</script>

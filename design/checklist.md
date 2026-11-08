@@ -281,13 +281,16 @@ logboek van `OVERDRACHT.md`.
   eigen map (waarschuwing bij dezelfde schijf), bewaren 24 uur alles +
   14 dagen per dag + 8 weken per week, terugzetten vanuit Instellingen
   (huidige stand eerst veiliggesteld, app herstart), stand in de statusbalk
+- Nerfrichting per materiaal (over de lengte / over de breedte / geen) en
+  balken alleen afkorten, met lengte-invoer en strookweergave (H3/H5,
+  2026-11-08)
+- Generieke materialen met een decor per project, ook op reststukken en
+  labels (H3, 2026-11-08)
 
 **🟡 Deels**
 
 - Mes/groef (H3/H5): veld bij materialen, nog geen plaatsingsregels in de
   motor
-- Balken (H3): materiaaltype bestaat; nog niet nagelopen of de motor
-  balken goed behandelt (lengtezagen)
 - CSV/Excel-import materialen (H3): knop staat er, uitgeschakeld
 - Labelprinters (H6): alleen A4-raster, nog geen labelprinter-formaat
 - Lettertype Inter (H11): niet gebundeld, valt terug op Segoe UI
@@ -310,8 +313,6 @@ logboek van `OVERDRACHT.md`.
 
 - Guillotine: praktijkcontrole door bètatesters, incl. of het randafzagen
   als genummerde snede in de zaagvolgorde moet
-- Motor-aannames: de nerf van een plaat loopt langs de lengte; een
-  reststuk is bruikbaar als lengte én breedte boven het minimum zitten
 
 ## 💡 Suggesties van Claude (nog te bevestigen)
 

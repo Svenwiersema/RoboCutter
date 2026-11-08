@@ -127,7 +127,7 @@ class BijwerkResultaat:
 
 
 def plaat_naam(plan: PlaatZaagplan) -> str:
-    soort = "Reststuk" if plan.is_reststuk else "Plaat"
+    soort = "Reststuk" if plan.is_reststuk else "Balk" if plan.resultaat.materiaal.is_balk else "Plaat"
     return f"{soort} {plan.plaat_nummer} ({plan.materiaal_naam})"
 
 
@@ -415,6 +415,7 @@ def werk_zaagplannen_bij(
             Reststuk(
                 id=rid,
                 materiaal_id=plan.materiaal_id,
+                decor=project.decors.get(plan.materiaal_id, ""),
                 lengte=r.breedte,
                 breedte=r.hoogte,
                 fabriekskantenband_randen=_fabrieksranden_van(
@@ -437,6 +438,7 @@ def werk_zaagplannen_bij(
             zaagsnede=zaagsnede,
             reststukken=kandidaten,
             revisie=revisie,
+            decors=project.decors,
             # Uniek t.o.v. de onderdeel-id's op blijvende platen: hun labels
             # (scancode met onderdeel-id + instantie) blijven geldig.
             id_voorvoegsel=f"b{uuid.uuid4().hex[:4]}r",

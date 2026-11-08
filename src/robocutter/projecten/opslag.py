@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS projecten (
     status TEXT NOT NULL,
     gearchiveerd INTEGER NOT NULL,
     modelinstanties TEXT NOT NULL,
-    losse_onderdelen TEXT NOT NULL
+    losse_onderdelen TEXT NOT NULL,
+    decors TEXT NOT NULL DEFAULT '{}'
 )
 """
 
@@ -40,6 +41,9 @@ def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
     verbinding = sqlite3.connect(db_pad)
     verbinding.row_factory = sqlite3.Row
     verbinding.execute(_SCHEMA)
+    kolommen = {rij["name"] for rij in verbinding.execute("PRAGMA table_info(projecten)")}
+    if "decors" not in kolommen:
+        verbinding.execute("ALTER TABLE projecten ADD COLUMN decors TEXT NOT NULL DEFAULT '{}'")
     verbinding.commit()
     return verbinding
 
@@ -55,8 +59,8 @@ def opslaan(verbinding: sqlite3.Connection, project: Project) -> None:
         INSERT OR REPLACE INTO projecten (
             id, naam, klant, contactpersoon, email, telefoon, opdrachtnummer,
             startdatum, opleverdatum, status, gearchiveerd, modelinstanties,
-            losse_onderdelen
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            losse_onderdelen, decors
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         _project_naar_rij(project),
     )
@@ -111,6 +115,7 @@ def _project_naar_rij(p: Project) -> tuple:
         int(p.gearchiveerd),
         json.dumps([_instantie_naar_dict(i) for i in p.modelinstanties]),
         json.dumps([onderdeel_naar_dict(o) for o in p.losse_onderdelen]),
+        json.dumps(p.decors, sort_keys=True),
     )
 
 
@@ -120,11 +125,12 @@ def project_naar_dict(p: Project) -> dict:
 
     kolommen = (
         "id", "naam", "klant", "contactpersoon", "email", "telefoon", "opdrachtnummer",
-        "startdatum", "opleverdatum", "status", "gearchiveerd", "modelinstanties", "losse_onderdelen",
+        "startdatum", "opleverdatum", "status", "gearchiveerd", "modelinstanties", "losse_onderdelen", "decors",
     )
     d = dict(zip(kolommen, _project_naar_rij(p)))
     d["modelinstanties"] = json.loads(d["modelinstanties"])
     d["losse_onderdelen"] = json.loads(d["losse_onderdelen"])
+    d["decors"] = json.loads(d["decors"])
     return d
 
 
@@ -132,6 +138,8 @@ def dict_naar_project(d: dict) -> Project:
     rij = dict(d)
     rij["modelinstanties"] = json.dumps(d["modelinstanties"])
     rij["losse_onderdelen"] = json.dumps(d["losse_onderdelen"])
+    # Momentopnames van vóór de decors hebben de sleutel niet.
+    rij["decors"] = json.dumps(d.get("decors", {}))
     return _rij_naar_project(rij)
 
 
@@ -150,4 +158,5 @@ def _rij_naar_project(rij: sqlite3.Row | dict) -> Project:
         gearchiveerd=bool(rij["gearchiveerd"]),
         modelinstanties=[_dict_naar_instantie(d) for d in json.loads(rij["modelinstanties"])],
         losse_onderdelen=[dict_naar_onderdeel(d) for d in json.loads(rij["losse_onderdelen"])],
+        decors=json.loads(rij["decors"]),
     )

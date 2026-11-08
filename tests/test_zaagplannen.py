@@ -371,3 +371,66 @@ def test_controle_meldt_veranderde_reststukken_uit_het_zaagplan():
     assert "niet meer voor dit project gereserveerd" in controleer_reststukken_in_zaagplan(plannen, project.id, [vrij])[0]
     kleiner = replace(gereserveerd, lengte=450)
     assert "450 × 400 mm" in controleer_reststukken_in_zaagplan(plannen, project.id, [kleiner])[0]
+
+
+def test_balkmateriaal_kort_alleen_af_met_de_doorsnede_van_de_balk():
+    materialen, projecten = _bibliotheken()
+    regel = materialen.toevoegen(
+        _materiaal(naam="Vuren regel 40x70", type=MateriaalType.BALK, lengte=3000, breedte=70, derde_afmeting=40)
+    )
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            # Hoogte wijkt af van de balk: de doorsnede komt altijd van de balk.
+            losse_onderdelen=[_onderdeel(regel.id, naam="Stijl", breedte=1000, hoogte=50, aantal=4)],
+        )
+    )
+
+    plannen, waarschuwingen = genereer_zaagplannen_voor_project(project, materialen, zaagsnede=3)
+
+    assert waarschuwingen == []
+    assert len(plannen) == 2
+    assert plannen[0].resultaat.materiaal.is_balk
+    assert [len(p.resultaat.plaatsingen) for p in plannen] == [2, 2]
+    assert all(q.hoogte == 70 and q.y == 0 for p in plannen for q in p.resultaat.plaatsingen)
+
+
+def test_nerf_van_het_materiaal_gaat_mee_naar_de_motor():
+    from robocutter.modellen.models import Nerfrichting
+
+    materialen, projecten = _bibliotheken()
+    eiken = materialen.toevoegen(_materiaal(nerfrichting=Nerfrichting.KORTE_ZIJDE))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(eiken.id, naam="Plank", breedte=800, hoogte=300, nerfrichting_vereist=Nerfrichting.LANGE_ZIJDE)
+            ],
+        )
+    )
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen)
+
+    p = plannen[0].resultaat.plaatsingen[0]
+    assert (p.breedte, p.hoogte) == (300, 800)
+
+
+def test_balken_komen_na_de_platen():
+    materialen, projecten = _bibliotheken()
+    regel = materialen.toevoegen(
+        _materiaal(naam="Vuren regel", type=MateriaalType.BALK, lengte=3000, breedte=70, derde_afmeting=40)
+    )
+    hout = materialen.toevoegen(_materiaal(naam="Eiken multiplex"))
+    project = projecten.toevoegen(
+        Project(
+            id="", naam="Test", klant="Test",
+            losse_onderdelen=[
+                _onderdeel(regel.id, naam="Stijl", breedte=1000, hoogte=70),
+                _onderdeel(hout.id, naam="Zijkant"),
+            ],
+        )
+    )
+
+    plannen, _ = genereer_zaagplannen_voor_project(project, materialen)
+
+    assert [p.materiaal_id for p in plannen] == [hout.id, regel.id]

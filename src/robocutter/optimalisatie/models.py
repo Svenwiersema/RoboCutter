@@ -33,14 +33,19 @@ class Materiaal:
     """Eén (voorraad)plaat van een materiaal, met de instellingen uit
     Module 3 die de optimalisatie beïnvloeden.
 
-    Aanname (expliciet, ter bevestiging): de nerf van de plaat zelf
-    loopt altijd langs de lengte-as (x-as / ``lengte``). Een
-    onderdeel met ``nerfrichting_vereist=LANGE_ZIJDE`` moet dus met
-    zijn langste zijde evenwijdig aan de x-as geplaatst worden, en
-    ``KORTE_ZIJDE`` juist loodrecht daarop. Dit is de gebruikelijke
-    conventie (nerf loopt over de lange kant van een plaat) maar is
-    niet letterlijk zo benoemd in hoofdstuk 5 — graag checken of dit
-    klopt met de praktijk.
+    ``nerfrichting`` is de nerf van de plaat zelf (Sven, 2026-11-08: "je
+    moet bij materiaal kunnen kiezen of de nerf over lengte of breedte
+    loopt"): ``LANGE_ZIJDE`` = over de lengte (x-as / ``lengte``),
+    ``KORTE_ZIJDE`` = over de breedte (y-as), ``GEEN`` = geen nerf, dan
+    vervalt de nerf-eis van een onderdeel (zie
+    ``engine._onderdelen_voor_plaatnerf``). Een onderdeel met
+    ``nerfrichting_vereist=LANGE_ZIJDE`` ligt met zijn langste zijde
+    langs die plaatnerf, ``KORTE_ZIJDE`` juist loodrecht daarop.
+
+    ``is_balk``: lengtemateriaal (Sven: "balken moet heel simpel zijn die
+    kan je maar op 1 manier zagen") — alleen afkorten, zie
+    ``engine._pak_balk``. ``lengte`` is dan de balklengte, ``breedte`` de
+    breedte van de doorsnede.
     """
 
     naam: str
@@ -48,11 +53,12 @@ class Materiaal:
     breedte: float  # mm, y-as
     dikte: float = 18.0
     kerf: float = 4.0
-    nerfrichting_aanwezig: bool = False
+    nerfrichting: Nerfrichting = Nerfrichting.LANGE_ZIJDE
     randafzaag_marge: float = 0.0
     randafzaag_randen: frozenset[Rand] = field(default_factory=frozenset)
     min_reststukgrootte: float = 0.0
     fabriekskantenband_randen: frozenset[Rand] = field(default_factory=frozenset)
+    is_balk: bool = False
 
 
 @dataclass

@@ -17,7 +17,7 @@ geen keuze per printactie.
 Reststuk-labels (``ReststukLabel``) gebruiken hetzelfde vel en dezelfde
 opbouw, met "Reststuk R2" als naam en zonder projectregel (hoofdstuk 6);
 de fabrieksranden staan op de kantenband-regel en de nerfpijl loopt
-langs de lengte (eerste maat) als het materiaal nerf heeft.
+langs de nerf van het materiaal (lengte = eerste maat, of breedte).
 
 De scancode wordt zelf getekend (geen plaatje/afbeeldingsbestand):
 een QR-code via ``qrcode``'s ``get_matrix()`` (geeft een boolean-
@@ -224,7 +224,7 @@ def _teken_label(
 
     # Optionele nerfrichting-pijl, rechtsonder in de tekstzone.
     if is_reststuk:
-        nerf = Nerfrichting.LANGE_ZIJDE if label.nerf_langs_lengte else Nerfrichting.GEEN
+        nerf = label.nerfrichting
     else:
         nerf = label.nerfrichting_vereist
     if instellingen.label_nerfrichting_pijl and nerf != Nerfrichting.GEEN:

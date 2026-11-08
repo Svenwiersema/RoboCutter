@@ -40,6 +40,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
+from robocutter.materialen.models import MateriaalType
 from robocutter.modellen.models import Nerfrichting, Rand
 from robocutter.optimalisatie.engine import (
     _onderdelen_voor_niet_geplaatst,
@@ -171,23 +172,46 @@ class ZaagplanVoortgang:
     plaat_nummer: int
 
 
+def decor_van(materiaal_id: str, materialen: MaterialenBibliotheek, decors: dict[str, str]) -> str | None:
+    """Het decor van dit materiaal in het project (``Project.decors``):
+    ``None`` als het geen generiek materiaal is, ``""`` als het nog niet is
+    ingevuld."""
+
+    try:
+        m = materialen.ophalen(materiaal_id)
+    except KeyError:
+        return None
+    return decors.get(materiaal_id, "").strip() if m.generiek else None
+
+
+def materiaal_naam_met_decor(naam: str, decor: str | None) -> str:
+    """"HPL met nerf · Egger H1145" — zo staat een generiek materiaal op het
+    zaagplan, de pdf en de labels (mockup balken-en-generiek-concept.html)."""
+
+    if decor is None:
+        return naam
+    return f"{naam} · {decor or 'decor onbekend'}"
+
+
 def _naar_optimalisatie_materiaal(
-    materiaal_id: str, materialen: MaterialenBibliotheek, kerf: float
+    materiaal_id: str, materialen: MaterialenBibliotheek, kerf: float, decor: str | None = None
 ) -> OptMateriaal | None:
     try:
         m = materialen.ophalen(materiaal_id)
     except KeyError:
         return None
     return OptMateriaal(
-        naam=m.naam,
+        naam=materiaal_naam_met_decor(m.naam, decor),
         lengte=m.lengte,
         breedte=m.breedte,
         dikte=m.derde_afmeting,
         kerf=kerf,
+        nerfrichting=m.nerfrichting,
         randafzaag_marge=m.randafzaag_marge,
         randafzaag_randen=m.randafzaag_randen,
         min_reststukgrootte=m.min_reststukgrootte,
         fabriekskantenband_randen=m.fabriekskantenband_randen,
+        is_balk=m.type == MateriaalType.BALK,
     )
 
 
@@ -201,6 +225,7 @@ def genereer_zaagplannen_voor_project(
     zaagsnede: float = 3.0,
     reststukken: list[Reststuk] | None = None,
     revisie: str = "",
+    decors: dict[str, str] | None = None,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Genereert één of meer ``PlaatZaagplan``-items per materiaal dat in
     de zaaglijst van ``project`` voorkomt — meerdere zodra de onderdelen
@@ -225,7 +250,10 @@ def genereer_zaagplannen_voor_project(
     :param reststukken: reststukken die vóór volle platen geprobeerd worden
         (zie de module-docstring); alleen die met hetzelfde ``materiaal_id``
         tellen per materiaal.
-    :param revisie: komt op elke plaat (``PlaatZaagplan.revisie``)."""
+    :param revisie: komt op elke plaat (``PlaatZaagplan.revisie``).
+    :param decors: decor per generiek materiaal (standaard
+        ``project.decors``); komt in de materiaalnaam en bepaalt welke
+        reststukken passen."""
 
     return _genereer_voor_regels(
         bouw_zaaglijst(project),
@@ -237,6 +265,7 @@ def genereer_zaagplannen_voor_project(
         zaagsnede=zaagsnede,
         reststukken=reststukken,
         revisie=revisie,
+        decors=project.decors if decors is None else decors,
     )
 
 
@@ -251,6 +280,7 @@ def _genereer_voor_regels(
     reststukken: list[Reststuk] | None = None,
     revisie: str = "",
     id_voorvoegsel: str = "r",
+    decors: dict[str, str] | None = None,
 ) -> tuple[list[PlaatZaagplan], list[str]]:
     """Zie ``genereer_zaagplannen_voor_project``; werkt op een losse lijst
     zaaglijstregels (ook gebruikt door ``zaagplan_bijwerken``, die alleen
@@ -267,9 +297,11 @@ def _genereer_voor_regels(
     # Eerst alles omzetten, pas daarna genereren: de voortgangsbalk heeft
     # vooraf het (geschatte) aantal platen van álle materialen nodig.
     te_genereren: list[tuple[str, OptMateriaal, dict[str, OnderdeelInfo], list[OptOnderdeel]]] = []
+    decor_per_materiaal: dict[str, str | None] = {}
 
     for materiaal_id, regels in per_materiaal.items():
-        opt_materiaal = _naar_optimalisatie_materiaal(materiaal_id, materialen, zaagsnede)
+        decor = decor_per_materiaal[materiaal_id] = decor_van(materiaal_id, materialen, decors or {})
+        opt_materiaal = _naar_optimalisatie_materiaal(materiaal_id, materialen, zaagsnede, decor)
         if opt_materiaal is None:
             waarschuwingen.append(
                 f"Materiaal '{materiaal_id}' bestaat niet (meer) in de materialenbibliotheek — "
@@ -292,7 +324,9 @@ def _genereer_voor_regels(
                 OptOnderdeel(
                     id=oid,
                     breedte=regel.onderdeel.breedte,
-                    hoogte=regel.onderdeel.hoogte,
+                    # Op een balk is breedte de lengte van het stuk; de
+                    # doorsnede komt altijd van de balk zelf.
+                    hoogte=opt_materiaal.breedte if opt_materiaal.is_balk else regel.onderdeel.hoogte,
                     aantal=regel.onderdeel.aantal,
                     nerfrichting_vereist=regel.onderdeel.nerfrichting_vereist,
                     kantenband_randen=regel.onderdeel.kantenband_randen,
@@ -306,6 +340,9 @@ def _genereer_voor_regels(
 
     # Per materiaal: het echte aantal platen zodra het klaar is, tot dan
     # de schatting (zie ZaagplanVoortgang).
+    # Eerst platen, dan balken (zelfde volgorde als de tabbladen in
+    # Zaagplannen en de pdf), verder in de volgorde van de zaaglijst.
+    te_genereren.sort(key=lambda item: item[1].is_balk)
     platen_per_materiaal = [schat_aantal_platen(m, o) for _, m, _, o in te_genereren]
     hoogste_fractie = 0.0
 
@@ -335,8 +372,15 @@ def _genereer_voor_regels(
         def vraagt_fabrieksrand(o: OptOnderdeel) -> bool:
             return o.fabriekskantenband_vereist or bool(o.groep_id and o.groep_id in fabriek_groepen)
 
+        # Generiek materiaal: alleen reststukken met hetzelfde decor.
+        decor = decor_per_materiaal[materiaal_id]
         eigen_reststukken = [
-            r for r in (reststukken or []) if r.materiaal_id == materiaal_id and r.lengte > 0 and r.breedte > 0
+            r
+            for r in (reststukken or [])
+            if r.materiaal_id == materiaal_id
+            and r.lengte > 0
+            and r.breedte > 0
+            and (decor is None or r.decor.strip().casefold() == decor.casefold())
         ]
         verdeling, resterend = _verdeel_over_reststukken(
             opt_materiaal, opt_onderdelen, eigen_reststukken, strategie, vraagt_fabrieksrand

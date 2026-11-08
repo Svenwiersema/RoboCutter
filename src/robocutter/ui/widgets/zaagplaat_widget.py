@@ -16,6 +16,11 @@ from PySide6.QtWidgets import QWidget
 from robocutter.optimalisatie.models import Rand, ZaagplanResultaat
 from robocutter.ui.theme import Theme
 
+# Een balk staat als strook van vaste hoogte in de lengte (mockup
+# balken-en-generiek-concept.html): op schaal zou 70 mm op 3000 mm een
+# streepje zijn.
+_BALK_HOOGTE_PX = 56
+
 
 class ZaagplaatWidget(QWidget):
     # Klik op een onderdeel (index in resultaat.plaatsingen); alleen als
@@ -40,7 +45,7 @@ class ZaagplaatWidget(QWidget):
         self._gezaagd = set(gezaagd) if gezaagd is not None else set()
         self._klikbaar = klikbaar
         self._rects: list[QRectF] = []
-        self.setMinimumHeight(160)
+        self.setMinimumHeight(_BALK_HOOGTE_PX + 24 if resultaat.materiaal.is_balk else 160)
         if klikbaar:
             self.setMouseTracking(True)
 
@@ -65,6 +70,8 @@ class ZaagplaatWidget(QWidget):
 
     def heightForWidth(self, width: int) -> int:
         mat = self._resultaat.materiaal
+        if mat.is_balk:
+            return _BALK_HOOGTE_PX + 24
         if mat.lengte <= 0:
             return width
         verhouding = mat.breedte / mat.lengte
@@ -92,9 +99,13 @@ class ZaagplaatWidget(QWidget):
         if mat.lengte <= 0 or mat.breedte <= 0 or beschikbaar_w <= 0 or beschikbaar_h <= 0:
             painter.end()
             return
-        schaal = min(beschikbaar_w / mat.lengte, beschikbaar_h / mat.breedte)
-        plaat_w = mat.lengte * schaal
-        plaat_h = mat.breedte * schaal
+        if mat.is_balk:
+            schaal_x = beschikbaar_w / mat.lengte
+            schaal_y = min(beschikbaar_h, _BALK_HOOGTE_PX) / mat.breedte
+        else:
+            schaal_x = schaal_y = min(beschikbaar_w / mat.lengte, beschikbaar_h / mat.breedte)
+        plaat_w = mat.lengte * schaal_x
+        plaat_h = mat.breedte * schaal_y
         ox = pad + (beschikbaar_w - plaat_w) / 2
         oy = pad + (beschikbaar_h - plaat_h) / 2
 
@@ -104,7 +115,7 @@ class ZaagplaatWidget(QWidget):
         # stond y=0 bovenaan en lag een onderdeel met kantenband onder
         # getekend tegen de bovenrand).
         def px(x_mm: float, y_mm: float) -> QPointF:
-            return QPointF(ox + x_mm * schaal, oy + (mat.breedte - y_mm) * schaal)
+            return QPointF(ox + x_mm * schaal_x, oy + (mat.breedte - y_mm) * schaal_y)
 
         def rect_mm(x: float, y: float, b: float, h: float) -> QRectF:
             return QRectF(px(x, y), px(x + b, y + h)).normalized()
@@ -122,7 +133,8 @@ class ZaagplaatWidget(QWidget):
             painter.setPen(rest_pen)
             painter.setBrush(rest_brush)
             painter.drawRoundedRect(rect, 4, 4)
-            self._teken_label(painter, rect, f"{r.breedte:g}×{r.hoogte:g}", "herbruikbaar", QColor(t.success_ink))
+            maat = f"{r.breedte:g} mm" if mat.is_balk else f"{r.breedte:g}×{r.hoogte:g}"
+            self._teken_label(painter, rect, maat, "herbruikbaar", QColor(t.success_ink))
 
         # Geplaatste onderdelen.
         piece_pen = QPen(QColor(t.accent), 2)
@@ -142,7 +154,8 @@ class ZaagplaatWidget(QWidget):
                 painter.drawRoundedRect(rect, 4, 4)
             naam = self._naam_voor(p.onderdeel_id)
             kleur = QColor(t.text_muted) if is_gezaagd else QColor(t.text)
-            self._teken_label(painter, rect, f"{p.breedte:g}×{p.hoogte:g}", naam, kleur, nummer=i)
+            maat = f"{p.breedte:g} mm" if mat.is_balk else f"{p.breedte:g}×{p.hoogte:g}"
+            self._teken_label(painter, rect, maat, naam, kleur, nummer=i)
             if is_gezaagd:
                 self._teken_vinkje(painter, rect)
 

@@ -1,0 +1,168 @@
+<title>RoboCutter Zaagplannen per materiaal</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  /* Layout: het bestaande Zaagplannen-paneel (werkbalk, tegels) met daaronder een
+     tabbalk per materiaal; alleen de platen van het gekozen materiaal staan eronder. Tokens = theme.py. */
+  :root{
+    --bg:#F2F3F4; --surface:#FFFFFF; --surface-2:#F7F8FB; --surface-hover:#ECEEF3;
+    --border:#E1E3EA; --text:#1E2028; --text-muted:#676B7D; --text-faint:#9297A8;
+    --accent:#5F7FFF; --accent-text:#4C63E0; --accent-soft:#EBEFFF;
+    --success:#4FA875; --success-soft:#E7F7EE; --success-ink:#1E5E3B;
+    --warning:#B5872A; --warning-soft:#FBF1DC; --warning-ink:#7A5A15;
+    --critical:#C74F4F;
+    --sans:"Inter","Segoe UI",sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+      --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+      --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52;
+      --success:#6FCF97; --success-soft:#1D3226; --success-ink:#BFF0D4;
+      --warning:#E8B84B; --warning-soft:#382C13; --warning-ink:#F6DFA9;
+      --critical:#E57373;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#1B1D24; --surface:#23252F; --surface-2:#2A2C38; --surface-hover:#30323F;
+    --border:#383A47; --text:#EDEEF3; --text-muted:#A7ABBE; --text-faint:#767B90;
+    --accent:#6D8AFF; --accent-text:#9DB0FF; --accent-soft:#2A2F52;
+    --success:#6FCF97; --success-soft:#1D3226; --success-ink:#BFF0D4;
+    --warning:#E8B84B; --warning-soft:#382C13; --warning-ink:#F6DFA9;
+    --critical:#E57373;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;}
+  .view{max-width:1040px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:16px;}
+  h1{font-size:22px;font-weight:800;margin:0 0 4px;text-wrap:balance;}
+  .lead{color:var(--text-muted);line-height:1.55;margin:0;max-width:78ch;}
+  .werkbalk{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;}
+  .werkbalk b{font-size:14px;}
+  .werkbalk .sub{color:var(--text-muted);font-size:12px;}
+  .btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;padding:7px 13px;font:600 12.5px var(--sans);cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);}
+  .btn.primary{background:var(--accent);color:#12141B;border-color:var(--accent);}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .tegels{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;}
+  .tegel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .tegel .l{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-faint);}
+  .tegel .w{font-size:20px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums;}
+
+
+  .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--border);}
+  .tab{border:none;background:transparent;color:var(--text-muted);padding:10px 16px 9px;font:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:2px;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;border-radius:8px 8px 0 0;}
+  .tab:hover{background:var(--surface-hover);}
+  .tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent);background:var(--surface);}
+  .tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+  .tnaam{font-weight:700;font-size:13px;display:inline-flex;gap:6px;align-items:center;}
+  .tsub{font-size:11.5px;color:var(--text-faint);font-variant-numeric:tabular-nums;}
+  .stip{width:7px;height:7px;border-radius:4px;background:var(--warning);display:inline-block;}
+  .groep{display:flex;flex-direction:column;gap:10px;}
+  .groepkop{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:4px 2px;}
+  .groepkop .naam{font-weight:700;font-size:14px;}
+  .soort{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border-radius:10px;padding:2px 8px;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);}
+  .cijfers{display:flex;gap:14px;flex-wrap:wrap;color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;margin-left:auto;}
+  .cijfers .let{color:var(--warning-ink);font-weight:600;}
+  .voortgang{width:90px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;border:1px solid var(--border);align-self:center;}
+  .voortgang i{display:block;height:100%;background:var(--success);}
+
+  .plaat{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .plaat .kop{display:flex;gap:12px;align-items:center;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  .tag{font:700 10.5px var(--mono);letter-spacing:.5px;color:var(--accent-text);}
+  .plaat .kop .m{color:var(--text-muted);font-size:12px;}
+  .plaat .tek{padding:12px 14px;}
+  .vlak{position:relative;background:var(--surface-2);border:1.5px solid var(--text-faint);border-radius:3px;}
+  .vlak span{position:absolute;background:var(--accent-soft);border:1.5px solid var(--accent);border-radius:3px;}
+  .vlak span.r{background:var(--success-soft);border-color:var(--success);}
+  .notities{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;}
+  .notitie{border:1px dashed var(--border);border-radius:10px;padding:12px 14px;color:var(--text-muted);line-height:1.55;font-size:12.5px;}
+  .notitie b{color:var(--text);}
+</style>
+
+<div class="view">
+  <header>
+    <h1>Zaagplannen per materiaal</h1>
+    <p class="lead">Het Zaagplannen-paneel in een project met een tabblad per materiaal: je ziet steeds alleen de platen van één materiaal. Klik op de tabbladen om te wisselen.</p>
+  </header>
+
+  <div class="werkbalk">
+    <div><b>Zaagplannen</b><div class="sub">6 platen · strategie Horizontaal · gegenereerd 2026-11-08 14:12</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="b-opnieuw">Opnieuw genereren</button><button class="btn primary" id="b-pdf">Alles + zaaglijst als PDF</button></div>
+  </div>
+
+  <div class="tegels">
+    <div class="tegel"><div class="l">Platen</div><div class="w">6</div></div>
+    <div class="tegel"><div class="l">Materialen</div><div class="w">3</div></div>
+    <div class="tegel"><div class="l">Gem. benutting</div><div class="w">81,4%</div></div>
+    <div class="tegel"><div class="l">Niet geplaatst</div><div class="w">0</div></div>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Materialen">
+    <button class="tab" role="tab" id="t1" data-tab="g1" aria-selected="true">
+      <span class="tnaam">Eiken multiplex 18 mm</span><span class="tsub">3 platen · 12/31 gezaagd</span>
+    </button>
+    <button class="tab" role="tab" id="t2" data-tab="g2" aria-selected="false">
+      <span class="tnaam"><span class="stip" title="Decor nog niet ingevuld"></span>HPL met nerf · decor onbekend</span><span class="tsub">2 platen</span>
+    </button>
+    <button class="tab" role="tab" id="t3" data-tab="g3" aria-selected="false">
+      <span class="tnaam">Vuren regel 40×70</span><span class="tsub">1 balk · alles gezaagd</span>
+    </button>
+  </div>
+
+  <section class="groep" id="g1" role="tabpanel" aria-labelledby="t1">
+    <div class="groepkop">
+      <span class="naam">Eiken multiplex 18 mm</span><span class="soort">Plaat</span>
+      <span class="cijfers"><span>3 platen</span><span>benutting 84%</span><span>2 reststukken</span><span>12 van 31 gezaagd</span></span>
+      <span class="voortgang" aria-hidden="true"><i style="width:39%"></i></span>
+    </div>
+    <div class="plaat"><div class="kop"><span class="tag">ZAAGPLAN</span><b>Plaat 1 van 3</b><span class="m">2800 × 2070 mm · 12 onderdelen</span></div>
+      <div class="tek"><div class="vlak" style="aspect-ratio:2800/2070;max-width:420px"><span style="left:2%;top:4%;width:30%;height:44%"></span><span style="left:34%;top:4%;width:30%;height:44%"></span><span style="left:2%;top:52%;width:62%;height:40%"></span><span class="r" style="left:67%;top:4%;width:30%;height:88%"></span></div></div></div>
+    <div class="plaat"><div class="kop"><span class="tag">ZAAGPLAN</span><b>Plaat 2 van 3</b><span class="m">2800 × 2070 mm · 11 onderdelen</span></div></div>
+    <div class="plaat"><div class="kop"><span class="tag">RESTSTUK</span><b>Reststuk uit de bibliotheek</b><span class="m">1200 × 800 mm · 2 onderdelen</span></div></div>
+  </section>
+
+  <section class="groep" id="g2" role="tabpanel" aria-labelledby="t2" hidden>
+    <div class="groepkop">
+      <span class="naam">HPL met nerf 0,8 mm · decor onbekend</span><span class="soort">Plaat</span>
+      <span class="cijfers"><span>2 platen</span><span>benutting 77%</span><span class="let">Decor nog invullen in Overzicht</span></span>
+      <span class="voortgang" aria-hidden="true"><i style="width:0%"></i></span>
+    </div>
+    <div class="plaat"><div class="kop"><span class="tag">ZAAGPLAN</span><b>Plaat 1 van 2</b><span class="m">3050 × 1300 mm · 6 onderdelen</span></div></div>
+    <div class="plaat"><div class="kop"><span class="tag">ZAAGPLAN</span><b>Plaat 2 van 2</b><span class="m">3050 × 1300 mm · 3 onderdelen</span></div></div>
+  </section>
+
+  <section class="groep" id="g3" role="tabpanel" aria-labelledby="t3" hidden>
+    <div class="groepkop">
+      <span class="naam">Vuren regel 40×70</span><span class="soort">Balk</span>
+      <span class="cijfers"><span>1 balk</span><span>benutting 74%</span><span>1 reststuk</span><span>alles gezaagd</span></span>
+      <span class="voortgang" aria-hidden="true"><i style="width:100%"></i></span>
+    </div>
+    <div class="plaat"><div class="kop"><span class="tag">ZAAGPLAN</span><b>Balk 1 van 1</b><span class="m">3000 mm · 3 stukken</span></div></div>
+  </section>
+
+  <section class="notities" aria-label="Keuzes">
+    <div class="notitie"><b>Volgorde van de tabbladen:</b> eerst platen, dan balken, zoals in de zaaglijst. Een reststuk uit de bibliotheek staat bij zijn eigen materiaal.</div>
+    <div class="notitie"><b>Welk tabblad open staat</b> onthoudt RoboCutter zolang het project open is, ook na opnieuw genereren of afvinken.</div>
+    <div class="notitie"><b>De tegels bovenaan</b> en "Alles + zaaglijst als PDF" blijven voor het hele project gelden. De pdf houdt dezelfde volgorde aan.</div>
+  </section>
+</div>
+
+<script>
+  const tabs = [...document.querySelectorAll("[data-tab]")];
+  function kies(tab){
+    tabs.forEach(t => {
+      const aan = t === tab;
+      t.setAttribute("aria-selected", String(aan));
+      document.getElementById(t.dataset.tab).hidden = !aan;
+    });
+  }
+  tabs.forEach(t => t.addEventListener("click", () => kies(t)));
+  document.querySelector(".tabs").addEventListener("keydown", e => {
+    const i = tabs.findIndex(t => t.getAttribute("aria-selected") === "true");
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      kies(n); n.focus();
+    }
+  });
+</script>

@@ -65,7 +65,7 @@ from PySide6.QtWidgets import (
 )
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
-from robocutter.materialen.models import MateriaalStatus
+from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType
 from robocutter.modellen.bibliotheek import ModelInGebruikError, ModellenBibliotheek, valideer
 from robocutter.modellen.models import Model, ModelOnderdeel, Nerfrichting, Rand, SubModelVerwijzing
 from robocutter.modellen.opslag import open_verbinding
@@ -885,12 +885,14 @@ class ModellenPage(QWidget):
         rij2 = QHBoxLayout()
         rij2.setSpacing(8)
         kol3 = QVBoxLayout()
-        kol3.addWidget(self._field_label("Breedte (mm)"))
+        self._of_breedte_label = self._field_label("Breedte (mm)")
+        kol3.addWidget(self._of_breedte_label)
         breedte_wrap, self._of_breedte = self._field_spin()
         kol3.addWidget(breedte_wrap)
         rij2.addLayout(kol3)
         kol4 = QVBoxLayout()
-        kol4.addWidget(self._field_label("Hoogte (mm)"))
+        hoogte_label = self._field_label("Hoogte (mm)")
+        kol4.addWidget(hoogte_label)
         hoogte_wrap, self._of_hoogte = self._field_spin()
         kol4.addWidget(hoogte_wrap)
         rij2.addLayout(kol4)
@@ -901,17 +903,34 @@ class ModellenPage(QWidget):
         rij2.addLayout(kol5)
         section.addLayout(rij2)
 
-        section.addWidget(self._field_label("Nerfrichting"))
+        self._of_balk_hint = QLabel("")
+        self._of_balk_hint.setProperty("role", "fieldHint")
+        self._of_balk_hint.setWordWrap(True)
+        self._of_balk_hint.hide()
+        # Met alleen de lengte zichtbaar en de omloopende hint eronder drukt de
+        # layout het veld anders plat.
+        breedte_wrap.setMinimumHeight(breedte_wrap.sizeHint().height())
+        section.addWidget(self._of_balk_hint)
+
+        nerf_label = self._field_label("Nerfrichting")
+        section.addWidget(nerf_label)
         nerf_widget, self._of_nerf_group = self._segmented(
             [(Nerfrichting.GEEN, "Geen"), (Nerfrichting.LANGE_ZIJDE, "Lange zijde"), (Nerfrichting.KORTE_ZIJDE, "Korte zijde")]
         )
         section.addWidget(nerf_widget)
 
-        section.addWidget(self._field_label("Kantenband op"))
+        kantenband_label = self._field_label("Kantenband op")
+        section.addWidget(kantenband_label)
         self._of_rand_buttons = self._rand_chip_rij(section)
 
         self._of_fabriek = QCheckBox("Fabriekskantenband vereist")
         section.addWidget(self._of_fabriek)
+        # Een balk kort je alleen af: dan alleen een lengte (zie model_detail_page).
+        self._of_plaat_velden: list[QWidget] = [
+            hoogte_label, hoogte_wrap, nerf_label, nerf_widget, kantenband_label,
+            *self._of_rand_buttons.values(), self._of_fabriek,
+        ]
+        self._of_materiaal.currentIndexChanged.connect(lambda _i: self._of_ververs_balk_modus())
 
         rij3 = QHBoxLayout()
         rij3.setSpacing(8)
@@ -1043,10 +1062,11 @@ class ModellenPage(QWidget):
         info_col.addWidget(titel)
 
         try:
-            materiaal_naam = self.materialen.ophalen(o.materiaal_id).naam
+            materiaal = self.materialen.ophalen(o.materiaal_id)
+            materiaal_naam, is_balk = materiaal.naam, materiaal.type == MateriaalType.BALK
         except KeyError:
-            materiaal_naam = "onbekend materiaal"
-        details = [f"{o.breedte:g}×{o.hoogte:g} mm", materiaal_naam]
+            materiaal_naam, is_balk = "onbekend materiaal", False
+        details = [f"{o.breedte:g} mm" if is_balk else f"{o.breedte:g}×{o.hoogte:g} mm", materiaal_naam]
         if o.nerfrichting_vereist != Nerfrichting.GEEN:
             details.append(_NERF_LABEL[o.nerfrichting_vereist].lower())
         if o.kantenband_randen:
@@ -1101,6 +1121,27 @@ class ModellenPage(QWidget):
         self._of_fabriek.setChecked(False)
         self._of_groep_naam.clear()
         self._of_groep_volgorde.setValue(0)
+        self._of_ververs_balk_modus()
+
+    def _of_balk(self) -> Materiaal | None:
+        """Het gekozen materiaal als het een balk is, anders ``None``."""
+        try:
+            materiaal = self.materialen.ophalen(self._of_materiaal.currentData() or "")
+        except KeyError:
+            return None
+        return materiaal if materiaal.type == MateriaalType.BALK else None
+
+    def _of_ververs_balk_modus(self) -> None:
+        balk = self._of_balk()
+        for widget in self._of_plaat_velden:
+            widget.setVisible(balk is None)
+        self._of_breedte_label.setText("Lengte (mm)" if balk else "Breedte (mm)")
+        self._of_balk_hint.setVisible(balk is not None)
+        if balk is not None:
+            self._of_balk_hint.setText(
+                f"Doorsnede {balk.breedte:g} × {balk.derde_afmeting:g} mm komt van de balk. "
+                "Je vult alleen de lengte in, de balk wordt alleen afgekort."
+            )
 
     def _vul_onderdeel_form(self, o: ModelOnderdeel) -> None:
         self._of_naam.setText(o.naam)
@@ -1118,6 +1159,7 @@ class ModellenPage(QWidget):
         self._of_fabriek.setChecked(o.fabriekskantenband_vereist)
         self._of_groep_naam.setText(o.groep_id or "")
         self._of_groep_volgorde.setValue(o.groep_volgorde or 0)
+        self._of_ververs_balk_modus()
 
     def _bewerk_onderdeel(self, index: int) -> None:
         self._bewerk_onderdeel_index = index
@@ -1139,6 +1181,16 @@ class ModellenPage(QWidget):
             huidig_id = self._werk_onderdelen[self._bewerk_onderdeel_index].id
         groep_naam = self._of_groep_naam.text().strip() or None
         nerf_waarde = Nerfrichting(self._of_nerf_group.checkedButton().property("waarde"))
+        balk = self._of_balk()
+        if balk is not None:
+            return ModelOnderdeel(
+                id=huidig_id or uuid.uuid4().hex[:8],
+                naam=self._of_naam.text().strip() or "Onderdeel",
+                materiaal_id=balk.id,
+                breedte=self._of_breedte.value(),
+                hoogte=balk.breedte,
+                aantal=self._of_aantal.value(),
+            )
         return ModelOnderdeel(
             id=huidig_id or uuid.uuid4().hex[:8],
             naam=self._of_naam.text().strip() or "Onderdeel",

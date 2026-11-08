@@ -10,7 +10,7 @@ from datetime import date
 import pytest
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
-from robocutter.materialen.models import Materiaal, MateriaalType
+from robocutter.materialen.models import Materiaal, MateriaalType, Nerfrichting
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
 from robocutter.modellen.models import ModelOnderdeel
 from robocutter.projecten import project_reststukken_opslag
@@ -271,7 +271,7 @@ def test_reststuk_labels_alleen_voor_bewaren_en_scancode_blijft_geldig_na_vrijge
     assert label.scancode_waarde == f"RC:reststuk:{bewaren.id}"
     assert label.afmeting_tekst == "880 × 440 mm"
     assert label.materiaal_naam == "Eiken multiplex 18mm"
-    assert label.nerf_langs_lengte is False
+    assert label.nerfrichting == Nerfrichting.GEEN
 
     project = projecten.zet_status(project.id, ProjectStatus.AFGEROND)
     bib.vrijgeven(project)

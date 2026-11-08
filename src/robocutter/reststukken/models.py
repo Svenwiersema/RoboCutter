@@ -52,3 +52,6 @@ class Reststuk:
     # De zaagmotor plaatst onderdelen met een fabriekskantenband-eis
     # alleen op een reststuk dat zo'n rand heeft.
     fabriekskantenband_randen: frozenset[Rand] = field(default_factory=frozenset)
+    # Bij een generiek materiaal: het decor van het project waar het stuk
+    # vandaan komt. De zaagmotor gebruikt het alleen bij hetzelfde decor.
+    decor: str = ""

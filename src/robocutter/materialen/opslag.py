@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS materialen (
     productcode TEXT NOT NULL,
     leverancier TEXT NOT NULL,
     tags TEXT NOT NULL,
-    status TEXT NOT NULL
+    status TEXT NOT NULL,
+    generiek INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -58,6 +59,8 @@ def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
     kolommen = {rij["name"] for rij in verbinding.execute("PRAGMA table_info(materialen)")}
     if "kerf" in kolommen:
         verbinding.execute("ALTER TABLE materialen DROP COLUMN kerf")
+    if "generiek" not in kolommen:
+        verbinding.execute("ALTER TABLE materialen ADD COLUMN generiek INTEGER NOT NULL DEFAULT 0")
     verbinding.commit()
     return verbinding
 
@@ -75,8 +78,8 @@ def opslaan(verbinding: sqlite3.Connection, materiaal: Materiaal) -> None:
             kleur_afwerking, nerfrichting, randafzaag_marge,
             randafzaag_randen, min_reststukgrootte, mes_groef_notitie,
             fabriekskantenband_randen, productcode, leverancier, tags,
-            status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            status, generiek
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         _materiaal_naar_rij(materiaal),
     )
@@ -108,6 +111,7 @@ def _materiaal_naar_rij(m: Materiaal) -> tuple:
         m.leverancier,
         json.dumps(list(m.tags)),
         m.status.value,
+        int(m.generiek),
     )
 
 
@@ -133,4 +137,5 @@ def _rij_naar_materiaal(rij: sqlite3.Row) -> Materiaal:
         leverancier=rij["leverancier"],
         tags=tuple(json.loads(rij["tags"])),
         status=MateriaalStatus(rij["status"]),
+        generiek=bool(rij["generiek"]),
     )

@@ -43,10 +43,13 @@ helemaal uit het programma gehaald.
 Belangrijke, expliciete aannames (graag door Sven te bevestigen aan de
 hand van de gegenereerde voorbeelden — zie ``demo.py``):
 
-  1. De nerf van een plaat loopt altijd langs de lengte-as (x-as).
-     Een onderdeel met nerfrichting "lange_zijde" wordt dus zo
+  1. Intern loopt de nerf van een plaat altijd langs de lengte-as
+     (x-as): een onderdeel met nerfrichting "lange_zijde" wordt zo
      georiënteerd dat zijn langste zijde evenwijdig aan de x-as ligt;
-     "korte_zijde" juist loodrecht daarop.
+     "korte_zijde" juist loodrecht daarop. Loopt de nerf van het
+     materiaal over de breedte, of heeft het geen nerf, dan worden de
+     nerf-eisen van de onderdelen bij binnenkomst omgezet
+     (``_onderdelen_voor_plaatnerf``) — bevestigd door Sven.
   2. Een kerf (zaagsnede-breedte) wordt verrekend door elk geplaatst
      onderdeel te behandelen alsof het kerf-breedte extra ruimte
      inneemt aan de kant(en) waar nog een snede nodig is om het
@@ -198,7 +201,10 @@ def _reden_niet_geplaatst(eenheid: _Eenheid, materiaal: Materiaal) -> str:
                 knelpunten.append(f"lengte {nb:.0f}mm > beschikbare {breedte_beschikbaar:.0f}mm")
             if nh > hoogte_beschikbaar + 1e-9:
                 knelpunten.append(f"breedte {nh:.0f}mm > beschikbare {hoogte_beschikbaar:.0f}mm")
-            zijde = "korte" if nerf_eis == Nerfrichting.KORTE_ZIJDE else "lange"
+            # Bij nerf over de breedte is de eis bij binnenkomst omgekeerd
+            # (_onderdelen_voor_plaatnerf); meld wat de gebruiker invoerde.
+            eis_ingevoerd = _GESPIEGELDE_NERF[nerf_eis] if materiaal.nerfrichting == Nerfrichting.KORTE_ZIJDE else nerf_eis
+            zijde = "korte" if eis_ingevoerd == Nerfrichting.KORTE_ZIJDE else "lange"
             past_gedraaid = nh <= breedte_beschikbaar + 1e-9 and nb <= hoogte_beschikbaar + 1e-9
             return (
                 f"{omschrijving.capitalize()} moet met de {zijde} zijde langs de nerf van {materiaal.naam} "
@@ -1093,6 +1099,20 @@ class _GespiegeldeEenheid(_Eenheid):
         return [_spiegel_plaatsing(p) for p in self.origineel.expand(y, x, hoogte, breedte, geroteerd)]
 
 
+def _onderdelen_voor_plaatnerf(materiaal: Materiaal, onderdelen: list[Onderdeel]) -> list[Onderdeel]:
+    """De motor rekent met de plaatnerf langs x (de lengte). Loopt de nerf
+    van ``materiaal`` over de breedte, dan keert elke nerf-eis om ("lange
+    zijde langs de nerf" = lange zijde langs y); heeft het materiaal geen
+    nerf, dan vervalt de eis en mag het onderdeel gewoon draaien. Een groep
+    blijft hoe dan ook een vast blok (zie ``_bouw_eenheden``)."""
+
+    if materiaal.nerfrichting == Nerfrichting.LANGE_ZIJDE:
+        return onderdelen
+    if materiaal.nerfrichting == Nerfrichting.KORTE_ZIJDE:
+        return [replace(o, nerfrichting_vereist=_GESPIEGELDE_NERF[o.nerfrichting_vereist]) for o in onderdelen]
+    return [replace(o, nerfrichting_vereist=Nerfrichting.GEEN) for o in onderdelen]
+
+
 def _spiegel_plaatsing(p: Plaatsing) -> Plaatsing:
     return replace(p, x=p.y, y=p.x, breedte=p.hoogte, hoogte=p.breedte)
 
@@ -1757,6 +1777,10 @@ def genereer_zaagplan(
             f"Onbekende strategie: {strategie!r} (verwacht een van: {', '.join(_GELDIGE_STRATEGIEEN)})"
         )
 
+    if materiaal.is_balk:
+        return _pak_balk(materiaal, onderdelen, strategie)
+
+    onderdelen = _onderdelen_voor_plaatnerf(materiaal, onderdelen)
     kerf = materiaal.kerf
     eenheden, waarschuwingen = _bouw_eenheden(onderdelen, kerf)
     werkgebied = _werkgebied(materiaal)
@@ -1945,6 +1969,79 @@ def genereer_zaagplan(
     return _bouw_resultaat(materiaal, strategie, eenheden, alle_plaatsingen, reststukken, afval, zaagvolgorde, niet_geplaatst)
 
 
+def _zonder_groepen(onderdelen: list[Onderdeel]) -> list[Onderdeel]:
+    """Op een balk bestaat geen groep (doorlopende nerf over een vlak):
+    elk lid is gewoon een los stuk om af te korten."""
+
+    return [replace(o, groep_id=None, groep_volgorde=None) if o.groep_id else o for o in onderdelen]
+
+
+def _pak_balk(materiaal: Materiaal, onderdelen: list[Onderdeel], strategie: str) -> ZaagplanResultaat:
+    """Eén balk afkorten: een balk kun je maar op één manier zagen, dus geen
+    strategie, nerf, draaien of fabrieksrand — alleen dwarse sneden. De
+    stukken (lengte = ``breedte`` van het onderdeel, over de volle breedte
+    van de balk) gaan van lang naar kort achter elkaar vanaf de linkerkant;
+    wat niet meer past schuift door naar de volgende balk
+    (``genereer_zaagplannen``). Alleen een randafzaag links/rechts telt (de
+    kopse kanten). Het eindstuk is een reststuk als het minstens
+    ``min_reststukgrootte`` lang is — de breedte ligt bij een balk vast."""
+
+    onderdelen = _zonder_groepen(onderdelen)
+    kerf = materiaal.kerf
+    marge = materiaal.randafzaag_marge
+    x0 = marge if Rand.LINKS in materiaal.randafzaag_randen else 0.0
+    x1 = materiaal.lengte - (marge if Rand.RECHTS in materiaal.randafzaag_randen else 0.0)
+    breedte = materiaal.breedte
+
+    stukken = [(o, i) for o in onderdelen for i in range(1, o.aantal + 1)]
+    stukken.sort(key=lambda s: -s[0].breedte)
+
+    plaatsingen: list[Plaatsing] = []
+    zaagvolgorde: list[Zaagsnede] = []
+    niet_geplaatst: list[str] = []
+    redenen: dict[str, str] = {}
+    pos = x0
+    for onderdeel, instantie in stukken:
+        uid = f"{onderdeel.id}#{instantie}"
+        lengte = onderdeel.breedte
+        if lengte > x1 - x0 + 1e-9:
+            niet_geplaatst.append(uid)
+            redenen[uid] = (
+                f"Dit stuk ({lengte:.0f}mm) is langer dan een balk {materiaal.naam} "
+                f"({x1 - x0:.0f}mm na het afzagen van de kopse kanten). "
+                "Dit lost een extra balk niet op: elke balk van dit materiaal is even lang."
+            )
+            continue
+        if pos + lengte > x1 + 1e-9:
+            niet_geplaatst.append(uid)
+            redenen[uid] = "Past niet meer op deze balk — gaat door naar de volgende."
+            continue
+        plaatsingen.append(Plaatsing(onderdeel.id, instantie, pos, 0.0, lengte, breedte, False))
+        eind = pos + lengte
+        if x1 - eind > 1e-9:
+            zaagvolgorde.append(Zaagsnede(len(zaagvolgorde) + 1, "verticaal", eind, 0.0, breedte))
+        pos = min(x1, eind + kerf)
+
+    reststukken: list[Reststuk] = []
+    afval = 0.0
+    rest = x1 - pos
+    if rest > 1e-9:
+        if rest >= materiaal.min_reststukgrootte:
+            reststukken.append(Reststuk(pos, 0.0, rest, breedte))
+        else:
+            afval = rest * breedte
+    return ZaagplanResultaat(
+        materiaal=materiaal,
+        strategie=strategie,
+        plaatsingen=plaatsingen,
+        reststukken=reststukken,
+        afval_oppervlak=afval,
+        zaagvolgorde=zaagvolgorde,
+        niet_geplaatst=niet_geplaatst,
+        niet_geplaatst_redenen=redenen,
+    )
+
+
 def _bouw_resultaat(
     materiaal: Materiaal,
     strategie: str,
@@ -1985,6 +2082,10 @@ def schat_aantal_platen(materiaal: Materiaal, onderdelen: list[Onderdeel]) -> in
     ``_VERWACHTE_BENUTTING``. Alleen bedoeld voor de voortgangsbalk
     (elke plaat kost ongeveer even veel zoektijd) — niet voor iets dat
     exact moet kloppen."""
+
+    if materiaal.is_balk:
+        totaal = sum(o.breedte * o.aantal for o in onderdelen)
+        return max(1, math.ceil(totaal / (max(1.0, materiaal.lengte) * _VERWACHTE_BENUTTING)))
 
     x0, y0, x1, y1 = _werkgebied(materiaal)
     plaat_oppervlak = max(0.0, x1 - x0) * max(0.0, y1 - y0)
@@ -2055,7 +2156,9 @@ def genereer_zaagplannen(
         platen er uiteindelijk nodig zijn staat vooraf niet vast — zie
         ``schat_aantal_platen`` voor een schatting."""
 
-    resterend = list(onderdelen)
+    # Groepen moeten hier al weg: _onderdelen_voor_niet_geplaatst neemt een
+    # groepslid anders alleen mee als de hele groep niet geplaatst is.
+    resterend = _zonder_groepen(onderdelen) if materiaal.is_balk else list(onderdelen)
     resultaten: list[ZaagplanResultaat] = []
     deadline = time.monotonic() + zoek_tijdsbudget if zoek_tijdsbudget > 0 else None
     for plaat_nummer in range(1, _MAX_PLATEN + 1):

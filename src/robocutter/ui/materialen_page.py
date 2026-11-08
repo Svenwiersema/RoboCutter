@@ -17,6 +17,7 @@ from PySide6.QtCore import QEvent, QSize, Qt, QStringListModel, QTimer
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
+    QCheckBox,
     QCompleter,
     QDoubleSpinBox,
     QFrame,
@@ -47,8 +48,8 @@ from robocutter.ui.widgets.opslag_melding import OpslagMelding
 
 _NERF_LABEL = {
     Nerfrichting.GEEN: "Geen",
-    Nerfrichting.LANGE_ZIJDE: "Lange zijde",
-    Nerfrichting.KORTE_ZIJDE: "Korte zijde",
+    Nerfrichting.LANGE_ZIJDE: "Over de lengte",
+    Nerfrichting.KORTE_ZIJDE: "Over de breedte",
 }
 _KOLOMBREEDTES = [230, 80, 150, 110, 140, 100, 110]
 _SORT_OPTIES = [("naam", "Sorteren op naam"), ("type", "Sorteren op type"), ("status", "Sorteren op status")]
@@ -511,7 +512,8 @@ class MaterialenPage(QWidget):
         naam = QLabel(m.naam)
         naam.setProperty("role", "matName")
         layout.addWidget(naam)
-        meta_tekst = " · ".join(t for t in [m.familie, m.kleur_afwerking] if t) or "—"
+        kleur = "Generiek, decor per project" if m.generiek else m.kleur_afwerking
+        meta_tekst = " · ".join(t for t in [m.familie, kleur] if t) or "—"
         meta = QLabel(meta_tekst)
         meta.setProperty("role", "matMeta")
         layout.addWidget(meta)
@@ -986,9 +988,22 @@ class MaterialenPage(QWidget):
 
         section.addWidget(self._field_label("Nerfrichting"))
         nerf_widget, self._nerf_group = self._segmented(
-            [(Nerfrichting.GEEN, "Geen"), (Nerfrichting.LANGE_ZIJDE, "Lange zijde"), (Nerfrichting.KORTE_ZIJDE, "Korte zijde")]
+            [(Nerfrichting.GEEN, "Geen"), (Nerfrichting.LANGE_ZIJDE, "Over de lengte"), (Nerfrichting.KORTE_ZIJDE, "Over de breedte")]
         )
         section.addWidget(nerf_widget)
+
+        # Generiek materiaal (Sven 2026-11-08): één record voor alle decors,
+        # het decor kies je per project. Kleur/afwerking is dan leeg.
+        self._in_generiek = QCheckBox("Generiek materiaal")
+        self._in_generiek.toggled.connect(self._ververs_generiek)
+        section.addWidget(self._in_generiek)
+        generiek_hint = QLabel(
+            'Eén materiaal voor alle decors, bijvoorbeeld "HPL met nerf 3050×1300". '
+            "Welk decor het wordt, vul je per project in."
+        )
+        generiek_hint.setProperty("role", "fieldHint")
+        generiek_hint.setWordWrap(True)
+        section.addWidget(generiek_hint)
 
         # De zaagsnede/kerf staat hier niet meer: op Svens verzoek is dat
         # een centrale instelling geworden (Instellingen-scherm).
@@ -1020,6 +1035,12 @@ class MaterialenPage(QWidget):
 
         return section
 
+    def _ververs_generiek(self, aan: bool) -> None:
+        if aan:
+            self._in_kleur.clear()
+        self._in_kleur.setEnabled(not aan)
+        self._in_kleur.setPlaceholderText("Per project" if aan else "")
+
     def _update_derde_label(self) -> None:
         type_waarde = MateriaalType(self._type_group.checkedButton().property("waarde"))
         self._derde_label.setText("Dikte (mm)" if type_waarde == MateriaalType.PLAAT else "Hoogte (mm)")
@@ -1032,6 +1053,8 @@ class MaterialenPage(QWidget):
         self._in_marge.setValue(0)
         self._type_group.buttons()[0].setChecked(True)
         self._nerf_group.buttons()[0].setChecked(True)
+        self._in_generiek.setChecked(False)
+        self._ververs_generiek(False)
         self._marge_rand_diagram.set_geselecteerde_randen(frozenset())
         self._kanten_rand_diagram.set_geselecteerde_randen(frozenset())
         self._ververs_rand_diagrammen()
@@ -1063,6 +1086,7 @@ class MaterialenPage(QWidget):
                 btn.setChecked(btn.property("waarde") == m.type)
             for btn in self._nerf_group.buttons():
                 btn.setChecked(btn.property("waarde") == m.nerfrichting)
+            self._in_generiek.setChecked(m.generiek)
             self._marge_rand_diagram.set_geselecteerde_randen(m.randafzaag_randen)
             self._kanten_rand_diagram.set_geselecteerde_randen(m.fabriekskantenband_randen)
             self._update_derde_label()
@@ -1108,6 +1132,7 @@ class MaterialenPage(QWidget):
             productcode=self._in_productcode.text().strip(),
             leverancier=self._in_leverancier.text().strip(),
             tags=tags,
+            generiek=self._in_generiek.isChecked(),
         )
 
         fouten = valideer(kandidaat)

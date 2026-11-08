@@ -123,7 +123,7 @@ def test_reststuk_label_nerfpijl_volgt_het_materiaal():
     )
     [label] = genereer_reststuk_labels([item], materialen)
     assert label.code == "R3"
-    assert label.nerf_langs_lengte is True
+    assert label.nerfrichting == Nerfrichting.LANGE_ZIJDE
     assert label.fabriekskantenband_randen == frozenset({Rand.ONDER})
 
 

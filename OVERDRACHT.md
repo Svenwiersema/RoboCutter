@@ -688,15 +688,19 @@ belangrijk genoeg om hier te herhalen — vraag Sven hiernaar voordat je
 er verder op bouwt, in lijn met zijn voorkeur om bij twijfel te vragen
 in plaats van aan te nemen:
 
-1. De nerf van een plaat loopt aangenomen altijd langs de lengte-as
-   (x-as). Nog niet expliciet zo benoemd in hoofdstuk 5.
+1. ~~De nerf van een plaat loopt aangenomen altijd langs de lengte-as.~~
+   **Beslist 2026-11-08:** bij het materiaal kies je Geen / Over de lengte /
+   Over de breedte, en de motor volgt dat (`Materiaal.nerfrichting`,
+   `_onderdelen_voor_plaatnerf`). Geen nerf = de nerfeis van een onderdeel
+   vervalt.
 2. Kerf wordt verrekend als extra ruimte tussen onderdelen (niet aan
    de plaatrand) — een gangbare aanpak, maar wel een keuze.
 3. Een groep (vaste volgorde/nerf, hoofdstuk 5) wordt behandeld als
    één blok dat niet roteert en verticaal stapelt.
 4. Een reststuk telt als "bruikbaar" als **zowel** breedte **als**
-   hoogte minstens de ingestelde minimale reststukgrootte zijn
-   (i.p.v. bijvoorbeeld oppervlakte).
+   hoogte minstens de ingestelde minimale reststukgrootte zijn —
+   **bevestigd door Sven 2026-11-08.** Bij een balk telt alleen de lengte
+   (de breedte ligt vast).
 5. Bij een fabriekskantenband-eis wordt de eerste geschikte plaatrand
    gebruikt, in de volgorde links → onder → boven → rechts.
 6. De zaagvolgorde-nummering voor de "efficient"-strategie is een
@@ -3305,6 +3309,119 @@ houden.
     nu maken, lijst, bevestiging, mislukt, thema-wissel, terugzetten via de
     planner, argumenten), schermafbeeldingen licht en donker bekeken. De
     echte herstart zelf is niet automatisch getest.
+
+- **2026-11-08 — Nerf over lengte/breedte, balken afkorten, generieke
+  materialen (mockup)**. Svens antwoorden: nerf kies je bij het materiaal
+  (lengte of breedte); reststuk-minimum geldt voor lengte én breedte;
+  "balken moet heel simpel zijn die kan je maar op 1 manier zagen"; en
+  generieke materialen (bv. "HPL met nerf") met het decor **per project**,
+  **vrije tekst die eerder gebruikte decors onthoudt**; balkonderdelen
+  voer je in met **alleen een lengte**.
+  - Motor: `Materiaal.nerfrichting` (vervangt de ongebruikte
+    `nerfrichting_aanwezig`; oude opgeslagen zaagplannen laden als "over de
+    lengte") en `Materiaal.is_balk` → `_pak_balk`: lang naar kort achter
+    elkaar, alleen dwarse sneden, randafzaag alleen links/rechts, groepen
+    en nerf genegeerd, eindstuk ≥ minimum (alleen lengte) wordt reststuk.
+    `projecten/zaagplannen.py` geeft beide door; bij een balk is
+    `ModelOnderdeel.breedte` de lengte en komt de doorsnede van de balk.
+    Reststuklabels dragen nu de nerfrichting van het materiaal
+    (`ReststukLabel.nerfrichting`, pijl horizontaal of verticaal).
+    Materialenscherm: "Over de lengte / Over de breedte". Tests erbij in
+    `test_engine.py`/`test_zaagplannen.py` (289 groen).
+  - Mockup `design/assets/mockups/balken-en-generiek-concept.html`
+    (onderdeelformulier bij een balk, balk-zaagplan als strook,
+    Decors-blok in het projectoverzicht, reststukken onthouden het decor).
+    Goedgekeurd ("ziet er goed uit"). Daarna door Sven bevestigd:
+    reststukken onthouden het decor, en een zaagplan maken zonder decor mag
+    ("als de klant het bijvoorbeeld nog niet heeft uitgekozen maar je de
+    werkvoorbereiding verder wel wil afmaken dan kan je later decor nog
+    toevoegen") — het zaagplan wordt dan "Niet gecontroleerd".
+  - **Balk-UI**: in alle vier onderdeelformulieren (`model_detail_page`,
+    `project_model_page`, los onderdeel in `project_detail_page`, de
+    reserve-lade in `modellen_page`) schakelt een balkmateriaal naar alleen
+    "Lengte mm" + een doorsnede-hint (`_of_balk`/`_of_ververs_balk_modus`,
+    `_lo_*` bij los onderdeel); opslaan zet `hoogte` = balkbreedte en wist
+    nerf/kantenband/groep. `ZaagplaatWidget` en `zaagplan_pdf` tekenen een
+    balk als strook van vaste hoogte (niet op schaal in de breedte),
+    "Balk n van m", maten alleen als lengte.
+  - **Generiek materiaal**: `Materiaal.generiek` (kolom met migratie),
+    vinkje in de materiaallade (Kleur/afwerking dan uit, "Per project").
+    `Project.decors` (materiaal_id → tekst, kolom met migratie, ook in
+    revisie-/bron-momentopnames; oude zonder sleutel = leeg).
+    `ProjectenBibliotheek.decor_zetten`/`generieke_materialen_in_project`/
+    `eerder_gebruikte_decors` (nieuwste startdatum eerst, zonder dubbele).
+    `zaagplannen.materiaal_naam_met_decor` zet "naam · decor" (of "decor
+    onbekend") in de materiaalnaam van het zaagplan → scherm, pdf,
+    onderdeellabels. `Reststuk.decor` (kolom met migratie), gevuld bij
+    `vrijgeven`; de motor neemt alleen reststukken met hetzelfde decor
+    (hoofdletters tellen niet). `vergelijk_projecten` meldt een
+    decorwijziging → "Niet gecontroleerd". UI: kaart "Decors" onder de
+    projectgegevens in Overzicht (alleen bij een generiek materiaal),
+    opslaan bij verlaten van het veld of klik op een eerder gebruikt decor,
+    groene melding. Tests: `tests/test_generieke_materialen.py` (296 groen).
+  - Rooktest met onzichtbaar venster op losse testdatabases (decors-kaart
+    leeg/ingevuld, balkformulier in los onderdeel en modeltabblad, vinkje
+    in de materiaallade). Nog niet door Sven in de echte app bekeken.
+
+- **2026-11-08 — Zaagplannen: tabblad per materiaal** (mockup
+  `design/assets/mockups/zaagplannen-per-materiaal-concept.html`; eerste
+  versie met inklapbare groepen afgewezen: Sven wilde "een soort header
+  waar je tussen kan switchen zodat je niet 1 lange lijst houd", en de
+  tabbalk mag geen scrollbalk hebben). `ProjectDetailPage`: onder de
+  tegels een tabbalk (`_MateriaalTab` in een `_DoorloopLayout` die
+  doorloopt naar een volgende regel), daaronder een kop met de cijfers
+  van het gekozen materiaal (platen/balken, benutting, reststukken,
+  gezaagd + voortgangsbalkje, "Decor nog invullen in Overzicht") en alleen
+  de platen van dat materiaal (`_ververs_zp_materiaal`). Het gekozen
+  tabblad (`_zp_actief_materiaal`) blijft staan zolang het project open
+  is; afvinken werkt tabbladen en kop bij zonder de platen opnieuw op te
+  bouwen. Vervallen platen staan bij hun materiaal. De motor-aansturing
+  (`zaagplannen._genereer_voor_regels`) zet balken achter de platen, dus
+  de pdf heeft dezelfde volgorde. Balkkaarten zeggen nu "Lengte" /
+  "Doorsnede", "Hele balk gezaagd", "Balk 1" in de melding.
+  `_verberg_en_leeg` voorkomt dat oude widgets tot de deleteLater zichtbaar
+  blijven. Rooktest met 6 materialen in een onzichtbaar venster.
+  - Svens melding "als je van tablad veranderd verspringt de info boven de
+    tabladen ook steeds voor een seconde": de tabbladen werden bij elke
+    wissel opnieuw gebouwd, waardoor de tabbalk even 1 px hoog was. Nu
+    worden ze ter plekke bijgewerkt (`_MateriaalTab.zet`, alleen opnieuw
+    gebouwd als de materialen veranderen), wisselen gebeurt met
+    `setUpdatesEnabled(False)` en behoudt de scrollpositie, en `_build_view`
+    vangt overgebleven hoogte op met een stretch onderaan. Nagemeten:
+    tabbalk en kop staan direct na wisselen en afvinken al op hun plek.
+  - Tegel "Platen" telt balken apart (Sven koos dat): "Platen: 5" met
+    "en 2 balken" eronder; de ondertitel zegt "5 platen en 2 balken".
+  - Op Svens verzoek in de **echte** database (eerst een kopie gemaakt)
+    twee balkmaterialen aangemaakt — "Vuren regel 44×68" (3000 mm) en
+    "Grenen lat 18×44" (2400 mm) — en in Keuken Jansen losse onderdelen
+    toegevoegd: Ophangregel bovenkast 1200 ×2, Stelregel onderkast 560 ×6,
+    Plintregel 2400 ×2 (vuren), Afwerklat 2100 ×2, Afdeklat nis 900 ×3
+    (grenen). Het zaagplan van Keuken Jansen moet daarna opnieuw gemaakt
+    worden.
+  - **Zaaglijst: dezelfde tabbladen per materiaal** (Sven: "dit zelfde mag
+    je ook doen voor de zaaglijst", zonder aparte mockup). Tabbalk tussen
+    de sorteerbalk en de tabel (`_zl_tabs`, `_kies_zl_materiaal`, platen
+    vóór balken), de kolom Materiaal verdwijnt (staat op het tabblad), bij
+    een balk heet Breedte "Lengte" en verdwijnt Hoogte. Voettekst: "n
+    onderdelen in dit materiaal · m in het hele project". De tabel heeft
+    geen eigen scrollbalk meer en is altijd zo hoog als zijn regels
+    (`_zl_volle_hoogte`; Sven: "zodat je de tabel zelf niet hoeft te
+    scrollen").
+  - Svens melding daarna: "tabel is nogsteeds scrollbaar en nu heb je dat
+    de pagina heel lang is". Nagebootst met het echte hoofdvenster op een
+    kopie van de database: de tabelhoogte werd uitgerekend voordat de kop
+    zijn echte hoogte had (1 px scroll) → nu `AdjustToContents` + vaste
+    hoogte-policy. De pagina was zo lang als het verborgen Zaagplannen-
+    paneel: `QStackedWidget`/`QStackedLayout` telt via `heightForWidth`
+    (sinds de doorlopende tabbalken) álle panelen mee, ook met size policy
+    Ignored. Vervangen door `_PaneelStapel` (gewone `QVBoxLayout`, alleen
+    het zichtbare paneel getoond; verborgen widgets tellen niet mee).
+    **Gebruik geen QStackedWidget voor panelen van verschillende hoogte in
+    een QScrollArea.**
+  - "Materiaal" is uit de sorteeropties van de Zaaglijst gehaald (elk
+    tabblad is al één materiaal; Sven akkoord); standaard sortering is nu
+    alleen Breedte (`_ZL_SORTEEROPTIES`). De pdf-zaaglijst blijft één
+    doorlopende lijst en sorteert daarom zelf eerst op materiaal.
 
 ## Werkwijze die Sven prettig vindt
 

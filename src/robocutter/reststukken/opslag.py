@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS reststukken (
     status TEXT NOT NULL,
     project_id TEXT NOT NULL DEFAULT '',
     project_naam TEXT NOT NULL DEFAULT '',
-    fabriekskantenband_randen TEXT NOT NULL DEFAULT '[]'
+    fabriekskantenband_randen TEXT NOT NULL DEFAULT '[]',
+    decor TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -41,7 +42,7 @@ def open_verbinding(db_pad: str | Path) -> sqlite3.Connection:
     # Oudere databases: kolommen voor de reservering door een project
     # (zaagmotor gebruikt reststukken) bijvoegen.
     kolommen = {rij["name"] for rij in verbinding.execute("PRAGMA table_info(reststukken)")}
-    for kolom, standaard in (("project_id", "''"), ("project_naam", "''"), ("fabriekskantenband_randen", "'[]'")):
+    for kolom, standaard in (("project_id", "''"), ("project_naam", "''"), ("fabriekskantenband_randen", "'[]'"), ("decor", "''")):
         if kolom not in kolommen:
             verbinding.execute(f"ALTER TABLE reststukken ADD COLUMN {kolom} TEXT NOT NULL DEFAULT {standaard}")
     verbinding.commit()
@@ -59,8 +60,8 @@ def opslaan(verbinding: sqlite3.Connection, reststuk: Reststuk) -> None:
         INSERT OR REPLACE INTO reststukken (
             id, materiaal_id, lengte, breedte, herkomst_project,
             herkomst_model, status, project_id, project_naam,
-            fabriekskantenband_randen
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            fabriekskantenband_randen, decor
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             reststuk.id,
@@ -73,6 +74,7 @@ def opslaan(verbinding: sqlite3.Connection, reststuk: Reststuk) -> None:
             reststuk.project_id,
             reststuk.project_naam,
             json.dumps(sorted(r.value for r in reststuk.fabriekskantenband_randen)),
+            reststuk.decor,
         ),
     )
     verbinding.commit()
@@ -95,4 +97,5 @@ def _rij_naar_reststuk(rij: sqlite3.Row) -> Reststuk:
         project_id=rij["project_id"],
         project_naam=rij["project_naam"],
         fabriekskantenband_randen=frozenset(Rand(v) for v in json.loads(rij["fabriekskantenband_randen"])),
+        decor=rij["decor"],
     )

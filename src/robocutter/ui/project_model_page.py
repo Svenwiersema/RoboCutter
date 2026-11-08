@@ -54,7 +54,7 @@ from PySide6.QtWidgets import (
 )
 
 from robocutter.materialen.bibliotheek import MaterialenBibliotheek
-from robocutter.materialen.models import MateriaalStatus
+from robocutter.materialen.models import Materiaal, MateriaalStatus, MateriaalType
 from robocutter.modellen.bibliotheek import ModellenBibliotheek
 from robocutter.modellen.models import ModelOnderdeel, Nerfrichting, Rand
 from robocutter.projecten.bibliotheek import ModelHeeftSubmodellenError, OnbekendModelError, ProjectenBibliotheek
@@ -401,7 +401,8 @@ class ProjectModelPage(QWidget):
         afmeting_rij = QHBoxLayout()
         afmeting_rij.setSpacing(8)
         breedte_col = QVBoxLayout()
-        breedte_col.addWidget(self._field_label("Breedte mm"))
+        self._of_breedte_label = self._field_label("Breedte mm")
+        breedte_col.addWidget(self._of_breedte_label)
         breedte_wrap, self._of_breedte = self._field_spin()
         breedte_col.addWidget(breedte_wrap)
         afmeting_rij.addLayout(breedte_col)
@@ -413,11 +414,20 @@ class ProjectModelPage(QWidget):
         wissel.clicked.connect(self._of_wissel_breedte_hoogte)
         afmeting_rij.addWidget(wissel, 0, Qt.AlignmentFlag.AlignBottom)
         hoogte_col = QVBoxLayout()
-        hoogte_col.addWidget(self._field_label("Hoogte mm"))
+        hoogte_label = self._field_label("Hoogte mm")
+        hoogte_col.addWidget(hoogte_label)
         hoogte_wrap, self._of_hoogte = self._field_spin()
         hoogte_col.addWidget(hoogte_wrap)
         afmeting_rij.addLayout(hoogte_col)
         rl.addLayout(afmeting_rij)
+        self._of_balk_hint = QLabel("")
+        self._of_balk_hint.setProperty("role", "fieldHint")
+        self._of_balk_hint.setWordWrap(True)
+        self._of_balk_hint.hide()
+        # Met alleen de lengte zichtbaar en de omloopende hint eronder drukt de
+        # layout het veld anders plat.
+        breedte_wrap.setMinimumHeight(breedte_wrap.sizeHint().height())
+        rl.addWidget(self._of_balk_hint)
         self._of_breedte.valueChanged.connect(self._of_ververs_rand_diagram)
         self._of_hoogte.valueChanged.connect(self._of_ververs_rand_diagram)
 
@@ -425,13 +435,15 @@ class ProjectModelPage(QWidget):
         aantal_wrap, self._of_aantal = self._field_spin_int(minimum=1, maximum=1000)
         rl.addWidget(aantal_wrap)
 
-        rl.addWidget(self._field_label("Nerfrichting"))
+        nerf_label = self._field_label("Nerfrichting")
+        rl.addWidget(nerf_label)
         nerf_widget, self._of_nerf_group = self._segmented(
             [(Nerfrichting.GEEN, "Geen"), (Nerfrichting.LANGE_ZIJDE, "Lange zijde"), (Nerfrichting.KORTE_ZIJDE, "Korte zijde")]
         )
         rl.addWidget(nerf_widget)
 
-        rl.addWidget(self._field_label("Kantenband op"))
+        kantenband_label = self._field_label("Kantenband op")
+        rl.addWidget(kantenband_label)
         self._of_rand_diagram = RandenDiagram(self._theme)
         rl.addWidget(self._of_rand_diagram)
 
@@ -441,17 +453,26 @@ class ProjectModelPage(QWidget):
         groep_rij = QHBoxLayout()
         groep_rij.setSpacing(8)
         groep_naam_col = QVBoxLayout()
-        groep_naam_col.addWidget(self._field_label("Groepsnaam"))
+        groep_naam_label = self._field_label("Groepsnaam")
+        groep_naam_col.addWidget(groep_naam_label)
         self._of_groep_naam = self._field_input()
         self._of_groep_naam.setPlaceholderText("optioneel — leeg = geen groep")
         groep_naam_col.addWidget(self._of_groep_naam)
         groep_rij.addLayout(groep_naam_col, 1)
         groep_volgorde_col = QVBoxLayout()
-        groep_volgorde_col.addWidget(self._field_label("Volgorde"))
+        groep_volgorde_label = self._field_label("Volgorde")
+        groep_volgorde_col.addWidget(groep_volgorde_label)
         groep_volgorde_wrap, self._of_groep_volgorde = self._field_spin_int(minimum=0, maximum=1000)
         groep_volgorde_col.addWidget(groep_volgorde_wrap)
         groep_rij.addLayout(groep_volgorde_col)
         rl.addLayout(groep_rij)
+        # Een balk kort je alleen af: dan alleen een lengte (zie model_detail_page).
+        self._of_plaat_velden: list[QWidget] = [
+            wissel, hoogte_label, hoogte_wrap, nerf_label, nerf_widget, kantenband_label,
+            self._of_rand_diagram, self._of_fabriek, groep_naam_label, self._of_groep_naam,
+            groep_volgorde_label, groep_volgorde_wrap,
+        ]
+        self._of_materiaal.currentIndexChanged.connect(lambda _i: self._of_ververs_balk_modus())
 
         knoppen = QHBoxLayout()
         self._btn_onderdeel_annuleren = QPushButton("Annuleren")
@@ -724,10 +745,11 @@ class ProjectModelPage(QWidget):
         info_col.addLayout(titel_rij)
 
         try:
-            materiaal_naam = self._materialen.ophalen(o.materiaal_id).naam
+            materiaal = self._materialen.ophalen(o.materiaal_id)
+            materiaal_naam, is_balk = materiaal.naam, materiaal.type == MateriaalType.BALK
         except KeyError:
-            materiaal_naam = "onbekend materiaal"
-        details = [f"{o.breedte:g}×{o.hoogte:g} mm", materiaal_naam]
+            materiaal_naam, is_balk = "onbekend materiaal", False
+        details = [f"{o.breedte:g} mm" if is_balk else f"{o.breedte:g}×{o.hoogte:g} mm", materiaal_naam]
         if o.nerfrichting_vereist != Nerfrichting.GEEN:
             details.append(_NERF_LABEL[o.nerfrichting_vereist].lower())
         if o.kantenband_randen:
@@ -781,6 +803,26 @@ class ProjectModelPage(QWidget):
         if idx >= 0:
             self._of_materiaal.setCurrentIndex(idx)
 
+    def _of_balk(self) -> Materiaal | None:
+        """Het gekozen materiaal als het een balk is, anders ``None``."""
+        try:
+            materiaal = self._materialen.ophalen(self._of_materiaal.currentData() or "")
+        except KeyError:
+            return None
+        return materiaal if materiaal.type == MateriaalType.BALK else None
+
+    def _of_ververs_balk_modus(self) -> None:
+        balk = self._of_balk()
+        for widget in self._of_plaat_velden:
+            widget.setVisible(balk is None)
+        self._of_breedte_label.setText("Lengte mm" if balk else "Breedte mm")
+        self._of_balk_hint.setVisible(balk is not None)
+        if balk is not None:
+            self._of_balk_hint.setText(
+                f"Doorsnede {balk.breedte:g} × {balk.derde_afmeting:g} mm komt van de balk. "
+                "Je vult alleen de lengte in, de balk wordt alleen afgekort."
+            )
+
     def _of_wissel_breedte_hoogte(self) -> None:
         breedte, hoogte = self._of_breedte.value(), self._of_hoogte.value()
         self._of_breedte.setValue(hoogte)
@@ -806,6 +848,7 @@ class ProjectModelPage(QWidget):
         self._of_fabriek.setChecked(False)
         self._of_groep_naam.clear()
         self._of_groep_volgorde.setValue(0)
+        self._of_ververs_balk_modus()
 
     def _bewerk_onderdeel(self, index: int) -> None:
         self._bewerk_onderdeel_index = index
@@ -828,12 +871,24 @@ class ProjectModelPage(QWidget):
         self._of_fabriek.setChecked(o.fabriekskantenband_vereist)
         self._of_groep_naam.setText(o.groep_id or "")
         self._of_groep_volgorde.setValue(o.groep_volgorde or 0)
+        self._of_ververs_balk_modus()
 
     def _onderdeel_uit_formulier(self) -> ModelOnderdeel:
         huidig_id = ""
         if self._bewerk_onderdeel_index is not None:
             huidig_id = self._werk_onderdelen[self._bewerk_onderdeel_index].id
         groep_naam = self._of_groep_naam.text().strip() or None
+        balk = self._of_balk()
+        if balk is not None:
+            # Doorsnede van de balk, geen nerf/kantenband/groep.
+            return ModelOnderdeel(
+                id=huidig_id or uuid.uuid4().hex[:8],
+                naam=self._of_naam.text().strip() or "Onderdeel",
+                materiaal_id=balk.id,
+                breedte=self._of_breedte.value(),
+                hoogte=balk.breedte,
+                aantal=self._of_aantal.value(),
+            )
         return ModelOnderdeel(
             id=huidig_id or uuid.uuid4().hex[:8],
             naam=self._of_naam.text().strip() or "Onderdeel",

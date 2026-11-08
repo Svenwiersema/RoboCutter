@@ -58,6 +58,9 @@ class Materiaal:
     leverancier: str = ""
     tags: tuple[str, ...] = ()
     status: MateriaalStatus = MateriaalStatus.ACTIEF
+    # Generiek materiaal (Sven 2026-11-08, bv. "HPL met nerf"): één record
+    # voor alle decors; het decor kies je per project (``Project.decors``).
+    generiek: bool = False
 
     @property
     def derde_afmeting_label(self) -> str:

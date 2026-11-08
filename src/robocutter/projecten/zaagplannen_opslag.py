@@ -182,11 +182,12 @@ def _materiaal_naar_dict(m: OptMateriaal) -> dict:
         "breedte": m.breedte,
         "dikte": m.dikte,
         "kerf": m.kerf,
-        "nerfrichting_aanwezig": m.nerfrichting_aanwezig,
+        "nerfrichting": m.nerfrichting.value,
         "randafzaag_marge": m.randafzaag_marge,
         "randafzaag_randen": sorted(r.value for r in m.randafzaag_randen),
         "min_reststukgrootte": m.min_reststukgrootte,
         "fabriekskantenband_randen": sorted(r.value for r in m.fabriekskantenband_randen),
+        "is_balk": m.is_balk,
     }
 
 
@@ -197,11 +198,14 @@ def _dict_naar_materiaal(d: dict) -> OptMateriaal:
         breedte=d["breedte"],
         dikte=d["dikte"],
         kerf=d["kerf"],
-        nerfrichting_aanwezig=d["nerfrichting_aanwezig"],
+        # Oudere zaagplannen bewaarden alleen een (ongebruikte) vlag; de motor
+        # rekende toen altijd met de nerf over de lengte.
+        nerfrichting=ModNerfrichting(d.get("nerfrichting", ModNerfrichting.LANGE_ZIJDE.value)),
         randafzaag_marge=d["randafzaag_marge"],
         randafzaag_randen=frozenset(OptRand(v) for v in d["randafzaag_randen"]),
         min_reststukgrootte=d["min_reststukgrootte"],
         fabriekskantenband_randen=frozenset(OptRand(v) for v in d["fabriekskantenband_randen"]),
+        is_balk=d.get("is_balk", False),
     )
 
 
