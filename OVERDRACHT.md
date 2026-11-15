@@ -3539,6 +3539,33 @@ houden.
     het databasepad. Versie `robocutter.__version__ = "0.2.0a1"` (ook in
     `pyproject.toml`), kaart "Over RoboCutter" onderaan Instellingen.
     Tests `tests/test_logboek.py` (4, altijd een map in `tmp_path`).
+  - **2026-11-15 — Stap 2 + 3: alpha-installer, leeg beginnen.** Sven:
+    eerst de alpha uitbrengen en op het werk testen, pas daarna nieuwe
+    functies; besloten is **leeg beginnen** (geen materialen-import,
+    geen databasemigratie). Het begonnen voorwerk voor een
+    materialen-import (gedeelde hulpen `bestand_rijen`/`lees_tabel`/
+    `schrijf_sjabloon_bestand` in `importeren/lezen.py`) staat in een
+    git stash ("wip: gedeelde importhulpen voor materialenimport (na
+    alpha)"), niet in de alpha.
+    - `MaterialenPage`/`ProjectenPage` vulden een lege bibliotheek met
+      voorbeelddata (3 materialen, 3 projecten) — bij een schone
+      installatie kreeg Sven dus nep-records. Verwijderd
+      (`_sample_materialen`/`_sample_projecten`).
+    - Installer-versie komt nu uit `robocutter.__version__`
+      (`build_installer.ps1` geeft `/DMyAppVersion` mee), bestandsnaam
+      `installer\Output\RoboCutter-Setup-<versie>.exe`.
+    - `build_exe.ps1` stopt nu bij een mislukte PyInstaller-run; eerder
+      bouwde `build_installer.ps1` dan stil een installer om de óúde exe.
+      **Valkuil:** een draaiende `RoboCutter.exe` blokkeert de build, en
+      bij een onefile-exe stopt `Stop-Process` op het opstartproces niet
+      het echte app-proces — gebruik `Get-Process RoboCutter | Stop-Process`.
+    - Rooktest: exe gestart met `APPDATA` naar een lege map → database
+      met alle tabellen leeg, eerste back-up gemaakt, logbestand met
+      versie en databasepad. `openpyxl`, `qrcode`, `python-barcode` zitten
+      erin (alleen optionele extra's ontbreken: lxml, defusedxml, png).
+    - Nog door Sven te doen: installeren op de werk-pc
+      (`RoboCutter-Setup-0.2.0a1.exe`, niet gesigneerd → SmartScreen
+      "Meer info → Toch uitvoeren").
 
 ## Werkwijze die Sven prettig vindt
 

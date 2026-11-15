@@ -6,7 +6,7 @@
 # Gebruik:
 #   .\installer\build_installer.ps1
 #
-# Resultaat: installer\Output\RoboCutter-Setup.exe
+# Resultaat: installer\Output\RoboCutter-Setup-<versie>.exe
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -23,7 +23,8 @@ if (-not $iscc) {
     throw "ISCC.exe (Inno Setup) niet gevonden. Installeer Inno Setup via https://jrsoftware.org/isinfo.php."
 }
 
-& $iscc "installer\robocutter.iss"
+$versie = (python -c "import sys; sys.path.insert(0, 'src'); import robocutter; print(robocutter.__version__)").Trim()
+& $iscc "/DMyAppVersion=$versie" "installer\robocutter.iss"
 
 Write-Host ""
-Write-Host "Klaar: installer\Output\RoboCutter-Setup.exe"
+Write-Host "Klaar: installer\Output\RoboCutter-Setup-$versie.exe"

@@ -30,6 +30,12 @@ python -m PyInstaller `
     --distpath dist `
     --workpath build `
     src/robocutter/ui/app.py
+# Een mislukte PyInstaller-run stopt het script niet vanzelf (native
+# commando); zonder deze check bouwde build_installer.ps1 vrolijk een
+# installer om de vorige, oude exe heen.
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller mislukt (exitcode $LASTEXITCODE). Draait RoboCutter.exe nog?"
+}
 
 Write-Host ""
 Write-Host "Klaar: dist\RoboCutter.exe"

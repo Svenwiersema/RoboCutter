@@ -57,30 +57,6 @@ _DRAWER_BREEDTE = 420
 _MATERIAAL_KOLOM_MIN = 200
 
 
-def _sample_materialen() -> list[Materiaal]:
-    return [
-        Materiaal(
-            id="", naam="Eiken multiplex 18mm", type=MateriaalType.PLAAT,
-            lengte=2800, breedte=2070, derde_afmeting=18, familie="Eiken multiplex",
-            kleur_afwerking="Naturel", nerfrichting=Nerfrichting.LANGE_ZIJDE,
-            min_reststukgrootte=300, productcode="EMP-18", leverancier="Houthandel Jansen",
-            tags=("multiplex", "eiken"),
-        ),
-        Materiaal(
-            id="", naam="Wit gemelamineerd 18mm", type=MateriaalType.PLAAT,
-            lengte=2800, breedte=2070, derde_afmeting=18, familie="Wit gemelamineerd",
-            kleur_afwerking="Wit", nerfrichting=Nerfrichting.GEEN,
-            min_reststukgrootte=200, productcode="MEL-WIT-18", leverancier="Egger",
-            tags=("melamine",),
-        ),
-        Materiaal(
-            id="", naam="Vurenhouten regel 40x60", type=MateriaalType.BALK,
-            lengte=3000, breedte=40, derde_afmeting=60, familie="Vurenhout regelwerk",
-            kleur_afwerking="Naturel", nerfrichting=Nerfrichting.LANGE_ZIJDE,
-            min_reststukgrootte=200,
-        ),
-    ]
-
 
 def _clear_layout(layout) -> None:
     while layout.count():
@@ -102,12 +78,6 @@ class MaterialenPage(QWidget):
         db_pad.parent.mkdir(parents=True, exist_ok=True)
         self._db = open_verbinding(db_pad)
         self.bibliotheek = MaterialenBibliotheek(self._db)
-        if not self.bibliotheek.lijst():
-            for materiaal in _sample_materialen():
-                self.bibliotheek.toevoegen(materiaal)
-            self.bibliotheek.archiveren(
-                next(m.id for m in self.bibliotheek.lijst() if m.naam == "Vurenhouten regel 40x60")
-            )
 
         self._status_filter = MateriaalStatus.ACTIEF
         self._type_filter: MateriaalType | None = None

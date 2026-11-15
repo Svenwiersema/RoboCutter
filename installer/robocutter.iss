@@ -11,7 +11,11 @@
 ; installer\build_installer.ps1, die beide stappen na elkaar uitvoert.
 
 #define MyAppName "RoboCutter"
-#define MyAppVersion "0.1.0-demo"
+; De versie komt uit robocutter.__version__ (build_installer.ps1 geeft hem
+; mee via /DMyAppVersion=...); dit is alleen de terugval.
+#ifndef MyAppVersion
+  #define MyAppVersion "0.2.0a1"
+#endif
 #define MyAppPublisher "RoboCutter"
 #define MyAppExeName "RoboCutter.exe"
 
@@ -24,7 +28,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 OutputDir=Output
-OutputBaseFilename=RoboCutter-Setup
+OutputBaseFilename=RoboCutter-Setup-{#MyAppVersion}
 SetupIconFile=..\design\assets\logo\robocutter_icon.ico
 Compression=lzma2
 SolidCompression=yes

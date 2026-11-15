@@ -53,7 +53,7 @@ python scripts/maak_test_project_zaagplan.py
 # OVERDRACHT.md for why this is PyInstaller, not the intended Nuitka, pre-release)
 pip install -e ".[build]"
 .\scripts\build_exe.ps1          # -> dist\RoboCutter.exe
-.\installer\build_installer.ps1  # -> installer\Output\RoboCutter-Setup.exe (needs Inno Setup 6)
+.\installer\build_installer.ps1  # -> installer\Output\RoboCutter-Setup-<versie>.exe (needs Inno Setup 6; close any running RoboCutter.exe first)
 ```
 
 There is no lint/format/build tooling configured in this repo — don't invent one.

@@ -79,23 +79,6 @@ _DRAWER_BREEDTE = 420
 _PROJECT_KOLOM_MIN = 190
 
 
-def _sample_projecten() -> list[Project]:
-    return [
-        Project(
-            id="", naam="Keuken Jansen", klant="Fam. Jansen", contactpersoon="Piet Jansen",
-            email="p.jansen@example.com", telefoon="06-12345678", opdrachtnummer="OP-2026-014",
-            status=ProjectStatus.IN_PRODUCTIE,
-        ),
-        Project(
-            id="", naam="Inbouwkast Willemsen", klant="R. Willemsen", opdrachtnummer="OP-2026-021",
-            status=ProjectStatus.WERKVOORBEREIDING,
-        ),
-        Project(
-            id="", naam="Kantoorkast Smits", klant="Smits Advocatuur", contactpersoon="L. Smits",
-            opdrachtnummer="OP-2025-098", status=ProjectStatus.AFGEROND,
-        ),
-    ]
-
 
 def _clear_layout(layout) -> None:
     while layout.count():
@@ -161,11 +144,6 @@ class ProjectenPage(QWidget):
         db_pad.parent.mkdir(parents=True, exist_ok=True)
         self._db = open_verbinding(db_pad)
         self.bibliotheek = ProjectenBibliotheek(modellen, materialen, self._db)
-        if not self.bibliotheek.lijst():
-            for project in _sample_projecten():
-                self.bibliotheek.toevoegen(project)
-            afgerond_project = next(p for p in self.bibliotheek.lijst() if p.naam == "Kantoorkast Smits")
-            self.bibliotheek.archiveren(afgerond_project.id)
 
         self._gearchiveerd_filter = False
         self._status_filter: ProjectStatus | None = None
