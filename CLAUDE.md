@@ -54,9 +54,20 @@ python scripts/maak_test_project_zaagplan.py
 pip install -e ".[build]"
 .\scripts\build_exe.ps1          # -> dist\RoboCutter.exe
 .\installer\build_installer.ps1  # -> installer\Output\RoboCutter-Setup-<versie>.exe (needs Inno Setup 6; close any running RoboCutter.exe first)
+
+# Release (alpha/pre-release): bump robocutter.__version__ + pyproject.toml,
+# rebuild the installer, tag v<versie>, push, then (gh may not be on PATH yet):
+& "C:\Program Files\GitHub CLI\gh.exe" release create v<versie> installer\Output\RoboCutter-Setup-<versie>.exe --prerelease --title "RoboCutter <versie> (alpha)" --notes-file <notes.md>
 ```
 
 There is no lint/format/build tooling configured in this repo — don't invent one.
+
+A fresh install starts with an **empty** database — pages must never seed
+sample data into an empty library (removed for the 0.2.0a1 alpha). To
+smoke-test the built exe without touching real data, point `APPDATA` at an
+empty scratch folder before starting it; stop it with
+`Get-Process RoboCutter | Stop-Process` (a onefile exe's app process
+outlives its bootloader).
 
 ## Architecture
 

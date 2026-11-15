@@ -3563,9 +3563,15 @@ houden.
       met alle tabellen leeg, eerste back-up gemaakt, logbestand met
       versie en databasepad. `openpyxl`, `qrcode`, `python-barcode` zitten
       erin (alleen optionele extra's ontbreken: lxml, defusedxml, png).
-    - Nog door Sven te doen: installeren op de werk-pc
-      (`RoboCutter-Setup-0.2.0a1.exe`, niet gesigneerd → SmartScreen
-      "Meer info → Toch uitvoeren").
+    - **Uitgebracht:** commit `29241ce`, tag `v0.2.0a1`, GitHub
+      pre-release https://github.com/Svenwiersema/RoboCutter/releases/tag/v0.2.0a1
+      met de installer als bijlage (via `gh`, nu geïnstalleerd en
+      ingelogd als Svenwiersema).
+    - **Volgende sessie:** Sven test de alpha op de werk-pc (installer
+      niet gesigneerd → SmartScreen "Meer info → Toch uitvoeren"). Eerst
+      zijn bevindingen verwerken; pas daarna nieuwe functies
+      (materialen-import uit de stash, vervangingskeuze bij verwijderd
+      materiaal).
 
 ## Werkwijze die Sven prettig vindt
 
